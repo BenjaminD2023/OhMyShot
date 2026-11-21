@@ -21,23 +21,44 @@ public enum ExportedFiles {
     }
 
     /// The file to hand over for the capture at `source`: the capture itself when Settings leave it as it is (or
-    /// it is no picture), else its converted copy, made now unless one made since the capture last changed is there.
+    /// it is no picture), else its converted copy of the capture as it is now, made now unless it is there.
+    ///
+    /// Each copy is kept in a folder for the revision of the capture it was read from (`revision(of:)`), and is
+    /// written there only when the capture was the same after it was read as before: a copy that took long, and was
+    /// read before the capture last changed (marks kept, a redaction), is never handed over for the picture as it is
+    /// now, nor can it replace the copy of it, however late it ends.
     /// - Parameters:
     ///   - pixelsPerPoint: the capture's scale, which 1× needs.
     ///   - name: the file's name without its extension; the capture's own by default.
     public static func file(
         for source: URL, pixelsPerPoint: Double?, output: ScreenshotOutput, name: String? = nil, in folder: URL = standardFolder
     ) throws -> URL {
+        try file(for: source, pixelsPerPoint: pixelsPerPoint, output: output, name: name, in: folder, afterReading: {})
+    }
+
+    /// `file(for:…)`, with `afterReading` run once the capture is read and converted, before it is looked at again: a
+    /// test holds a conversion there while the capture changes.
+    static func file(
+        for source: URL, pixelsPerPoint: Double?, output: ScreenshotOutput, name: String?, in folder: URL, afterReading: () -> Void
+    ) throws -> URL {
         guard !output.isUnchanged, isPicture(source) else { return source }
         let directory = folder
             .appending(path: "\(output.cacheKey)-\(pixelsPerPoint.map { String($0) } ?? "unknown")", directoryHint: .isDirectory)
             .appending(path: Self.tag(of: source), directoryHint: .isDirectory)
-        let destination = directory.appending(path: "\(name ?? source.deletingPathExtension().lastPathComponent).\(output.format.fileExtension)")
-        if let made = modificationDate(of: destination), let changed = modificationDate(of: source), made >= changed { return destination }
-        let encoded = try PictureExport.encode(fileAt: source, pixelsPerPoint: pixelsPerPoint, output: output)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try encoded.data.write(to: destination, options: .atomic)
-        return destination
+        let fileName = "\(name ?? source.deletingPathExtension().lastPathComponent).\(output.format.fileExtension)"
+        // A capture that changed while it was read is read again, a few times at most.
+        for _ in 0..<3 {
+            let revision = try revision(of: source)
+            let destination = directory.appending(path: revision, directoryHint: .isDirectory).appending(path: fileName)
+            if FileManager.default.fileExists(atPath: destination.path(percentEncoded: false)) { return destination }
+            let encoded = try PictureExport.encode(fileAt: source, pixelsPerPoint: pixelsPerPoint, output: output)
+            afterReading()
+            guard try self.revision(of: source) == revision else { continue }
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try encoded.data.write(to: destination, options: .atomic)
+            return destination
+        }
+        throw CocoaError(.fileReadUnknown)
     }
 
     /// The same off the main actor, for a capture too large to convert between two frames.
@@ -166,9 +187,14 @@ public enum ExportedFiles {
         }
     }
 
-    private static func modificationDate(of url: URL) -> Date? {
-        // Not through the URL, which remembers the date it was first asked for.
-        (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)))?[.modificationDate] as? Date
+    /// Which version of a file this is: its file number, which a file written over atomically (as the history writes)
+    /// changes, its size, and when it was last written. Not through the URL, which remembers what it was first asked.
+    private static func revision(of url: URL) throws -> String {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))
+        let number = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        let written = (attributes[.modificationDate] as? Date)?.timeIntervalSinceReferenceDate.bitPattern ?? 0
+        return [number, size, written].map { String($0, radix: 16) }.joined(separator: "-")
     }
 
     /// A short name for a source file's place, so two captures with one name do not share a copy (FNV-1a).

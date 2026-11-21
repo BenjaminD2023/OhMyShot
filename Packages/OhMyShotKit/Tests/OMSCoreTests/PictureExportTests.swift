@@ -450,6 +450,53 @@ struct PictureExportTests {
         #expect(try decode(Data(contentsOf: second)).image.width == 90)
     }
 
+    /// A copy begun before the capture changed, which ends after the copy of the capture as it is now was made, is never
+    /// handed over: not by the conversion that made it, and not by a later drag.
+    @Test func aConversionOfThePictureAsItWasThatEndsLateIsNeverHandedOver() throws {
+        final class Outcome: @unchecked Sendable { var value: Result<URL, any Error>? }
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let file = folder.appending(path: "Shot.png")
+        let red = try ImageExporter.encoded(picture(8, 8, color: [255, 0, 0, 255]), as: .png)
+        let blue = try ImageExporter.encoded(picture(8, 8, color: [0, 0, 255, 255]), as: .png)
+        try red.write(to: file, options: .atomic)
+        let output = ScreenshotOutput(format: .jpeg)
+        let read = DispatchSemaphore(value: 0), resume = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+        let late = Outcome()
+        // The copy made ahead of a drag as the card appeared has read the picture before the redaction...
+        DispatchQueue.global().async {
+            var held = false
+            late.value = Result {
+                try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, name: nil, in: cache) {
+                    guard !held else { return }
+                    held = true
+                    read.signal()
+                    resume.wait()
+                }
+            }
+            done.signal()
+        }
+        // The worker is let go however the test ends, a wait that timed out included; and the wait is bounded, so a
+        // conversion that fails before reading fails the test rather than hanging it.
+        var resumed = false
+        defer { if !resumed { resume.signal() } }
+        try #require(read.wait(timeout: .now() + 30) == .success)
+        // ...which is kept, and dragged out, while that copy is still being made.
+        try blue.write(to: file, options: .atomic)
+        let current = try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache)
+        #expect(try raw(decode(Data(contentsOf: current)).image, 0, 0)[2] > 200)
+        resume.signal()
+        resumed = true
+        try #require(done.wait(timeout: .now() + 30) == .success)
+        let lateFile = try #require(try late.value?.get())
+        #expect(try raw(decode(Data(contentsOf: lateFile)).image, 0, 0)[2] > 200)
+        #expect(try raw(decode(Data(contentsOf: current)).image, 0, 0)[2] > 200)
+        let again = try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache)
+        #expect(again == current)
+        #expect(try raw(decode(Data(contentsOf: again)).image, 0, 0)[2] > 200)
+    }
+
     @Test func aCaptureLeftAsItIsAndARecordingAreHandedOverUnconverted() throws {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
