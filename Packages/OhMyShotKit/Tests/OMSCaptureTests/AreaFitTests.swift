@@ -146,6 +146,21 @@ struct AreaFitTests {
         #expect(view.area == tight)
     }
 
+    /// ⌘Z goes to the frame as a key equivalent, past the keys ? showed: they go as it puts the area back.
+    @Test func commandZPutsTheKeysAwayAsItPutsTheAreaBack() throws {
+        let (overlay, view) = setup(frame: try Self.frame())
+        defer { overlay.clear() }
+        _ = view.debugAct("b")
+        overlay.toggleKeys(view.accessibilityHelp() ?? "")
+        #expect(overlay.showsKeys)
+        let undo = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: 0, context: nil, characters: "z",
+            charactersIgnoringModifiers: "z", isARepeat: false, keyCode: 6
+        ))
+        #expect(overlay.performKeyEquivalent(with: undo))
+        #expect(!overlay.showsKeys && view.area == Self.area)
+    }
+
     @Test func anAreaWithNoEdgesInsideStaysAsDrawn() throws {
         let blank = CGRect(x: 450, y: 100, width: 200, height: 100)
         let (overlay, view) = setup(area: blank, frame: try Self.frame())

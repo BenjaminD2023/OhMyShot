@@ -70,14 +70,32 @@ public final class ReadingCapsule {
         }
     }
 
+    /// How wide the text may run before it wraps onto another line. A reading is one line and never reaches it; a list
+    /// (lines apart by newlines, such as the overlay's keys) is held to the display with it.
+    public var maximumTextWidth: CGFloat = .greatestFiniteMagnitude {
+        didSet { if maximumTextWidth != oldValue { relayout() } }
+    }
+
     private func relayout() {
-        let textHeight = ceil(font.ascender - font.descender)
-        let textWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        let lineHeight = ceil(font.ascender - font.descender)
+        var textHeight = lineHeight
+        var textWidth = ceil((text as NSString).size(withAttributes: [.font: font]).width)
+        // More than a line: as tall as its lines, as wide as the longest, with a one-line capsule's corners.
+        let isOneLine = !text.contains("\n") && textWidth <= maximumTextWidth
+        if !isOneLine {
+            let lines = (text as NSString).boundingRect(
+                with: CGSize(width: maximumTextWidth, height: .greatestFiniteMagnitude), options: [.usesLineFragmentOrigin], attributes: [.font: font]
+            )
+            textWidth = ceil(lines.width)
+            textHeight = ceil(lines.height)
+        }
+        textLayer.isWrapped = !isOneLine
         let height = textHeight + 9
+        let corner = (lineHeight + 9) / 2
         let swatchWidth: CGFloat = showsSwatch && swatch != nil ? 16 : 0
         layer.bounds = CGRect(x: 0, y: 0, width: textWidth + 22 + swatchWidth, height: height)
-        layer.cornerRadius = height / 2
-        layer.shadowPath = CGPath(roundedRect: layer.bounds, cornerWidth: height / 2, cornerHeight: height / 2, transform: nil)
+        layer.cornerRadius = corner
+        layer.shadowPath = CGPath(roundedRect: layer.bounds, cornerWidth: corner, cornerHeight: corner, transform: nil)
         swatchLayer.frame = CGRect(x: 10, y: (height - 10) / 2, width: 10, height: 10)
         textLayer.frame = CGRect(x: 11 + swatchWidth, y: (height - textHeight) / 2 - 0.5, width: textWidth + 2, height: textHeight)
     }

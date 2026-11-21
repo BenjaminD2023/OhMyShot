@@ -14439,6 +14439,41 @@
         }
       }
     },
+    "Keyboard Reference" : {
+      "comment" : "A link at the foot of Settings › Shortcuts to the document listing every key OhMyShot answers (the capture overlay, the editor, Quick Access, pins, History).",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Referencia de teclas"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Référence des touches"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キー操作リファレンス"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "键盘操作参考"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "鍵盤操作參考"
+          }
+        }
+      }
+    },
     "Keyboard Shortcuts…" : {
       "extractionState" : "manual",
       "localizations" : {

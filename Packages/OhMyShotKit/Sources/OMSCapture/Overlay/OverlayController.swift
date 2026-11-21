@@ -1565,6 +1565,17 @@ extension OverlayController: OverlayViewDelegate {
         updateHover(at: pointer ?? NSEvent.mouseLocation)
     }
 
+    func overlayViewDidToggleKeys(_ view: OverlayView) {
+        guard !overlayViewDidPutKeysAway(view) else { return }
+        let mouse = NSEvent.mouseLocation
+        let target = entries.values.first { $0.view.display.frame.contains(mouse) }?.view ?? view
+        target.showKeys(view.keyHelp)
+    }
+
+    func overlayViewDidPutKeysAway(_ view: OverlayView) -> Bool {
+        entries.values.map { $0.view.putKeysAway() }.contains(true)
+    }
+
     func overlayViewDidCancel(_ view: OverlayView) {
         Log.capture.notice("Overlay cancelled with Escape\(self.drag == nil ? "" : " during a drag", privacy: .public)")
         end(.cancelled)

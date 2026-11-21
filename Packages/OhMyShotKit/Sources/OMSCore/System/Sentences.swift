@@ -20,6 +20,17 @@ public enum Sentences {
         joined(sentences.compactMap(\.self))
     }
 
+    /// The sentences of `text`, each trimmed, in the order written: where the language ends one (after a full stop and a
+    /// space, or a full-width mark), so a help that `joined` put together comes apart into the sentences it was made of.
+    public static func split(_ text: String) -> [String] {
+        var sentences: [String] = []
+        text.enumerateSubstrings(in: text.startIndex..., options: .bySentences) { sentence, _, _, _ in
+            guard let sentence = sentence?.trimmingCharacters(in: .whitespacesAndNewlines), !sentence.isEmpty else { return }
+            sentences.append(sentence)
+        }
+        return sentences
+    }
+
     /// The marks after which Chinese and Japanese start the next sentence without a space.
     private static let fullWidthEnds: Set<Character> = ["。", "！", "？", "：", "；", "」", "』", "）"]
 }

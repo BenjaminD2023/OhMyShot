@@ -238,7 +238,9 @@ class AreaSetupView<Bar: NSView>: NSView {
 
     override func viewWillMove(toSuperview newSuperview: NSView?) {
         super.viewWillMove(toSuperview: newSuperview)
-        if newSuperview == nil { cancelFit() }
+        guard newSuperview == nil else { return }
+        cancelFit()
+        (superview as? OverlayView)?.putKeysAway()
     }
 
     // MARK: Input
@@ -338,7 +340,19 @@ class AreaSetupView<Bar: NSView>: NSView {
         refreshCodes()
     }
 
+    /// ? shows the frame's keys (its VoiceOver help) by the display's edge, or puts them away; any other key puts them
+    /// away, and Escape does nothing more then. True when the key is used up; a subclass asks before its own keys.
+    func answersKeyList(_ event: NSEvent) -> Bool {
+        guard let overlay = superview as? OverlayView else { return false }
+        if event.charactersIgnoringModifiers == "?", event.modifierFlags.intersection([.command, .control, .option]).isEmpty {
+            overlay.toggleKeys(accessibilityHelp() ?? "")
+            return true
+        }
+        return overlay.putKeysAway() && event.keyCode == 53
+    }
+
     override func keyDown(with event: NSEvent) {
+        if answersKeyList(event) { return }
         switch event.keyCode {
         case 53: // Escape: a code's card first, then an adjustment, then the whole setup.
             if codeChips.isShowingCard {

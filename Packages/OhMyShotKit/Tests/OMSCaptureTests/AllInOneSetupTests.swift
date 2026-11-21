@@ -396,6 +396,35 @@ struct AllInOneBarTests {
         }
         #expect(await asked.sizes.count >= 1)
     }
+
+    /// ? in the framed area shows the frame's own keys on the overlay; Escape puts them away without cancelling, and an
+    /// arrow puts them away and still moves the area.
+    @Test func questionMarkShowsTheFramesKeys() {
+        let display = DisplayInfo(
+            id: 1, name: "Test", frame: CGRect(x: 0, y: 0, width: 800, height: 600), pixelSize: CGSize(width: 1600, height: 1200),
+            backingScale: 2, maximumPotentialEDR: 1
+        )
+        let area = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let overlay = OverlayView(display: display)
+        defer { overlay.clear() }
+        let view = AllInOneSetupView(display: display, area: area, offersUpload: false)
+        var cancelled = false
+        view.onCancel = { cancelled = true }
+        overlay.addSubview(view)
+        _ = view.debugAct("?")
+        #expect(overlay.showsKeys)
+        #expect(overlay.debugKeys == Sentences.split(view.accessibilityHelp() ?? "").joined(separator: "\n"))
+        _ = view.debugAct("escape")
+        #expect(!overlay.showsKeys && !cancelled)
+        _ = view.debugAct("?")
+        _ = view.debugAct("right")
+        #expect(!overlay.showsKeys)
+        #expect(view.area == area.offsetBy(dx: 1, dy: 0))
+        // Gone with the frame.
+        _ = view.debugAct("?")
+        view.removeFromSuperview()
+        #expect(!overlay.showsKeys)
+    }
 }
 
 /// The sizes of the pictures a finder was asked about.

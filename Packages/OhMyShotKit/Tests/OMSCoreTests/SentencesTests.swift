@@ -16,4 +16,15 @@ struct SentencesTests {
         #expect(Sentences.joined("The server didn’t accept the credentials.", nil) == "The server didn’t accept the credentials.")
         #expect(Sentences.joined(["", "  One. ", "Two."]) == "One. Two.")
     }
+
+    /// A help put together sentence by sentence comes apart into those sentences, in every script.
+    @Test func splitUndoesJoined() {
+        let english = ["Drag to capture an area.", "The arrow keys move the corner a pixel, ten with Shift.", "Press Escape to cancel."]
+        #expect(Sentences.split(Sentences.joined(english)) == english)
+        let chinese = ["拖移以截取区域。", "方向键将角移动一个像素，按住 Shift 键则移动十个像素。", "按下 Esc 键取消。"]
+        #expect(Sentences.split(Sentences.joined(chinese)) == chinese)
+        let japanese = ["ドラッグして範囲をキャプチャします。", "キャンセルするにはescキーを押します。"]
+        #expect(Sentences.split(Sentences.joined(japanese)) == japanese)
+        #expect(Sentences.split("  ") == [])
+    }
 }

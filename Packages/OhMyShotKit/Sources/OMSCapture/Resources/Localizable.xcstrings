@@ -2055,6 +2055,41 @@
         }
       }
     },
+    "Click a window to choose it, or press Tab to go through the windows and Return to choose one. Press Space to drag over an area instead. Press Escape to cancel." : {
+      "comment" : "VoiceOver help, and the list ? shows, while choosing a window in the capture overlay (after Space, or for Capture Window).",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Haz clic en una ventana para elegirla, o pulsa Tabulador para recorrer las ventanas y Retorno para elegir una. Pulsa Espacio para arrastrar sobre un área. Pulsa Escape para cancelar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cliquez sur une fenêtre pour la choisir, ou appuyez sur Tab pour parcourir les fenêtres et sur Retour pour en choisir une. Appuyez sur Espace pour faire plutôt glisser le pointeur sur une zone. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ウインドウをクリックして選択するか、tabキーでウインドウを順に切り替えてreturnキーで選択します。スペースバーを押すと代わりに範囲をドラッグできます。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "点按一个窗口以选择它，或按下 Tab 键在窗口之间切换，再按下返回键选择。按下空格键改为拖移选择区域。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按一下一個視窗以選擇它，或按 Tab 鍵逐一切換視窗，再按 Return 鍵選擇。按空白鍵可改為拖移選取區域。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
     "Click again to throw the picture away" : {
       "localizations" : {
         "es" : {

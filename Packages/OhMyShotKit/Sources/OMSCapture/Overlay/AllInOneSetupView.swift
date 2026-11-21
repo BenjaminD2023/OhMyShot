@@ -203,6 +203,7 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     /// Escape, Return, and Enter as every setup has them; the arrows, Tab, and the letters All-In-One's own.
     override func keyDown(with event: NSEvent) {
+        if answersKeyList(event) { return }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         switch event.keyCode {
         case 53, 36, 76: // Escape, Return, Enter
