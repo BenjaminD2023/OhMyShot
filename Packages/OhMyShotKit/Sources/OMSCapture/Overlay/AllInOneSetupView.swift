@@ -18,11 +18,13 @@ public enum AllInOneChoice: Equatable, Sendable {
 /// Keys: Return (or a double click inside) captures; ⌘C and ⌘S capture and copy or save; E annotates, P pins, U
 /// uploads (when a destination is set up); O reads the text, S captures scrolling, R records; F captures the whole
 /// display. The arrows move the area a point, ten with Shift; with Option they grow or shrink it from its right and
-/// bottom edges. Escape ends an adjustment, then the whole capture.
+/// bottom edges. On a frozen screen B fits the area to what it holds, and B again or ⌘Z puts it back. Escape ends an
+/// adjustment, then the whole capture.
 ///
 /// Capture Area and Annotate Area open the same frame with Tab, for a size typed or a shape kept: its bar then holds
-/// Capture, the size fields, the ratio chip, and Cancel, and its keys are Return, the arrows, Tab (to the width, to
-/// type it), and Escape. The keys stay with the frame until Tab or a click gives them to a field, so Return captures.
+/// Capture, the size fields, the ratio chip, and Cancel, and its keys are Return, the arrows, B and ⌘Z, Tab (to the
+/// width, to type it), and Escape. The keys stay with the frame until Tab or a click gives them to a field, so Return
+/// captures.
 ///
 /// Flipped: points from the display's top-left corner, as the frame's drawing expects.
 final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
@@ -62,7 +64,6 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
             window?.makeFirstResponder(self)
         }
         setAccessibilityLabel(String(localized: "Capture area", bundle: .module))
-        setAccessibilityHelp(instructions)
         update()
     }
 
@@ -71,8 +72,12 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
         fatalError("init(coder:) is not supported")
     }
 
-    /// Every key, Upload's only while it is offered.
+    /// Every key, Upload's only while it is offered, and B's only where it can fit the area.
     private var instructions: String {
+        canFitToContent ? Sentences.joined(keys, Self.fitHelp) : keys
+    }
+
+    private var keys: String {
         if kind == .sizing {
             return String(localized: "Press Return to capture the area. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them, and the aspect ratio button keeps a shape. Press Escape to cancel.", bundle: .module)
         }
@@ -81,7 +86,10 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
             : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
     }
 
-    /// Says what to do next.
+    /// Every key as things stand: B's from the moment the frozen frame under the area arrives.
+    override func accessibilityHelp() -> String? { instructions }
+
+    /// Says what to do next: on the overlay by now, so B is named where the screen is frozen.
     override func begin() {
         VoiceOver.announce(instructions, from: self)
     }

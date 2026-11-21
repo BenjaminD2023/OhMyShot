@@ -1,7 +1,8 @@
 # Measurement snapping
 
 Measure finds pixel boundaries on the frozen screen. Drag a box around content to fit its bounds;
-click to clear the box. Normal screenshot capture is unchanged.
+click to clear the box. A capture's drag is not snapped to pixels; once the area is framed, B fits it the same way
+(see [Fitting a framed area](#fitting-a-framed-area)).
 
 ![Measurement snapping demonstration](assets/measurement-snapping.gif)
 
@@ -35,6 +36,18 @@ Pixel evidence cannot always distinguish a faint border from its shadow. Some am
 fixtures differ by one physical pixel. Results on photographs and busy backgrounds depend on the
 selected content and tolerance; this feature does not infer semantic objects.
 
+## Fitting a framed area
+
+In All-In-One's framed area and in Capture Area's or Annotate Area's size control (Tab), **B** fits the
+area to the edges of what it holds on the frozen screen, with the same detector at the Edge tolerance
+set for Measure, read from Settings each time a capture opens. The area only closes in on its content,
+staying inside the area framed, keeps any shape it keeps, and is never smaller than 16 points either
+way; where that can't fit inside the area framed, it stays as drawn. **B** again, or **Command-Z**,
+puts back the area as drawn, until something else moves or resizes it, even back to where the fit
+left it. Areas above 250,000 physical pixels are looked at in the background, reading
+only that part of the frozen frame and a 16-pixel margin; moving the area or closing the overlay drops
+the work. A live screen (Freeze off) has no frame to read, so B does nothing there.
+
 ## Validation
 
 Synthetic tests cover 1×/2× geometry, RGB thresholds, antialiasing, low-contrast cards, gradients,
@@ -44,7 +57,7 @@ result invalidation. The GIF is a deterministic render of the real measurement o
 Run the focused package checks from the repository root:
 
 ```sh
-Scripts/test.sh --filter 'PixelGridTests|PixelGridQualityTests|MeasureOverlayTests|OverlayKeyTests|MeasureToleranceSettingTests'
+Scripts/test.sh --filter 'PixelGridTests|PixelGridQualityTests|MeasureOverlayTests|OverlayKeyTests|MeasureToleranceSettingTests|AreaFitTests'
 ```
 
 The tests validate explicit local geometry and behavior. They are not a broad accuracy benchmark or a

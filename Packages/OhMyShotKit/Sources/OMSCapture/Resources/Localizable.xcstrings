@@ -795,6 +795,41 @@
         }
       }
     },
+    "B fits the area to the edges of what’s inside it; press B again or Command-Z to put it back." : {
+      "comment" : "VoiceOver help added to a framed capture area on a frozen screen: the B key shrinks the area to the visual bounds of its content.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "B ajusta el área a los bordes de lo que contiene; pulsa B otra vez o Comando-Z para devolverla a como estaba."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "B ajuste la zone aux bords de ce qu’elle contient ; appuyez à nouveau sur B ou sur Commande-Z pour la rétablir."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "B キーで範囲を中身の端に合わせます。もう一度 B キーを押すか command-Z で元に戻します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按 B 键将区域贴合到其中内容的边缘；再按一次 B 键或按 Command-Z 可恢复原样。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "按 B 鍵將區域貼合到其中內容的邊緣；再按一次 B 鍵或按 Command-Z 可復原。"
+          }
+        }
+      }
+    },
     "Back" : {
       "localizations" : {
         "es" : {
@@ -825,6 +860,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "返回"
+          }
+        }
+      }
+    },
+    "Back to the area as drawn: %@" : {
+      "comment" : "VoiceOver announcement when B again or Command-Z undoes the fit of a capture area. The argument is the size in pixels, such as 640 × 480.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "De vuelta al área tal como se dibujó: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Retour à la zone telle que tracée : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "描いたときの範囲に戻しました：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已恢复为绘制时的区域：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已恢復為繪製時的區域：%@"
           }
         }
       }
@@ -2801,6 +2871,41 @@
         }
       }
     },
+    "Fitted to what’s inside: %@" : {
+      "comment" : "VoiceOver announcement after B fits a capture area to its content. The argument is the new size in pixels, such as 640 × 480.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustada a lo que contiene: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ajustée à son contenu : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中身に合わせました：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已贴合内容：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已貼合內容：%@"
+          }
+        }
+      }
+    },
     "Format" : {
       "localizations" : {
         "es" : {
@@ -3613,6 +3718,41 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "找不到相機"
+          }
+        }
+      }
+    },
+    "No edges to fit to inside the area" : {
+      "comment" : "VoiceOver announcement, with a beep, when B finds nothing in a capture area to fit it to.",
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No hay bordes a los que ajustarse dentro del área"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucun bord auquel s’ajuster dans la zone"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "範囲内に合わせられる端がありません"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "区域内没有可贴合的边缘"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "區域內沒有可貼合的邊緣"
           }
         }
       }

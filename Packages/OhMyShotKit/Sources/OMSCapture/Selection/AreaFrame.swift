@@ -174,6 +174,17 @@ enum AreaFrame {
         return placed(CGRect(x: rect.midX - width / 2, y: rect.midY - height / 2, width: width, height: height), in: bounds)
     }
 
+    /// The least area that holds `content` (flipped points): at least the smallest area each way and, when `ratio` (width
+    /// over height) is kept, in that shape, centered on the content and moved inside `bounds`. An area of that shape that
+    /// held the content already fits, so the content stays inside.
+    static func holding(_ content: CGRect, keeping ratio: CGFloat? = nil, in bounds: CGRect) -> CGRect {
+        var width = max(content.width, smallest), height = max(content.height, smallest)
+        if let ratio, ratio > 0 {
+            if width / height > ratio { height = width / ratio } else { width = height * ratio }
+        }
+        return placed(CGRect(x: content.midX - width / 2, y: content.midY - height / 2, width: width, height: height), in: bounds)
+    }
+
     /// `rect` at `size` (points) from its top-left corner (flipped points), moved back inside `bounds` where it would
     /// reach past them and no larger than they are.
     static func sized(_ rect: CGRect, to size: CGSize, in bounds: CGRect) -> CGRect {

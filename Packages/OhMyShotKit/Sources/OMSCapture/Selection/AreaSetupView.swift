@@ -6,7 +6,8 @@ import OMSDesign
 /// capture, All-In-One's ways to take an area): the choice framed on the dimmed screen, its corners and edges to
 /// adjust it while it can be, and a bar under it. A drag on the frame moves it, one on a handle resizes it, and one
 /// outside it chooses a new area. Return, or a double click inside, does what the bar does first; Escape ends an
-/// adjustment, then the whole setup.
+/// adjustment, then the whole setup. On a frozen screen B fits the area to the edges of what it holds, and B again or
+/// Command-Z puts back the area as it was.
 ///
 /// What each setup has of its own comes from its subclass: the bar, what is framed, whether it can be adjusted and in
 /// what shape, what keeps the adjusted area, and what Return does.
@@ -26,6 +27,13 @@ class AreaSetupView<Bar: NSView>: NSView {
     var codeFinder: CodeFinder?
     let codeChips = CodeChipsView(wording: .standard)
     private var codeScan: Task<Void, Never>?
+    /// How much neighboring pixels may differ before B takes them for an edge: Measure's, as Settings say.
+    var edgeTolerance: MeasureTolerance = .medium
+    /// The area (global points) before B fitted it, and as the fit left it: while it is still as the fit left it, B
+    /// again or Command-Z puts it back.
+    private var fit: (drawn: CGRect, fitted: CGRect)?
+    /// The look for the edges in a large area, going on in the background.
+    private var fitSearch: Task<Void, Never>?
 
     init(display: DisplayInfo, bar: Bar) {
         self.display = display
@@ -104,6 +112,8 @@ class AreaSetupView<Bar: NSView>: NSView {
     @discardableResult
     func setArea(_ rect: CGRect) -> Bool {
         guard let kept = AreaFrame.fitted(rect, in: bounds) else { return false }
+        cancelFit()
+        fit = nil
         areaAdjusted(AreaFrame.global(AreaFrame.snapped(kept, pixelsPerPoint: display.pixelsPerPoint), on: display))
         // Moved by the keys or a typed size, the area is looked at again once the keys rest; a drag looks once it ends.
         if adjustment == nil { refreshCodes(after: .milliseconds(250)) } else { clearCodes() }
@@ -146,6 +156,89 @@ class AreaSetupView<Bar: NSView>: NSView {
         codeScan?.cancel()
         codeScan = nil
         codeChips.clear()
+    }
+
+    // MARK: Fitting to what the area holds
+
+    /// Whether B can fit the area to what it holds: an area that can be adjusted, on a frozen screen.
+    var canFitToContent: Bool {
+        guard adjustableArea != nil, let overlay = superview as? OverlayView else { return false }
+        return overlay.isFrozen && overlay.frame() != nil
+    }
+
+    /// What VoiceOver's help adds where B can fit the area.
+    static var fitHelp: String {
+        String(localized: "B fits the area to the edges of what’s inside it; press B again or Command-Z to put it back.", bundle: .module)
+    }
+
+    /// Whether the edges of a large area are being looked for, for tests.
+    var isFittingToContent: Bool { fitSearch != nil }
+
+    /// Fits the area to the edges of what it holds on the frozen screen (B), as Measure fits a box: in the shape kept,
+    /// if one is, and never smaller than the smallest area. With the area still as the last fit left it, puts back the
+    /// area as it was instead. An area over 250,000 pixels is looked at in the background, and anything that changes
+    /// the area first drops what is found. Nothing to fit to beeps.
+    func fitToContent() {
+        if let fit, adjustableArea == fit.fitted { return unfit() }
+        guard adjustment == nil, canFitToContent, let area = adjustableArea, let frame = (superview as? OverlayView)?.frame() else {
+            return NSSound.beep()
+        }
+        cancelFit()
+        let tolerance = edgeTolerance
+        let scale = frame.pixelsPerPoint
+        guard area.width * scale * area.height * scale > 250_000 else {
+            return applyFit(frame.contentBounds(in: area, tolerance: tolerance), to: area)
+        }
+        let worker = Task.detached(priority: .userInitiated) {
+            frame.contentBounds(in: area, tolerance: tolerance)
+        }
+        fitSearch = Task { [weak self] in
+            let content = await withTaskCancellationHandler {
+                await worker.value
+            } onCancel: {
+                worker.cancel()
+            }
+            guard !Task.isCancelled, let self, self.adjustableArea == area, self.adjustment == nil else { return }
+            self.fitSearch = nil
+            self.applyFit(content, to: area)
+        }
+    }
+
+    /// Takes the least area holding `content` (global points), the edges found in `drawn`, as the area: inside `drawn`,
+    /// so nothing that wasn't framed comes in, and not at all when the smallest area or the shape kept can't fit there.
+    private func applyFit(_ content: CGRect?, to drawn: CGRect) {
+        let framed = AreaFrame.local(drawn, on: display).intersection(bounds)
+        guard let content, case let held = AreaFrame.holding(AreaFrame.local(content, on: display), keeping: keptRatio, in: framed),
+              held.width <= framed.width, held.height <= framed.height, setArea(held),
+              let fitted = adjustableArea, fitted != drawn else {
+            NSSound.beep()
+            VoiceOver.announce(String(localized: "No edges to fit to inside the area", bundle: .module), from: self, priority: .medium)
+            return
+        }
+        fit = (drawn, fitted)
+        NSAccessibility.post(element: self, notification: .valueChanged)
+        let reading = AreaFrame.pixelReading(fitted.size, pixelsPerPoint: display.pixelsPerPoint)
+        VoiceOver.announce(String(localized: "Fitted to what’s inside: \(reading)", bundle: .module), from: self, priority: .medium)
+    }
+
+    /// Puts back the area as it was before B fitted it.
+    private func unfit() {
+        guard let fit else { return }
+        self.fit = nil
+        guard setArea(AreaFrame.local(fit.drawn, on: display)) else { return }
+        NSAccessibility.post(element: self, notification: .valueChanged)
+        let reading = AreaFrame.pixelReading(fit.drawn.size, pixelsPerPoint: display.pixelsPerPoint)
+        VoiceOver.announce(String(localized: "Back to the area as drawn: \(reading)", bundle: .module), from: self, priority: .medium)
+    }
+
+    private func cancelFit() {
+        fitSearch?.cancel()
+        fitSearch = nil
+    }
+
+    override func viewWillMove(toSuperview newSuperview: NSView?) {
+        super.viewWillMove(toSuperview: newSuperview)
+        if newSuperview == nil { cancelFit() }
     }
 
     // MARK: Input
@@ -210,6 +303,7 @@ class AreaSetupView<Bar: NSView>: NSView {
         self.adjustment = adjustment
         chrome.showsThirds = true
         clearCodes()
+        cancelFit()
         placeBar()
     }
 
@@ -261,11 +355,24 @@ class AreaSetupView<Bar: NSView>: NSView {
         case 36, 76: // Return, Enter
             primaryAction()
         default:
+            let character = event.charactersIgnoringModifiers?.lowercased()
             // Q goes through the codes' cards, one after another: the keyboard's way to the chips.
-            if event.charactersIgnoringModifiers?.lowercased() == "q", event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+            if character == "q", event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
                codeChips.openNextCard() { return }
+            if character == "b", event.modifierFlags.intersection([.shift, .control, .option, .command]).isEmpty, adjustableArea != nil {
+                return fitToContent()
+            }
             super.keyDown(with: event)
         }
+    }
+
+    /// Command-Z puts back the area as it was while B's fit stands; a size being typed keeps the field's own Undo.
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard event.modifierFlags.intersection([.shift, .control, .option, .command]) == .command,
+              event.charactersIgnoringModifiers?.lowercased() == "z", !(window?.firstResponder is NSText),
+              let fit, adjustableArea == fit.fitted else { return super.performKeyEquivalent(with: event) }
+        unfit()
+        return true
     }
 }
 

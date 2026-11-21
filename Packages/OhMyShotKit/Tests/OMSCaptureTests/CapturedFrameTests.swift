@@ -152,4 +152,25 @@ struct CapturedFrameTests {
         let same = try #require(CapturedFrame.stitched(sameParts, covering: area, pixelsPerPoint: 2))
         #expect(same.image.colorSpace?.name == CGColorSpace.sRGB)
     }
+
+    /// The edges of what an area holds come back in global points, found on its part of the picture and a margin as they
+    /// would be on the whole picture.
+    @Test func theContentBoundsOfAnAreaAreFoundInItsPartAsInTheWhole() throws {
+        let frame = frame()
+        // The block is 20 points square at (-300, 330) in global space.
+        let block = CGRect(x: -300, y: 330, width: 20, height: 20)
+        #expect(frame.contentBounds(in: CGRect(x: -320, y: 300, width: 100, height: 80)) == block)
+        let grid = try #require(PixelGrid(frame.image, pixelsPerPoint: 2))
+        // Areas whose sides run close by the block's edges, where the detector looks past the area's side.
+        for area in [CGRect(x: -302, y: 328, width: 30, height: 30), CGRect(x: -305, y: 325, width: 26, height: 26), CGRect(x: -400, y: 100, width: 400, height: 300)] {
+            let pixels = CGRect(x: (area.minX + 400) * 2, y: (400 - area.maxY) * 2, width: area.width * 2, height: area.height * 2)
+            let whole = grid.contentBounds(in: pixels).map {
+                CGRect(x: -400 + $0.minX / 2, y: 400 - $0.maxY / 2, width: $0.width / 2, height: $0.height / 2)
+            }
+            #expect(frame.contentBounds(in: area) == whole, "\(area)")
+        }
+        // White alone has no edges, and an area off the picture has nothing in it.
+        #expect(frame.contentBounds(in: CGRect(x: -100, y: 120, width: 60, height: 60)) == nil)
+        #expect(frame.contentBounds(in: CGRect(x: 100, y: 100, width: 60, height: 60)) == nil)
+    }
 }

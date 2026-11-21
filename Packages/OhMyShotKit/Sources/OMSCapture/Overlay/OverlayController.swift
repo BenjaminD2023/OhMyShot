@@ -871,6 +871,7 @@ public final class OverlayController {
         )
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
         setup.codeFinder = codes
+        setup.edgeTolerance = measureTolerance
         setup.onChoose = { [weak self, weak setup] choice, area in
             guard let self else { return }
             if sizing {

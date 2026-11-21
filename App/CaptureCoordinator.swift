@@ -101,6 +101,7 @@ final class CaptureCoordinator {
     private func configureCaptureOverlay() {
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
+        overlay.measureTolerance = settings.measureTolerance
         overlay.lastArea = lastArea ?? settings.allInOneArea?.area(in: displays.layout)
     }
 
