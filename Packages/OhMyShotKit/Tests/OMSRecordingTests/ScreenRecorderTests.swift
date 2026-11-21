@@ -24,6 +24,14 @@ struct ScreenRecorderTests {
         return badSample!
     }
 
+    @Test func aRecordingKeepsTheDisplayAwakeAndTheReplayBufferDoesNot() {
+        #expect(ScreenRecorder.activityOptions.contains(.idleDisplaySleepDisabled))
+        #expect(ScreenRecorder.activityOptions.contains(.userInitiated))
+        guard #available(macOS 27, *) else { return }
+        #expect(!ReplayBuffer.activityOptions.contains(.idleDisplaySleepDisabled))
+        #expect(!ReplayBuffer.activityOptions.contains(.idleSystemSleepDisabled))
+    }
+
     @Test func writerFailureDuringStartupIsNotLostBeforeSessionIsInstalled() async throws {
         let url = TestMedia.temporaryMovie()
         defer { try? FileManager.default.removeItem(at: url) }

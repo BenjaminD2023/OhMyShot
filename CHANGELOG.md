@@ -35,6 +35,7 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Changed
 
+- The display stays awake while a screen recording runs, paused included, so a long recording no longer goes dark partway through. Replay's buffer still lets the display and the Mac sleep.
 - In the editor, Escape in Crop leaves Crop when the frame and its shape are as they began, as Escape leaves Background; a frame that was changed is put back first, as before.
 - A two-finger swipe closes a Quick Access card only toward the card's own edge of the screen; a swipe the other way puts it back.
 
