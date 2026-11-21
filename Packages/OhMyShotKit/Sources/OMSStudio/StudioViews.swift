@@ -274,6 +274,14 @@ struct TransportBar: View {
                 .disabled(document.selectedRange == nil)
                 .help(Text("Leave the stretch chosen on the clip out of the movie (drag along the clip, or I and O)", bundle: .module))
             }
+            Menu {
+                SpeedChoices(document: document)
+            } label: {
+                Label { Text("Speed", bundle: .module) } icon: { Image(systemName: "gauge.with.dots.needle.67percent") }
+            }
+            .fixedSize()
+            .disabled(!document.canSetSpeed)
+            .help(Text("Play the stretch chosen on the clip faster or slower", bundle: .module))
         }
         .controlSize(.regular)
         .padding(.horizontal, 14)
@@ -300,6 +308,11 @@ struct TransportBar: View {
     /// A scale with one decimal: "2.0×".
     static func scale(_ value: Double) -> String {
         oneDecimal(value) + "×"
+    }
+
+    /// A speed, a decimal only where it has one: "2×", "0.5×".
+    static func speed(_ value: Double) -> String {
+        value.formatted(.number.precision(.fractionLength(0...1))) + "×"
     }
 
     /// A time as the transport shows it, in the inspector's clock but rounded down: 0:12.34, 1:02:09.40.
@@ -370,6 +383,34 @@ struct StudioInspector: View {
                     Text("Chosen Zoom", bundle: .module)
                 }
                 .id(Self.chosenZoomID)
+            }
+            // A stretch chosen on the clip, or a speed on the timeline: how fast it plays, beside Cut.
+            if let rate = document.chosenRate {
+                Section {
+                    Picker(selection: Binding(get: { rate }, set: { document.setSpeed($0) })) {
+                        Text("As recorded", bundle: .module).tag(1.0)
+                        ForEach(StudioProject.speedRates, id: \.self) { rate in
+                            Text(verbatim: TransportBar.speed(rate)).tag(rate)
+                        }
+                    } label: {
+                        Text("Speed", bundle: .module)
+                    }
+                    if let start = document.selectedSpeed {
+                        Button(role: .destructive) {
+                            document.removeSpeed(at: start)
+                        } label: {
+                            Text("Remove Speed", bundle: .module)
+                        }
+                    } else {
+                        Button {
+                            document.deleteSelection()
+                        } label: {
+                            Text("Cut", bundle: .module)
+                        }
+                    }
+                } header: {
+                    document.selectedSpeed == nil ? Text("Chosen Stretch", bundle: .module) : Text("Chosen Speed", bundle: .module)
+                }
             }
             Section {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(44), spacing: 8), count: 5), spacing: 8) {
@@ -859,6 +900,28 @@ struct LabeledSlider: View {
             title
         }
         .accessibilityValue(Text(verbatim: reading(value)))
+    }
+}
+
+/// The speeds a chosen stretch can play at, each checked while it does, and Remove Speed for one played so already:
+/// the transport's Speed menu.
+struct SpeedChoices: View {
+    let document: StudioDocument
+
+    var body: some View {
+        ForEach(StudioProject.speedRates, id: \.self) { rate in
+            Toggle(isOn: Binding(get: { document.chosenRate == rate }, set: { _ in document.setSpeed(rate) })) {
+                Text(verbatim: TransportBar.speed(rate))
+            }
+        }
+        if document.selectedSpeed != nil {
+            Divider()
+            Button {
+                document.setSpeed(1)
+            } label: {
+                Text("Remove Speed", bundle: .module)
+            }
+        }
     }
 }
 

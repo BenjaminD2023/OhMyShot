@@ -192,6 +192,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         let item = AVPlayerItem(asset: composition.asset)
         item.videoComposition = composition.videoComposition
         item.audioMix = composition.audioMix(for: studio.project.audio)
+        item.audioTimePitchAlgorithm = StudioComposition.timePitch
         let generation = studio.compositionGeneration
         itemStatus = item.observe(\.status, options: [.initial, .new]) { [weak self] item, _ in
             guard item.status == .failed else { return }

@@ -60,6 +60,7 @@ nonisolated public enum StudioExporter {
                 AVLinearPCMIsFloatKey: true, AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
             ])
             output.audioMix = composition.audioMix(for: audio)
+            output.audioTimePitchAlgorithm = StudioComposition.timePitch
             reader.add(output)
             audioOutput = output
         }

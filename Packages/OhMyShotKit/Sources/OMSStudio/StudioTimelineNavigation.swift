@@ -9,12 +9,13 @@ nonisolated enum StudioTimelineNavigation {
     }
 
     static func items(
-        zooms: [StudioProject.Zoom], cuts: [ClosedRange<Double>], layouts: [StudioProject.CameraSegment]
+        zooms: [StudioProject.Zoom], cuts: [ClosedRange<Double>], layouts: [StudioProject.CameraSegment], speeds: [StudioProject.Speed] = []
     ) -> [Item] {
         let zoomItems = zooms.map { Item(selection: .zoom($0.id), start: $0.start, order: 0, key: $0.id.uuidString) }
         let cutItems = cuts.map { Item(selection: .cut($0.lowerBound), start: $0.lowerBound, order: 1, key: String($0.lowerBound)) }
         let layoutItems = layouts.map { Item(selection: .cameraSegment($0.id), start: $0.start, order: 2, key: $0.id.uuidString) }
-        return (zoomItems + cutItems + layoutItems).sorted {
+        let speedItems = speeds.map { Item(selection: .speed($0.start), start: $0.start, order: 3, key: String($0.start)) }
+        return (zoomItems + cutItems + layoutItems + speedItems).sorted {
             if $0.start != $1.start { return $0.start < $1.start }
             if $0.order != $1.order { return $0.order < $1.order }
             return $0.key < $1.key

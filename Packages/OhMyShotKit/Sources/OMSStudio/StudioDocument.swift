@@ -73,6 +73,10 @@ public final class StudioDocument {
     public var selectedRange: ClosedRange<Double>? {
         if case .range(let range) = selection { range } else { nil }
     }
+    /// The stretch played faster or slower chosen on the timeline, by its start.
+    public var selectedSpeed: Double? {
+        if case .speed(let start) = selection { start } else { nil }
+    }
     /// The movie the preview plays now; nil until it is first made.
     public private(set) var composition: StudioComposition?
     /// The newest composition couldn't be made (the recording couldn't be read).
@@ -311,7 +315,9 @@ public final class StudioDocument {
         try Task.checkCancellation()
         let camera = cameraMovie.map { StudioComposition.CameraSource(asset: AVURLAsset(url: $0), start: telemetry.camera?.start ?? 0) }
         let sounds = soundFiles.map { StudioComposition.SoundSource(sound: $0.sound, asset: AVURLAsset(url: $0.url)) }
-        return try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, camera: camera, sounds: sounds)
+        return try await StudioComposition.make(
+            source: AVURLAsset(url: source), renderer: renderer, cuts: project.cuts, speeds: project.speeds, camera: camera, sounds: sounds
+        )
     }
 
     /// The longest side the preview needs: the movie fitted in the preview's pixels, in steps of 128 so a
@@ -464,9 +470,60 @@ public final class StudioDocument {
         case .zoom(let id): removeZoom(id)
         case .cameraSegment(let id): removeCameraSegment(id)
         case .cut(let start): restoreCut(at: start)
+        case .speed(let start): removeSpeed(at: start)
         case .range(let range): cut(range)
         case .none: break
         }
+    }
+
+    // MARK: Speed
+
+    /// Whether Speed has a stretch to set: one chosen on the clip, or a speed chosen on the timeline.
+    public var canSetSpeed: Bool {
+        selectedRange != nil || selectedSpeed != nil
+    }
+
+    /// The speed the chosen stretch plays at: the chosen speed's, or 1 for a stretch chosen on the clip.
+    public var chosenRate: Double? {
+        if let start = selectedSpeed { return project.speeds.first { $0.start == start }?.rate }
+        return selectedRange == nil ? nil : 1
+    }
+
+    /// Plays what is chosen, a stretch of the clip or a speed on the timeline, at `rate` (1 as recorded), as one
+    /// step that Undo names. A stretch takes the speeds it overlaps out of where it is; the speed it becomes is chosen.
+    public func setSpeed(_ rate: Double) {
+        let range: ClosedRange<Double>
+        if let start = selectedSpeed, let speed = project.speeds.first(where: { $0.start == start }) {
+            range = speed.start...speed.end
+        } else if let chosen = selectedRange {
+            range = chosen
+        } else {
+            return
+        }
+        let lower = max(0, range.lowerBound), upper = min(duration, range.upperBound)
+        // A new stretch is at least a twentieth of a second; a speed already set changes, or goes, however short it was left.
+        guard upper > lower, selectedSpeed != nil || upper - lower >= 0.05 else { return }
+        // What the others keep outside the stretch, then the stretch itself.
+        var speeds = project.speeds.flatMap { speed -> [StudioProject.Speed] in
+            guard speed.end > lower, speed.start < upper else { return [speed] }
+            return [
+                StudioProject.Speed(start: speed.start, end: lower, rate: speed.rate),
+                StudioProject.Speed(start: upper, end: speed.end, rate: speed.rate),
+            ]
+        }
+        speeds.append(StudioProject.Speed(start: lower, end: upper, rate: rate))
+        change(named: rate == 1 ? String(localized: "Remove Speed", bundle: .module) : String(localized: "Change Speed", bundle: .module)) {
+            project.speeds = StudioProject.normalizedSpeeds(speeds, duration: duration)
+        }
+        selection = rate == 1 ? .none : .speed(lower)
+    }
+
+    /// Plays the stretch that starts at `start` as recorded again.
+    public func removeSpeed(at start: Double) {
+        change(named: String(localized: "Remove Speed", bundle: .module)) {
+            project.speeds.removeAll { $0.start == start }
+        }
+        if selection == .speed(start) { selection = .none }
     }
 
     // MARK: Camera layout
@@ -643,7 +700,7 @@ public final class StudioDocument {
     /// time and the movie's are read through the same parts the compositor draws each frame from, so the
     /// playhead is never anywhere but on the frame shown.
     private var keptSegments: [StudioComposition.Segment] {
-        StudioComposition.keptSegments(duration: duration, cuts: project.cuts)
+        StudioComposition.keptSegments(duration: duration, cuts: project.cuts, speeds: project.speeds)
     }
 
     /// The movie's time for the recording's `time`: the end of a cut for a time inside one.
@@ -724,6 +781,7 @@ public final class StudioDocument {
         let gone = switch selection {
         case .zoom(let id): !project.zooms.contains { $0.id == id }
         case .cut(let start): !project.cuts.contains { $0.lowerBound == start }
+        case .speed(let start): !project.speeds.contains { $0.start == start }
         case .cameraSegment(let id): !canChangeLayoutAlongTheTimeline || !project.cameraSegments.contains { $0.id == id }
         case .range, .none: false
         }

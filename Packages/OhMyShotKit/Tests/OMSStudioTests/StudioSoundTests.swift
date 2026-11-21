@@ -6,10 +6,11 @@ import Testing
 /// One at a time, as the export tests are: each makes and encodes movies.
 @Suite(.serialized)
 struct StudioSoundTests {
-    /// A movie of `seconds` at 30 fps, 320 × 200, with an AAC track for each of `sounds`: its channels and how loud
-    /// its 440 Hz tone is (0 is silence). The recorder writes the system's sound in stereo first, then the microphone in mono.
-    /// The track at `muLawTrack` is µ-law instead, which the recorder never writes and an M4A can't hold.
-    private static func movie(seconds: Double, sounds: [(channels: Int, loudness: Float)], muLawTrack: Int? = nil) async throws -> URL {
+    /// A movie of `seconds` at 30 fps, 320 × 200, its gray stepping up each second, with an AAC track for each of
+    /// `sounds`: its channels and how loud its 440 Hz tone is (0 is silence). The recorder writes the system's sound
+    /// in stereo first, then the microphone in mono. The track at `muLawTrack` is µ-law instead, which the recorder
+    /// never writes and an M4A can't hold.
+    static func movie(seconds: Double, sounds: [(channels: Int, loudness: Float)], muLawTrack: Int? = nil) async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "OMSStudioSoundTests-\(UUID().uuidString).mov")
         let writer = try AVAssetWriter(outputURL: url, fileType: .mov)
         let video = AVAssetWriterInput(mediaType: .video, outputSettings: [
@@ -42,7 +43,7 @@ struct StudioSoundTests {
             CVPixelBufferPoolCreatePixelBuffer(nil, adaptor.pixelBufferPool!, &buffer)
             let pixels = try #require(buffer)
             CVPixelBufferLockBaseAddress(pixels, [])
-            memset(CVPixelBufferGetBaseAddress(pixels), 90, CVPixelBufferGetBytesPerRow(pixels) * 200)
+            memset(CVPixelBufferGetBaseAddress(pixels), Int32(60 + frame / 30 * 40), CVPixelBufferGetBytesPerRow(pixels) * 200)
             CVPixelBufferUnlockBaseAddress(pixels, [])
             adaptor.append(pixels, withPresentationTime: CMTime(value: CMTimeValue(frame), timescale: 30))
             // The sound of the same thirtieth of a second, 1600 samples, alongside.
@@ -100,13 +101,13 @@ struct StudioSoundTests {
         return sample!
     }
 
-    private static func folder() throws -> URL {
+    static func folder() throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "OMSStudioSoundTests-\(UUID().uuidString)")
         try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
         return url
     }
 
-    private static func renderer(_ project: StudioProject, duration: Double) -> StudioRenderer {
+    static func renderer(_ project: StudioProject, duration: Double) -> StudioRenderer {
         StudioRenderer(
             telemetry: StudioTelemetry(width: 160, height: 100, pixelsPerPoint: 2), project: project, duration: duration,
             recordingSize: CGSize(width: 320, height: 200), background: nil
@@ -114,7 +115,7 @@ struct StudioSoundTests {
     }
 
     /// The channels of each of the movie's audio tracks, and its length.
-    private static func audio(of url: URL) async throws -> [(channels: Int, seconds: Double)] {
+    static func audio(of url: URL) async throws -> [(channels: Int, seconds: Double)] {
         var tracks: [(Int, Double)] = []
         for track in try await AVURLAsset(url: url).loadTracks(withMediaType: .audio) {
             let description = try await track.load(.formatDescriptions).first
@@ -125,31 +126,37 @@ struct StudioSoundTests {
     }
 
     /// How loud the movie's sound is, as the root mean square of its samples; nil when it has none.
-    private static func loudness(of url: URL) async throws -> Double? {
+    static func loudness(of url: URL) async throws -> Double? {
+        guard let values = try await samples(of: url) else { return nil }
+        return values.isEmpty ? 0 : (values.reduce(0) { $0 + Double($1 * $1) } / Double(values.count)).squareRoot()
+    }
+
+    /// The movie's sound as float samples at 48 kHz, its first channel only; nil when it has none.
+    static func samples(of url: URL) async throws -> [Float]? {
         let asset = AVURLAsset(url: url)
         guard let track = try await asset.loadTracks(withMediaType: .audio).first else { return nil }
         let reader = try AVAssetReader(asset: asset)
         let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
-            AVFormatIDKey: kAudioFormatLinearPCM, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
+            AVFormatIDKey: kAudioFormatLinearPCM, AVSampleRateKey: 48_000, AVLinearPCMBitDepthKey: 32, AVLinearPCMIsFloatKey: true,
             AVLinearPCMIsNonInterleaved: false, AVLinearPCMIsBigEndianKey: false,
         ])
         reader.add(output)
         reader.startReading()
-        var sum = 0.0, count = 0
+        var first: [Float] = []
         while let sample = output.copyNextSampleBuffer() {
             guard let block = CMSampleBufferGetDataBuffer(sample) else { continue }
+            let channels = Int(sample.formatDescription.flatMap { CMAudioFormatDescriptionGetStreamBasicDescription($0)?.pointee.mChannelsPerFrame } ?? 1)
             let length = CMBlockBufferGetDataLength(block)
             var values = [Float](repeating: 0, count: length / 4)
             values.withUnsafeMutableBytes { bytes in
                 _ = CMBlockBufferCopyDataBytes(block, atOffset: 0, dataLength: length, destination: bytes.baseAddress!)
             }
-            for value in values { sum += Double(value * value) }
-            count += values.count
+            first += stride(from: 0, to: values.count, by: max(channels, 1)).map { values[$0] }
         }
-        return count == 0 ? 0 : (sum / Double(count)).squareRoot()
+        return first
     }
 
-    private static func exported(_ composition: StudioComposition) async throws -> URL {
+    static func exported(_ composition: StudioComposition) async throws -> URL {
         let url = FileManager.default.temporaryDirectory.appending(path: "OMSStudioSoundTests-\(UUID().uuidString).mp4")
         _ = try await StudioExporter.export(composition, to: url)
         return url
