@@ -61,6 +61,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     }
 
     public var onClose: (() -> Void)?
+    public var onSaved: ((URL, Bool) -> Void)?
     public let studio: StudioDocument
     let model = StudioWindowModel()
     private let actions: Actions
@@ -330,9 +331,16 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         guard makingGIF == nil else { return NSSound.beep() }
         Task {
             guard let url = await exportIfNeeded() else { return }
-            guard actions.save(url) != nil else { return NSSound.beep() }
+            guard saveCopy(url) != nil else { return NSSound.beep() }
             model.flashSaved()
         }
+    }
+
+    @discardableResult
+    func saveCopy(_ url: URL) -> URL? {
+        guard let destination = actions.save(url) else { return nil }
+        onSaved?(destination, true)
+        return destination
     }
 
     func saveMovieAs() {
@@ -344,13 +352,33 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             panel.nameFieldStringValue = url.lastPathComponent
             panel.allowedContentTypes = [.mpeg4Movie]
             guard await panel.beginSheetModal(for: window) == .OK, let destination = panel.url else { return }
-            do {
-                try await AtomicFileCopy.copy(from: url, to: destination)
-                model.flashSaved()
-            } catch {
-                fail(error)
+            if let result = await saveCopyAs(from: url, to: destination) {
+                switch result {
+                case .saved(_):
+                    model.flashSaved()
+                case .failed(let failure):
+                    fail(failure)
+                case .cancelled:
+                    break
+                }
             }
         }
+    }
+
+    func saveCopyAs(from source: URL, to destination: URL?) async -> SaveOutcome? {
+        await saveCopyAs(from: source, to: destination) { source, destination in
+            await AtomicFileCopy.save(source, as: destination)
+        }
+    }
+
+    func saveCopyAs(from source: URL, to destination: URL?, save: (URL, URL) async -> SaveOutcome) async -> SaveOutcome? {
+        guard let destination else { return nil }
+        let project = studio.project
+        let outcome = await save(source, destination)
+        if case .saved(let url) = outcome {
+            onSaved?(url, studio.project == project)
+        }
+        return outcome
     }
 
     // MARK: Background
@@ -492,7 +520,11 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         let alert = NSAlert()
         alert.alertStyle = .warning
         alert.messageText = title
-        alert.informativeText = error.localizedDescription
+        if let failure = error as? ExportFailure {
+            alert.informativeText = "\(failure.summary)\n\(failure.detail)"
+        } else {
+            alert.informativeText = error.localizedDescription
+        }
         guard let window, window.isVisible else {
             NSApp.activate()
             alert.runModal()

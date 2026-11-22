@@ -190,6 +190,64 @@ struct QuickAccessCompletionTests {
         controller.dismissAll()
     }
 
+    @Test func saveAllUsesCurrentStateAfterAnEarlierSaveWaits() async throws {
+        let first = try item(), savedElsewhere = try item(), removed = try item(), trashing = try item()
+        let (startedEvents, announceStarted) = AsyncStream<Void>.makeStream()
+        let (closedEvents, announceClosed) = AsyncStream<UUID>.makeStream()
+        let startedReader = AsyncEventReader(startedEvents)
+        let closedReader = AsyncEventReader(closedEvents)
+        var resumeFirstSave: CheckedContinuation<SaveOutcome, Never>?
+        var savedIDs: [UUID] = []
+        var configured = actions(succeeds: true)
+        configured.closed = { announceClosed.yield($0.id) }
+        configured.save = { item, _ in
+            savedIDs.append(item.id)
+            if item.id == first.id {
+                return await withCheckedContinuation { continuation in
+                    resumeFirstSave = continuation
+                    announceStarted.yield(())
+                }
+            }
+            return .saved(item.fileURL)
+        }
+        let controller = QuickAccessController(actions: configured)
+        controller.maximumCards = 4
+        defer {
+            if let continuation = resumeFirstSave {
+                resumeFirstSave = nil
+                continuation.resume(returning: .cancelled)
+            }
+            controller.undoTrash(trashing.id)
+            controller.dismissAll()
+            announceStarted.finish()
+            announceClosed.finish()
+        }
+        [first, savedElsewhere, removed, trashing].forEach { controller.add($0) }
+        controller.saveAll()
+        guard let _ = await waitForEvent(from: startedReader) else {
+            #expect(Bool(false), "Timed out waiting for Save All to start")
+            return
+        }
+
+        controller.markSaved(savedElsewhere.id, at: URL(filePath: "/tmp/history-export.png"))
+        controller.remove(removed.id)
+        controller.perform(.moveToTrash, on: trashing, keyed: false)
+        let continuation = try #require(resumeFirstSave)
+        resumeFirstSave = nil
+        continuation.resume(returning: .saved(URL(filePath: "/tmp/first-export.png")))
+        guard let firstClosed = await waitForEvent(from: closedReader), let nextClosed = await waitForEvent(from: closedReader) else {
+            #expect(Bool(false), "Timed out waiting for Save All cards to close")
+            return
+        }
+
+        #expect(firstClosed == first.id)
+        #expect(nextClosed == savedElsewhere.id)
+        #expect(savedIDs == [first.id])
+        #expect(controller.item(savedElsewhere.id) == nil)
+        #expect(controller.item(removed.id) == nil)
+        #expect(controller.item(trashing.id) != nil)
+    }
+
     private static let diskFull = ExportFailure(cause: .diskFull, summary: "Couldn’t save: the disk is full", detail: "The disk is full.")
 
     private func card(in controller: QuickAccessController) throws -> CaptureCardView {
@@ -335,6 +393,31 @@ struct QuickAccessCompletionTests {
         #expect(controller.showFailure(Self.diskFull, for: capture.id))
         controller.markSaved(capture.id, at: URL(filePath: "/tmp/saved.png"))
         #expect(try card(in: controller).failure == nil)
+    }
+
+    /// A capture saved from Capture History (or the editor) while its card is up is not saved again when the card closes by
+    /// itself with Save and Close: the card goes with the copy saved there, and none of its own.
+    @Test func saveAndCloseSavesNoSecondCopyOfACaptureSavedElsewhere() async throws {
+        var actions = actions(succeeds: true)
+        var saves = 0
+        actions.save = { _, _ in
+            saves += 1
+            return .saved(URL(filePath: "/tmp/saved.png"))
+        }
+        actions.preferences = { QuickAccessPreferences(closeAfter: 3, closeAction: .saveAndClose) }
+        var closed: [QuickAccessItem] = []
+        actions.closed = { closed.append($0) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item(), export = URL(filePath: "/tmp/history-export.png")
+        controller.add(capture)
+        controller.markSaved(capture.id, at: export)
+        controller.closeDueCards(at: ProcessInfo.processInfo.systemUptime + 3600)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(saves == 0)
+        #expect(closed.map(\.id) == [capture.id])
+        #expect(closed.first?.savedURL == export)
+        #expect(closed.first?.ownSavedURL == nil)
     }
 
     /// Moved to the Trash and brought back, a card whose copy could not be saved still says so and is still held.

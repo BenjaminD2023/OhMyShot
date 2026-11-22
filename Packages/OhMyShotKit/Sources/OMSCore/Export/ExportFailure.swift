@@ -4,7 +4,7 @@ import Foundation
 /// A copy of a capture that could not be written where it was going, saved or converted to be handed over, told as a
 /// person reads it: a short sentence for a card's notice badge or the reading by the pointer, and the system's own
 /// account of what went wrong, for a tooltip and VoiceOver.
-public struct ExportFailure: Error, Equatable, Sendable {
+public struct ExportFailure: Error, LocalizedError, Equatable, Sendable {
     /// What was being made.
     public enum Step: Equatable, Sendable {
         /// A copy saved where the person asked.
@@ -34,6 +34,9 @@ public struct ExportFailure: Error, Equatable, Sendable {
     public let summary: String
     /// The system's description of the error, for a tooltip and VoiceOver.
     public let detail: String
+
+    public var errorDescription: String? { summary }
+    public var failureReason: String? { detail }
 
     public init(step: Step = .saving, cause: Cause, summary: String, detail: String) {
         self.step = step

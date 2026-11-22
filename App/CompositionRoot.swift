@@ -341,6 +341,9 @@ final class CompositionRoot {
         recordings.onChanged = { [weak self] entry in
             self?.recordingChanged(entry)
         }
+        recordings.onSaved = { [weak self] id, destination, isCurrent in
+            self?.quickAccess.markSaved(id, at: destination, byCard: false, isCurrent: isCurrent)
+        }
         recordings.shortcutKeys = { [weak self] in
             self?.hotkeys.keys(for: .recordScreen)
         }
@@ -396,7 +399,7 @@ final class CompositionRoot {
             }
         })
         annotations.onChange = { [weak self] entry, data in
-            self?.pictureChanged(entry, data: data)
+            self?.pictureChanged(entry, data: data, savedCopyIsStale: true)
         }
         // A card is not closed by itself under the editor that has its capture open.
         annotations.onEditing = { [weak self] id, editing in self?.quickAccess.setEditing(editing, for: id) }

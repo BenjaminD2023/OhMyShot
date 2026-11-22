@@ -26,6 +26,13 @@ struct ExportFailureTests {
         #expect(failure.detail == error.localizedDescription)
     }
 
+    @Test func exposesItsSummaryAndDetailAsLocalizedError() {
+        let failure = ExportFailure(cause: .diskFull, summary: "Couldn’t save: the disk is full", detail: "No space remains.")
+        #expect(failure.localizedDescription == failure.summary)
+        #expect(failure.errorDescription == failure.summary)
+        #expect(failure.failureReason == failure.detail)
+    }
+
     @Test func findsTheSystemCallsErrorUnderFoundations() {
         let underlying = NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))
         let error = NSError(domain: NSCocoaErrorDomain, code: CocoaError.fileWriteUnknown.rawValue, userInfo: [NSUnderlyingErrorKey: underlying])

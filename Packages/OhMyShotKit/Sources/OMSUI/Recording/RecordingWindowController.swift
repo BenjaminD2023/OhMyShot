@@ -71,6 +71,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     public var onClose: (() -> Void)?
+    public var onSaved: ((URL, Bool) -> Void)?
     /// The recording's file in the history.
     public private(set) var fileURL: URL
 
@@ -83,6 +84,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     private var closed: (() -> Void)?
     /// The edits being kept now, which a second keep waits for.
     private var keeping: Task<URL?, Never>?
+    private var contentRevision = 0
     /// The audio tracks of the movie being played, which the volume is previewed on.
     private var audioTracks: [AVAssetTrack] = []
 
@@ -301,7 +303,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         let task = Task { () -> URL? in
             do {
                 let url = try await actions.keep(edit)
-                reload(url)
+                contentChanged(to: url)
                 model.canRevert = true
                 return url
             } catch {
@@ -339,6 +341,11 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         loadAudio()
     }
 
+    func contentChanged(to url: URL) {
+        contentRevision += 1
+        reload(url)
+    }
+
     // MARK: Actions
 
     func copyRecording() {
@@ -353,10 +360,17 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     func saveRecording() {
         Task {
             guard let url = await keepEdits() else { return }
-            guard actions.save(url) != nil else { return NSSound.beep() }
+            guard saveCopy(url) != nil else { return NSSound.beep() }
             model.flashSaved()
             announce(String(localized: "Saved", bundle: .module))
         }
+    }
+
+    @discardableResult
+    func saveCopy(_ url: URL) -> URL? {
+        guard let destination = actions.save(url) else { return nil }
+        onSaved?(destination, true)
+        return destination
     }
 
     func saveAs() {
@@ -368,13 +382,34 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
             panel.allowedContentTypes = [UTType(filenameExtension: url.pathExtension) ?? .mpeg4Movie]
             let response = await panel.beginSheetModal(for: window)
             guard response == .OK, let destination = panel.url else { return }
-            do {
-                try await AtomicFileCopy.copy(from: url, to: destination)
-                model.flashSaved()
-            } catch {
-                fail(error)
+            if let result = await saveCopyAs(from: url, to: destination) {
+                switch result {
+                case .saved(_):
+                    model.flashSaved()
+                case .failed(let failure):
+                    fail(failure)
+                case .cancelled:
+                    break
+                }
             }
         }
+    }
+
+    func saveCopyAs(from source: URL, to destination: URL?) async -> SaveOutcome? {
+        await saveCopyAs(from: source, to: destination) { source, destination in
+            await AtomicFileCopy.save(source, as: destination)
+        }
+    }
+
+    func saveCopyAs(from source: URL, to destination: URL?, save: (URL, URL) async -> SaveOutcome) async -> SaveOutcome? {
+        guard let destination else { return nil }
+        let revision = contentRevision
+        let edit = self.edit
+        let outcome = await save(source, destination)
+        if case .saved(let url) = outcome {
+            onSaved?(url, revision == contentRevision && edit == self.edit)
+        }
+        return outcome
     }
 
     func makeGIF() {
@@ -399,7 +434,7 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
             defer { model.busy = nil }
             do {
                 let url = try await actions.revert()
-                reload(url)
+                contentChanged(to: url)
                 model.canRevert = false
             } catch {
                 fail(error)
@@ -437,9 +472,16 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     private func fail(_ error: any Error) {
         NSSound.beep()
         let alert = NSAlert(error: error)
+        let exportFailure = error as? ExportFailure
+        if let exportFailure {
+            alert.messageText = exportFailure.summary
+            alert.informativeText = exportFailure.detail
+        }
         guard let window, window.isVisible else {
             // Edits kept as the window closed: said in an alert of its own, so they are not lost without a word.
-            alert.messageText = String(localized: "The edited recording couldn’t be kept", bundle: .module)
+            if exportFailure == nil {
+                alert.messageText = String(localized: "The edited recording couldn’t be kept", bundle: .module)
+            }
             NSApp.activate()
             alert.runModal()
             return

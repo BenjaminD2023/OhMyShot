@@ -26,8 +26,15 @@ public enum AtomicFileCopy {
     /// History is no copy of it: taken for one, its card would close as saved, and with History off the capture would
     /// then go, taking the only file with it.
     public static func refuseSaving(over source: URL?, at destination: URL) throws {
-        guard let source, let ownFile = identifier(of: source), let chosen = identifier(of: destination), ownFile.isEqual(chosen) else { return }
+        guard let source, isSameFile(source, destination) else { return }
         throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: destination.path])
+    }
+
+    /// Whether `first` and `second` are one file now, however the folders on their way are written, and in either letter
+    /// case on a disk that ignores case; a link to a file is a file of its own. False when either is missing.
+    public static func isSameFile(_ first: URL, _ second: URL) -> Bool {
+        guard let one = identifier(of: first), let other = identifier(of: second) else { return false }
+        return one.isEqual(other)
     }
 
     private static func identifier(of url: URL) -> (any NSObjectProtocol)? {
