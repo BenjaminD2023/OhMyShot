@@ -21,6 +21,17 @@ struct ScreenCapturerTests {
         #expect(AreaFrame.local(rect, on: primary) == CGRect(x: 100, y: 50, width: 100, height: 50))
     }
 
+    @Test func onlyTheRequestedWindowOwnedByThisProcessCanBeExplicitlyIncluded() {
+        #expect(ScreenCapturer.isScopedOwnWindow(requestedID: 17, actualID: 17, ownerProcessID: 42, currentProcessID: 42))
+        #expect(!ScreenCapturer.isScopedOwnWindow(requestedID: 17, actualID: 18, ownerProcessID: 42, currentProcessID: 42))
+        #expect(!ScreenCapturer.isScopedOwnWindow(requestedID: 17, actualID: 17, ownerProcessID: 43, currentProcessID: 42))
+        #expect(!ScreenCapturer.isScopedOwnWindow(requestedID: nil, actualID: 17, ownerProcessID: 42, currentProcessID: 42))
+    }
+
+    @Test func failedExplicitLauncherLookupFallsBackToNoOwnWindowException() {
+        #expect(ScreenCapturer.scopedOwnWindows(nil, requestedID: 17, currentProcessID: 42).isEmpty)
+    }
+
     @Test func regionOnADisplayLeftOfAndAboveTheOrigin() {
         let builtIn = Self.display(CGRect(x: -2056, y: 111, width: 2056, height: 1329))
         let rect = CGRect(x: -2000, y: 200, width: 300, height: 100)

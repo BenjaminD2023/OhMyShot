@@ -83,8 +83,14 @@ final class CaptureCoordinator {
     ///   - area: chosen already, in global points (the URL API's `all-in-one` with an area): it shows chosen, and
     ///     Return takes it.
     ///   - followUp: the URL API's action, and whoever waits for the capture.
-    func captureArea(copiesToClipboard: Bool = true, freezes: Bool? = nil, choosing area: CGRect? = nil, followUp: CaptureFollowUp = .none) {
-        begin(mode: .area, copiesToClipboard: copiesToClipboard, freezes: freezes, area: area, followUp: followUp)
+    func captureArea(
+        copiesToClipboard: Bool = true, freezes: Bool? = nil, choosing area: CGRect? = nil,
+        followUp: CaptureFollowUp = .none, includingLauncherWindowID: CGWindowID? = nil
+    ) {
+        begin(
+            mode: .area, copiesToClipboard: copiesToClipboard, freezes: freezes, area: area, followUp: followUp,
+            includingLauncherWindowID: includingLauncherWindowID
+        )
     }
 
     /// The URL API's `capture-area` with an area: captured at once, as it is on screen, without the overlay. It is
@@ -308,8 +314,12 @@ final class CaptureCoordinator {
     /// at its own size. It is kept in the history like any capture, without a Quick Access card or the
     /// clipboard: the pin is where it went.
     /// - Parameter freezes: whether the screen holds still while choosing; nil follows the setting.
-    func pinArea(freezes: Bool? = nil, followUp: CaptureFollowUp = .none) {
-        begin(mode: .area, freezes: freezes, followUp: CaptureFollowUp(action: .pin, asksForName: followUp.asksForName, kept: followUp.kept, done: followUp.done))
+    func pinArea(freezes: Bool? = nil, followUp: CaptureFollowUp = .none, includingLauncherWindowID: CGWindowID? = nil) {
+        begin(
+            mode: .area, freezes: freezes,
+            followUp: CaptureFollowUp(action: .pin, asksForName: followUp.asksForName, kept: followUp.kept, done: followUp.done),
+            includingLauncherWindowID: includingLauncherWindowID
+        )
     }
 
     // MARK: Self-Timer
@@ -435,14 +445,40 @@ final class CaptureCoordinator {
         settings.screenshotFormat == .heic && !settings.convertsToSRGB
     }
 
+    private static func cursorOverlay(at point: CGPoint) -> (image: CGImage, frame: CGRect)? {
+        let cursor = NSCursor.arrow
+        let size = cursor.image.size
+        var proposedRect = CGRect(origin: .zero, size: size)
+        guard let image = cursor.image.cgImage(forProposedRect: &proposedRect, context: nil, hints: nil) else { return nil }
+        return (
+            image,
+            CGRect(x: point.x - cursor.hotSpot.x, y: point.y - size.height + cursor.hotSpot.y, width: size.width, height: size.height)
+        )
+    }
+
     /// Captures an area, on one display or across several, and delivers it, as the overlay does after a
     /// drag on a live screen. Also used by scripted checks.
     /// - Parameter copiesToClipboard: false leaves the clipboard alone whatever the settings say, so
     ///   scripted test captures never replace what the user copied.
-    func captureArea(_ rect: CGRect, appName: String?, windowTitle: String? = nil, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none) async {
+    func captureArea(
+        _ rect: CGRect, appName: String?, windowTitle: String? = nil, copiesToClipboard: Bool = true,
+        followUp: CaptureFollowUp = .none, transientSnapshots: [TransientCaptureSnapshot] = []
+    ) async {
         let probe = LatencyProbe("capture.region")
+        let cursor = settings.screenshotShowsCursor ? Self.cursorOverlay(at: NSEvent.mouseLocation) : nil
+        let drawsCursor = !transientSnapshots.isEmpty && cursor != nil
+        let capturedShowsCursor = settings.screenshotShowsCursor && !drawsCursor
         do {
-            let frame = try await capturer.captureArea(rect, in: displays.layout, wantsHDR: wantsHDR, showsCursor: settings.screenshotShowsCursor)
+            let captured = try await capturer.captureArea(rect, in: displays.layout, wantsHDR: wantsHDR, showsCursor: capturedShowsCursor)
+            let restored = captured.restoringTransientContent(from: transientSnapshots, cursor: drawsCursor ? cursor : nil)
+            let frame: CapturedFrame
+            if let restored {
+                frame = restored
+            } else if settings.screenshotShowsCursor && !capturedShowsCursor {
+                frame = try await capturer.captureArea(rect, in: displays.layout, wantsHDR: wantsHDR, showsCursor: true)
+            } else {
+                frame = captured
+            }
             probe.end()
             await deliver(frame, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp)
         } catch {
@@ -486,7 +522,8 @@ final class CaptureCoordinator {
     // MARK: Private
 
     private func begin(
-        mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil, area: CGRect? = nil, followUp: CaptureFollowUp = .none
+        mode: OverlayController.Mode, copiesToClipboard: Bool = true, freezes: Bool? = nil, area: CGRect? = nil,
+        followUp: CaptureFollowUp = .none, includingLauncherWindowID: CGWindowID? = nil
     ) {
         guard !overlay.isActive else { return followUp.finish(nil) }
         // A new capture replaces a Self-Timer still counting down, rather than leaving it under the overlay.
@@ -495,8 +532,11 @@ final class CaptureCoordinator {
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         configureCaptureOverlay()
-        overlay.begin(mode: mode, choosing: area) { [weak self] outcome in
+        overlay.begin(
+            mode: mode, choosing: area, includingOwnWindowID: includingLauncherWindowID, transientCaptureWantsHDR: wantsHDR
+        ) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
+            let transientSnapshots = overlay.transientCaptureSnapshots
             if let area = outcome.takenArea { lastArea = area }
             switch outcome {
             case .region(let rect, _, _, let frozen?):
@@ -505,7 +545,12 @@ final class CaptureCoordinator {
                 Task { await self.deliver(frozen, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp) }
             case .region(let rect, _, _, nil):
                 previousArea = rect
-                Task { await self.captureArea(rect, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                Task {
+                    await self.captureArea(
+                        rect, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard,
+                        followUp: followUp, transientSnapshots: transientSnapshots
+                    )
+                }
             case .window(let target, let modifiers):
                 // A window is captured on its own, frozen or not: with its shadow and its transparent
                 // corners, which the frozen screen does not have.

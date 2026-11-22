@@ -143,6 +143,7 @@ final class OverlayView: NSView {
     private var increasedContrast = false
 
     private let backdrop = CALayer()
+    private let transientContent = CALayer()
     private let room = CAShapeLayer()
     private let outline = CAShapeLayer()
     private let border = CAShapeLayer()
@@ -212,6 +213,7 @@ final class OverlayView: NSView {
         measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
         allInOne: Bool = false, snapsToText: Bool = false
     ) {
+        clearTransientContent()
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
@@ -305,6 +307,33 @@ final class OverlayView: NSView {
         }
     }
 
+    func showTransientContent(from snapshots: [TransientCaptureSnapshot]) {
+        clearTransientContent()
+        transientContent.isHidden = mode != .area
+        for snapshot in snapshots {
+            for region in snapshot.regions {
+                guard let patch = snapshot.frame.cropped(to: region.intersection(display.frame)) else { continue }
+                let image = CALayer()
+                image.contents = patch.image
+                image.contentsScale = display.backingScale
+                image.contentsGravity = .resize
+                image.frame = local(patch.frame)
+                transientContent.addSublayer(image)
+            }
+        }
+    }
+
+    var debugTransientPatchCount: Int { transientContent.sublayers?.count ?? 0 }
+    var debugTransientPatchFrames: [CGRect] { transientContent.sublayers?.map(\.frame) ?? [] }
+    var debugTransientContentIsBelowDimmingAndSelection: Bool {
+        guard let layers = layer?.sublayers,
+              let transientIndex = layers.firstIndex(where: { $0 === transientContent }),
+              let dimmingIndex = layers.firstIndex(where: { $0 === room }),
+              let selectionIndex = layers.firstIndex(where: { $0 === outline }) else { return false }
+        return transientIndex < dimmingIndex && transientIndex < selectionIndex
+    }
+    var debugTransientContentIsHidden: Bool { transientContent.isHidden }
+
     /// Turns this display's overlay into Measure where it stands (All-In-One's M): the frame it holds stays, and holds
     /// still even if the screen showed live, since the ruler reads that frame; the bar goes, as Measure has none, and the
     /// ruler takes the pointer at `globalPointer`.
@@ -322,6 +351,7 @@ final class OverlayView: NSView {
 
     /// Switches between dragging a region and clicking a window, keeping the pointer where it is.
     func switchMode(to mode: Mode, windows: [WindowTarget]) {
+        transientContent.isHidden = mode != .area
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
@@ -339,6 +369,7 @@ final class OverlayView: NSView {
     /// Drops the frame so its memory is released while the overlay is hidden, and takes away any
     /// interface in-place annotation put over it.
     func clear() {
+        clearTransientContent()
         capturedFrame = nil
         selectedWindows = []
         highlightedWindow = nil
@@ -1064,6 +1095,9 @@ final class OverlayView: NSView {
         room.frame = bounds
         room.fillRule = .evenOdd
 
+        transientContent.frame = bounds
+        transientContent.masksToBounds = true
+
         for line in [outline, crosshairOutline] {
             line.lineWidth = Theme.Overlay.borderWidth + 2
             line.fillColor = nil
@@ -1111,7 +1145,7 @@ final class OverlayView: NSView {
         // Over what a frame set up for its next step draws on this view (its views lie over this view's own layers),
         // and over the lens raised there.
         keyList.layer.zPosition = 2
-        for sublayer in [backdrop, room, outline, border, snapEdges, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer, keyList.layer] {
+        for sublayer in [backdrop, transientContent, room, outline, border, snapEdges, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer, keyList.layer] {
             root.addSublayer(sublayer)
         }
         withoutAnimation {
@@ -1481,6 +1515,10 @@ final class OverlayView: NSView {
 
     private func local(_ rect: CGRect) -> CGRect {
         rect.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+    }
+
+    private func clearTransientContent() {
+        transientContent.sublayers?.forEach { $0.removeFromSuperlayer() }
     }
 
     private func global(_ point: CGPoint) -> CGPoint {

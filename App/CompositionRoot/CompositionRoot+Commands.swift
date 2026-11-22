@@ -14,10 +14,15 @@ import UniformTypeIdentifiers
 /// What the global shortcuts and the URL API's commands run.
 extension CompositionRoot {
     func handle(_ shortcut: CaptureShortcut) {
-        statusItem?.dismissLauncher()
+        let keepsLauncherOpen = StatusItemController.shouldKeepLauncherOpen(for: shortcut)
+        let launcherWindowID = keepsLauncherOpen ? statusItem?.launcherWindowID : nil
+        if !keepsLauncherOpen { statusItem?.dismissLauncher() }
         Log.signposter.emitEvent("hotkey")
         Log.hotkeys.notice("hotkey.\(shortcut.rawValue, privacy: .public)")
-        if shortcut == .captureArea, beginOnboardingCaptureIfReady() { return }
+        if shortcut == .captureArea, beginOnboardingCaptureIfReady() {
+            if keepsLauncherOpen { statusItem?.dismissLauncher() }
+            return
+        }
         switch shortcut {
         case .openHistory:
             showHistory()
@@ -53,29 +58,33 @@ extension CompositionRoot {
         quickAccess.dismissFirstCaptureHint()
         permissions.refresh([.screenRecording])
         guard permissions.status(of: .screenRecording) == .granted else {
+            if keepsLauncherOpen { statusItem?.dismissLauncher() }
             showOnboarding()
             return
         }
         switch shortcut {
         case .captureArea:
-            captures.captureArea()
+            captures.captureArea(includingLauncherWindowID: launcherWindowID)
         case .allInOne:
             captures.allInOne()
         case .annotateArea:
             captures.annotateArea()
         case .pinArea:
-            captures.pinArea()
+            captures.pinArea(includingLauncherWindowID: launcherWindowID)
         case .captureAreaAndCopy:
-            captures.captureArea(followUp: CaptureFollowUp(action: .copy))
+            captures.captureArea(followUp: CaptureFollowUp(action: .copy), includingLauncherWindowID: launcherWindowID)
         case .captureAreaAndSave:
-            captures.captureArea(followUp: CaptureFollowUp(action: .save))
+            captures.captureArea(followUp: CaptureFollowUp(action: .save), includingLauncherWindowID: launcherWindowID)
         case .captureAreaAndAnnotate:
-            captures.captureArea(followUp: CaptureFollowUp(action: .annotate))
+            captures.captureArea(followUp: CaptureFollowUp(action: .annotate), includingLauncherWindowID: launcherWindowID)
         case .captureFullscreen:
             captures.captureFullscreen()
         case .captureAreaAndUpload:
-            guard let followUp = followUp(for: .upload, asksForName: true) else { return }
-            captures.captureArea(followUp: followUp)
+            guard let followUp = followUp(for: .upload, asksForName: true) else {
+                if keepsLauncherOpen { statusItem?.dismissLauncher() }
+                return
+            }
+            captures.captureArea(followUp: followUp, includingLauncherWindowID: launcherWindowID)
         case .captureFullscreenAndUpload:
             guard let followUp = followUp(for: .upload, asksForName: true) else { return }
             captures.captureFullscreen(followUp: followUp)

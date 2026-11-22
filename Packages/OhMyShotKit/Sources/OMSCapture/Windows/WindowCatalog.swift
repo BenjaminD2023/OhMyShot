@@ -31,6 +31,18 @@ nonisolated public struct WindowTarget: Equatable, Sendable {
     }
 }
 
+nonisolated struct TransientWindow: Equatable, Sendable {
+    let id: CGWindowID
+    let ownerPID: pid_t
+    let frame: CGRect
+    let keepsWhenPresent: Bool
+}
+
+nonisolated struct OnScreenWindowOwner: Equatable, Sendable {
+    let id: CGWindowID
+    let ownerPID: pid_t
+}
+
 /// The on-screen windows, front to back, read once when window selection starts. Hit-testing the
 /// pointer against this snapshot is plain arithmetic, so hovering costs nothing per event.
 ///
@@ -96,6 +108,76 @@ public enum WindowCatalog {
                 title: info[kCGWindowName as String] as? String,
                 pid: pid
             )
+        }
+    }
+
+    nonisolated static func transientWindows(
+        layout: DisplayLayout, frontmostPID: pid_t? = nil, includingOwnWindowID: CGWindowID? = nil
+    ) -> [TransientWindow] {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
+        return transientWindows(
+            in: list, layout: layout, ownPID: getpid(), frontmostPID: frontmostPID,
+            includingOwnWindowID: includingOwnWindowID
+        )
+    }
+
+    nonisolated static func transientWindows(
+        in list: [[String: Any]], layout: DisplayLayout, ownPID: pid_t, frontmostPID: pid_t? = nil,
+        includingOwnWindowID: CGWindowID? = nil
+    ) -> [TransientWindow] {
+        let popupMenuLevel = Int(CGWindowLevelForKey(.popUpMenuWindow))
+        let normalWindowLevel = Int(CGWindowLevelForKey(.normalWindow))
+        let screenSaverLevel = Int(CGWindowLevelForKey(.screenSaverWindow))
+        let systemChromeLevels = Set([
+            .desktopWindow, .desktopIconWindow, .dockWindow, .mainMenuWindow, .statusWindow,
+        ].map { Int(CGWindowLevelForKey($0)) })
+        return list.compactMap { info in
+            guard
+                let pid = info[kCGWindowOwnerPID as String] as? pid_t,
+                let id = info[kCGWindowNumber as String] as? CGWindowID,
+                let bounds = info[kCGWindowBounds as String] as? [String: CGFloat],
+                (info[kCGWindowAlpha as String] as? CGFloat ?? 1) > 0.01
+            else { return nil }
+            let layer = info[kCGWindowLayer as String] as? Int ?? 0
+            let isRequestedOwnWindow = id == includingOwnWindowID && pid == ownPID
+            let isExternalPopupMenu = pid != ownPID && layer == popupMenuLevel && !systemChromeLevels.contains(layer)
+            let isFrontmostAppWindow = pid == frontmostPID && pid != ownPID
+                && layer >= normalWindowLevel && layer < screenSaverLevel && !systemChromeLevels.contains(layer)
+            guard isRequestedOwnWindow || isExternalPopupMenu || isFrontmostAppWindow else { return nil }
+            let cgFrame = CGRect(x: bounds["X"] ?? 0, y: bounds["Y"] ?? 0, width: bounds["Width"] ?? 0, height: bounds["Height"] ?? 0)
+            guard cgFrame.width >= 1, cgFrame.height >= 1 else { return nil }
+            return TransientWindow(
+                id: id, ownerPID: pid, frame: layout.flipped(cgFrame),
+                keepsWhenPresent: isRequestedOwnWindow || isExternalPopupMenu
+            )
+        }
+    }
+
+    nonisolated static func onScreenWindowOwners() -> [OnScreenWindowOwner] {
+        let options: CGWindowListOption = [.optionOnScreenOnly, .excludeDesktopElements]
+        let list = CGWindowListCopyWindowInfo(options, kCGNullWindowID) as? [[String: Any]] ?? []
+        return onScreenWindowOwners(in: list)
+    }
+
+    nonisolated static func onScreenWindowOwners(in list: [[String: Any]]) -> [OnScreenWindowOwner] {
+        list.compactMap { info in
+            guard
+                let id = info[kCGWindowNumber as String] as? CGWindowID,
+                let ownerPID = info[kCGWindowOwnerPID as String] as? pid_t,
+                (info[kCGWindowAlpha as String] as? CGFloat ?? 1) > 0.01
+            else { return nil }
+            return OnScreenWindowOwner(id: id, ownerPID: ownerPID)
+        }
+    }
+
+    nonisolated static func transientWindowsToRestore(
+        _ candidates: [TransientWindow], onScreenOwners: [OnScreenWindowOwner]
+    ) -> [TransientWindow] {
+        let ownersByID = Dictionary(onScreenOwners.map { ($0.id, $0.ownerPID) }, uniquingKeysWith: { first, _ in first })
+        return candidates.filter { candidate in
+            guard let ownerPID = ownersByID[candidate.id] else { return true }
+            return ownerPID == candidate.ownerPID && candidate.keepsWhenPresent
         }
     }
 

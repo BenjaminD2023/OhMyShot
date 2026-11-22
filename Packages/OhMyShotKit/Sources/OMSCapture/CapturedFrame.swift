@@ -1,6 +1,16 @@
 import CoreGraphics
 import OMSCore
 
+nonisolated public struct TransientCaptureSnapshot: Sendable {
+    public let frame: CapturedFrame
+    public let regions: [CGRect]
+
+    public init(frame: CapturedFrame, regions: [CGRect]) {
+        self.frame = frame
+        self.regions = regions
+    }
+}
+
 /// One captured image and where on screen it came from.
 public struct CapturedFrame: Sendable {
     /// The image in the display's SDR color space. Clipboard, OCR, and the color picker always use this.
@@ -83,6 +93,106 @@ public struct CapturedFrame: Sendable {
             x: imageFrame.minX + pixels.minX / scale, y: imageFrame.maxY - pixels.maxY / scale,
             width: pixels.width / scale, height: pixels.height / scale
         ))
+    }
+
+    /// Restores user-visible transient windows from their pre-overlay frame while leaving the rest of a live capture
+    /// untouched. Nil when a needed image cannot be composited; callers can then keep the live capture as it was.
+    public func restoringTransientContent(
+        from snapshots: [TransientCaptureSnapshot], cursor: (image: CGImage, frame: CGRect)? = nil
+    ) -> CapturedFrame? {
+        guard !snapshots.isEmpty || cursor != nil else { return self }
+        guard frame.width > 0, frame.height > 0 else { return nil }
+        guard let restored = Self.restoringTransientContent(
+            in: image, frame: frame, snapshots: snapshots, cursor: cursor, usesHDR: false
+        ) else { return nil }
+        let restoredHDR: CGImage?
+        if let hdrImage {
+            guard let image = Self.restoringTransientContent(
+                in: hdrImage, frame: frame, snapshots: snapshots, cursor: cursor, usesHDR: true
+            ) else { return nil }
+            restoredHDR = image
+        } else {
+            restoredHDR = nil
+        }
+        return CapturedFrame(image: restored, hdrImage: restoredHDR, displayID: displayID, frame: frame)
+    }
+
+    private static func restoringTransientContent(
+        in baseImage: CGImage, frame: CGRect, snapshots: [TransientCaptureSnapshot],
+        cursor: (image: CGImage, frame: CGRect)?, usesHDR: Bool
+    ) -> CGImage? {
+        let scale = CGFloat(baseImage.width) / frame.width
+        guard scale.isFinite, scale > 0 else { return nil }
+        let bitmap = CGRect(x: 0, y: 0, width: baseImage.width, height: baseImage.height)
+        guard let context = CGContext(
+            data: nil, width: baseImage.width, height: baseImage.height,
+            bitsPerComponent: baseImage.bitsPerComponent, bytesPerRow: 0,
+            space: bitmapSpace(of: baseImage), bitmapInfo: baseImage.bitmapInfo
+        ) else { return nil }
+        context.draw(baseImage, in: bitmap)
+        var changed = false
+        for snapshot in snapshots {
+            guard let sourceImage = usesHDR ? snapshot.frame.hdrImage : snapshot.frame.image else {
+                if usesHDR && snapshot.regions.contains(where: { !$0.intersection(frame).intersection(snapshot.frame.frame).isEmpty }) {
+                    return nil
+                }
+                continue
+            }
+            let sourceScale = CGFloat(sourceImage.width) / snapshot.frame.frame.width
+            guard sourceScale.isFinite, sourceScale > 0 else { return nil }
+            for region in snapshot.regions {
+                let area = frame.intersection(snapshot.frame.frame).intersection(region)
+                guard !area.isNull, area.width > 0, area.height > 0 else { continue }
+                let minX = ((area.minX - snapshot.frame.frame.minX) * sourceScale).rounded(.down)
+                let maxX = ((area.maxX - snapshot.frame.frame.minX) * sourceScale).rounded(.up)
+                let minY = ((snapshot.frame.frame.maxY - area.maxY) * sourceScale).rounded(.down)
+                let maxY = ((snapshot.frame.frame.maxY - area.minY) * sourceScale).rounded(.up)
+                let sourceRect = CGRect(x: minX, y: minY, width: maxX - minX, height: maxY - minY)
+                    .intersection(CGRect(x: 0, y: 0, width: sourceImage.width, height: sourceImage.height))
+                guard !sourceRect.isNull, sourceRect.width > 0, sourceRect.height > 0 else { continue }
+                guard let source = sourceImage.cropping(to: sourceRect) else { return nil }
+                let sourceFrame = CGRect(
+                    x: snapshot.frame.frame.minX + sourceRect.minX / sourceScale,
+                    y: snapshot.frame.frame.maxY - sourceRect.maxY / sourceScale,
+                    width: sourceRect.width / sourceScale,
+                    height: sourceRect.height / sourceScale
+                )
+                let destination = CGRect(
+                    x: (sourceFrame.minX - frame.minX) * scale,
+                    y: (sourceFrame.minY - frame.minY) * scale,
+                    width: sourceFrame.width * scale,
+                    height: sourceFrame.height * scale
+                )
+                let clip = CGRect(
+                    x: (area.minX - frame.minX) * scale,
+                    y: (area.minY - frame.minY) * scale,
+                    width: area.width * scale,
+                    height: area.height * scale
+                ).intersection(bitmap)
+                guard !clip.isNull, clip.width > 0, clip.height > 0 else { continue }
+                context.saveGState()
+                context.clip(to: bitmap)
+                context.clip(to: clip)
+                context.interpolationQuality = abs(sourceScale - scale) < 0.001 ? .none : .high
+                context.setBlendMode(.copy)
+                context.draw(source, in: destination)
+                context.restoreGState()
+                changed = true
+            }
+        }
+        if let cursor, cursor.frame.intersects(frame) {
+            let destination = CGRect(
+                x: (cursor.frame.minX - frame.minX) * scale,
+                y: (cursor.frame.minY - frame.minY) * scale,
+                width: cursor.frame.width * scale,
+                height: cursor.frame.height * scale
+            )
+            context.interpolationQuality = .high
+            context.setBlendMode(.normal)
+            context.draw(cursor.image, in: destination)
+            changed = true
+        }
+        return changed ? context.makeImage() : baseImage
     }
 
     /// The edges of what `rect` (AppKit's global space) holds in this capture, in the same space and on its pixels:
