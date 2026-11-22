@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import CoreText
 import Foundation
 import Metal
@@ -215,6 +216,44 @@ struct RedactionRenderingTests {
         #expect(bgra(6, 3) == [0, 0, 255, 255] && bgra(6, 16) == [0, 0, 255, 255])
         replacement.coverage = .opaque(rect)
         #expect(replacement.compositingFilter == nil && !replacement.masksToBounds)
+    }
+
+    @Test func filteredLayerBuildsFiniteAlphaMasksForBoundsAndContentsScale() throws {
+        let mark = Annotation(shape: .redaction(Redaction(rect: CGRect(x: 0, y: 0, width: 30, height: 20), method: .pixelate)), style: Style())
+        let layer = MarkLayer(mark: mark)
+        layer.coverage = .filtered(try #require(context(width: 30, height: 20).makeImage()), mark.drawingBounds(scale: 1))
+        #expect(layer.compositingFilter == nil && layer.masksToBounds)
+        func filterAndMask() throws -> (CIFilter, CIImage) {
+            let filter = try #require(layer.compositingFilter as? CIFilter)
+            let mask = try #require(filter.value(forKey: kCIInputMaskImageKey) as? CIImage)
+            return (filter, mask)
+        }
+
+        layer.frame = CGRect(x: 5, y: 4, width: 30, height: 20)
+        let (first, firstMask) = try filterAndMask()
+        #expect(firstMask.extent == CGRect(x: 5, y: 4, width: 30, height: 20))
+
+        layer.bounds = CGRect(x: 0, y: 0, width: 48, height: 16)
+        let (resized, resizedMask) = try filterAndMask()
+        #expect(resized !== first)
+        #expect(resizedMask.extent == CGRect(x: layer.frame.minX, y: layer.frame.minY, width: 48, height: 16))
+
+        layer.contentsScale = 2
+        let (scaled, scaledMask) = try filterAndMask()
+        #expect(scaled !== resized)
+        #expect(scaledMask.extent == CGRect(x: layer.frame.minX * 2, y: layer.frame.minY * 2, width: 96, height: 32))
+
+        layer.frame = layer.frame.offsetBy(dx: 4, dy: 6)
+        let (moved, movedMask) = try filterAndMask()
+        #expect(moved !== scaled)
+        #expect(movedMask.extent == CGRect(x: layer.frame.minX * 2, y: layer.frame.minY * 2, width: 96, height: 32))
+
+        layer.bounds = .zero
+        #expect(layer.compositingFilter == nil && layer.masksToBounds)
+        layer.bounds = CGRect(x: 0, y: 0, width: 48, height: 16)
+        let (restored, restoredMask) = try filterAndMask()
+        #expect(restoredMask.extent == CGRect(x: layer.frame.minX * 2, y: layer.frame.minY * 2, width: 96, height: 32))
+        #expect(try NSKeyedArchiver.archivedData(withRootObject: restored, requiringSecureCoding: false).isEmpty == false)
     }
 
     private func renderedBytes(_ root: CALayer, width: Int, height: Int) throws -> [UInt8] {

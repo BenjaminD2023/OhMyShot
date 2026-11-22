@@ -183,6 +183,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         wantsLayer = true
         host.layer = StillLayer()
         host.wantsLayer = true
+        // Required by AppKit when custom layers or their sublayers use Core Image filters.
+        host.layerUsesCoreImageFilters = true
         host.autoresizingMask = [.width, .height]
         addSubview(host)
 
