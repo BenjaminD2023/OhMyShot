@@ -149,6 +149,54 @@ struct EditorKeepingTests {
         #expect(asked == 1)
     }
 
+    /// A capture History couldn't take opens in an editor with no file. Its marks start unkept, so nothing that needs the
+    /// file goes without them: each keep tries again (adding it to History), and the drag waits for one that works.
+    @Test func anEditorOnAPictureInNoFileHandsNothingOverUntilItsMarksAreKept() throws {
+        let file = URL.temporaryDirectory.appending(path: "kept.png")
+        var keeps = false
+        var kept: [AnnotationDocument] = []
+        let actions = AnnotationEditorWindowController.Actions(keep: { document, _, _ in
+            kept.append(document)
+            return keeps ? file : nil
+        }, save: { _ in nil })
+        var document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 100), scale: 2)
+        document.items = [Annotation(shape: .rectangle(Box(rect: CGRect(x: 20, y: 20, width: 30, height: 20))), style: Style())]
+        let controller = AnnotationEditorWindowController(
+            image: makeBase(), scale: 2, document: document, title: "Not kept", fileURL: nil, actions: actions
+        )
+        defer { controller.window?.delegate = nil; controller.close() }
+        #expect(controller.session.document == document)
+        #expect(controller.session.hasUnkeptChanges)
+        #expect(controller.fileForDragging() == nil)
+        #expect(kept == [document])
+        keeps = true
+        #expect(controller.fileForDragging() == file)
+        #expect(kept == [document, document])
+        #expect(!controller.session.hasUnkeptChanges)
+    }
+
+    /// Closing such an editor keeps its marks first, where an editor on a capture's file closes at once with nothing
+    /// changed: the picture would otherwise go with the window.
+    @Test func closingAnEditorOnAPictureInNoFileKeepsItsMarksFirst() async throws {
+        var kept: [AnnotationDocument] = []
+        var closed = false
+        let actions = AnnotationEditorWindowController.Actions(keep: { document, _, _ in
+            kept.append(document)
+            return URL.temporaryDirectory.appending(path: "kept.png")
+        }, save: { _ in nil })
+        var document = AnnotationDocument(pixelSize: CGSize(width: 200, height: 100), scale: 2)
+        document.items = [Annotation(shape: .rectangle(Box(rect: CGRect(x: 20, y: 20, width: 30, height: 20))), style: Style())]
+        let controller = AnnotationEditorWindowController(
+            image: makeBase(), scale: 2, document: document, title: "Not kept", fileURL: nil, actions: actions
+        )
+        defer { controller.window?.delegate = nil; controller.close() }
+        controller.onClose = { closed = true }
+        #expect(!controller.windowShouldClose(try #require(controller.window)))
+        #expect(await controller.closeBeforeQuitting())
+        #expect(kept == [document])
+        #expect(closed)
+    }
+
     /// Edits that could not be kept stay unkept, and dragging out does not hand over the file without them.
     @Test func aFailedKeepLeavesTheEditsUnkeptAndHandsNothingOver() {
         let controller = makeEditor()

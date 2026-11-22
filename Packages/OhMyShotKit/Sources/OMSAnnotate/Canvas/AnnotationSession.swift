@@ -89,8 +89,8 @@ public final class AnnotationSession {
     @ObservationIgnored private let remembersTool: Bool
     /// The selected marks, in the order they were selected.
     public private(set) var selection: [Annotation.ID] = []
-    /// Whether the document changed since it was last kept.
-    public private(set) var hasUnkeptChanges = false
+    /// Whether the document changed since it was last kept, or was never kept: an editor on a picture in no file yet.
+    public internal(set) var hasUnkeptChanges = false
     /// What the redaction tool suggests covering, once it has been in hand: under way, in, or failed.
     private var redactionReading = ToolReading<[RedactionSuggestion]>()
     /// The lines of text the highlighter snaps to, once it has been in hand, the same way.

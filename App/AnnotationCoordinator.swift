@@ -112,7 +112,7 @@ final class AnnotationCoordinator {
                     return await self.saveCopy?(entry, file)
                 },
                 coordinator: self, name: (entry.fileName as NSString).deletingPathExtension, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint },
-                entry: { [weak self] in self?.history.item(id: id) }, uploadID: id
+                entry: { [weak self] in self?.history.item(id: id) }, uploadID: { id }
             )
         )
         editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
@@ -124,11 +124,61 @@ final class AnnotationCoordinator {
         editor.show()
     }
 
+    /// Opens a capture History couldn't take in the editor all the same, so what was drawn on it is not lost with it:
+    /// `image` as it was taken, `document` its marks and background, its pixels per point, the name it was to have,
+    /// `record`, History's record of it as it was taken when History took that much, and `add`, which tries again to add
+    /// it to History as it was taken and returns its record. The editor holds the only copy of the marks. They stay unkept
+    /// until History has them, which every keep tries again (Copy, Save, a drag, closing, and the Retry of closing's
+    /// alert), adding the capture first when History has no record of it. Until then nothing that needs the capture's file
+    /// goes, and closing or quitting asks first, as for edits that can't be kept.
+    func annotate(notKept image: CGImage, document: AnnotationDocument?, scale: CGFloat, title: String, record: HistoryItem?, add: @escaping () throws -> HistoryItem) {
+        // The capture's id from the start when History has its record, so Keep captures doesn't remove it from under the
+        // editor; without one a key of its own, so quitting asks about this editor too, until History has the capture.
+        var id = record?.id ?? UUID()
+        var inHistory = record != nil
+        if inHistory { onEditing?(id, true) }
+        let editor = AnnotationEditorWindowController(
+            image: image, scale: scale, document: document, title: title, fileURL: nil,
+            actions: Self.editorActions(
+                keep: { [weak self] document, png, picture in
+                    guard let self else { return nil }
+                    if !inHistory {
+                        do {
+                            let entry = try add()
+                            editors[entry.id] = editors.removeValue(forKey: id)
+                            id = entry.id
+                            inHistory = true
+                            onEditing?(id, true)
+                            Log.capture.notice("Added \(entry.fileName, privacy: .private) to the history from its editor")
+                        } catch {
+                            Log.capture.error("Adding a capture to the history from its editor failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+                            return nil
+                        }
+                    }
+                    return keep(id, document: document, png: png, image: picture)
+                },
+                save: { [weak self] file in
+                    guard let self, let entry = history.item(id: id) else { return nil }
+                    return await saveCopy?(entry, file)
+                },
+                coordinator: self, name: title, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint ?? Double(scale) },
+                entry: { [weak self] in self?.history.item(id: id) }, uploadID: { id }
+            )
+        )
+        editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+            self?.editors[id] = nil
+            if inHistory { self?.onEditing?(id, false) }
+            MemoryRelief.endEventWait()
+        }
+        editors[id] = editor
+        editor.show()
+    }
+
     /// The editor's actions: keeping and saving as given, and dragging out, copying, pinning, and uploading as a card
     /// does them. `uploadID` names the editor's uploads: the capture's own, or one a project's editor keeps.
     private static func editorActions(
         keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?,
-        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?, entry: @escaping () -> HistoryItem?, uploadID: UUID
+        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?, entry: @escaping () -> HistoryItem?, uploadID: @escaping () -> UUID
     ) -> AnnotationEditorWindowController.Actions {
         var actions = AnnotationEditorWindowController.Actions(keep: keep, save: save)
         actions.saveAs = { [weak coordinator] file in await coordinator?.saveAs?(file, entry(), scale()) }
@@ -145,10 +195,12 @@ final class AnnotationCoordinator {
                 return PasteboardWriter.write(png: png, image: image)
             }
         }
-        actions.pin = { [weak coordinator] image, pixelsPerPoint in coordinator?.pinPicture?(image, pixelsPerPoint, entry()) }
+        // A picture whose edits couldn't be kept is the pin's own: the capture's file, which its Save and a drag would take,
+        // doesn't show them, a redaction among them.
+        actions.pin = { [weak coordinator] image, pixelsPerPoint, kept in coordinator?.pinPicture?(image, pixelsPerPoint, kept ? entry() : nil) }
         actions.uploadMenu = { [weak coordinator] in coordinator?.uploadMenu?() ?? .hidden }
-        actions.upload = { [weak coordinator] file, destination in coordinator?.uploadFile?(uploadID, file, destination, scale()) }
-        actions.isUploading = { [weak coordinator] in coordinator?.isUploading?(uploadID) ?? false }
+        actions.upload = { [weak coordinator] file, destination in coordinator?.uploadFile?(uploadID(), file, destination, scale()) }
+        actions.isUploading = { [weak coordinator] in coordinator?.isUploading?(uploadID()) ?? false }
         return actions
     }
 
@@ -200,6 +252,8 @@ final class AnnotationCoordinator {
             let picture = opened.picture
             // Image Size changes the document's scale, so each keep records it for the outcomes that follow.
             var projectScale = Double(opened.project.document.scale)
+            // A project is in no history, so its uploads go under an identity of their own.
+            let uploadID = UUID()
             let editor = AnnotationEditorWindowController(
                 image: capture,
                 scale: opened.project.document.scale,
@@ -220,8 +274,7 @@ final class AnnotationCoordinator {
                         }
                     },
                     save: { [weak self] picture in await self?.saveFile?(picture, projectScale) },
-                    // A project is in no history, so its uploads go under an identity of their own.
-                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }, uploadID: UUID()
+                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }, uploadID: { uploadID }
                 )
             )
             editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in

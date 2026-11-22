@@ -350,6 +350,9 @@ final class CompositionRoot {
         captures.openInEditor = { [weak self] entry, scale in
             self?.annotations.annotate(entry, scale: scale)
         }
+        captures.openNotKeptInEditor = { [weak self] image, document, scale, name, record, add in
+            self?.annotations.annotate(notKept: image, document: document, scale: scale, title: name, record: record, add: add)
+        }
         // All-In-One hands on what it does not do itself.
         captures.allInOneText = { [weak self] area, frozen in
             guard let self else { return }

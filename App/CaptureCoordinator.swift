@@ -31,6 +31,10 @@ final class CaptureCoordinator {
     var uploadKept: ((HistoryItem) -> Void)?
     /// Opens a capture in the annotation editor: its record and its pixels per point.
     var openInEditor: ((HistoryItem, CGFloat) -> Void)?
+    /// Opens a capture History couldn't take in the editor all the same: the picture as it was taken, its marks and
+    /// background, its pixels per point, the name it was to have, History's record of it as it was taken when History took
+    /// that much, and what adds it to History again and returns its record.
+    var openNotKeptInEditor: ((CGImage, AnnotationDocument?, CGFloat, String, HistoryItem?, @escaping () throws -> HistoryItem) -> Void)?
     /// Saving after a capture failed: why, and the capture, to say it on its card when it has one; called once a card is up.
     var saveFailed: ((ExportFailure, UUID?) -> Void)?
     /// A color taken with C over the magnifier while capturing: where it was, and the keys held then.
@@ -257,12 +261,7 @@ final class CaptureCoordinator {
             },
             openInEditor: { [weak self] result in
                 self?.overlay.finishAnnotation()
-                Task { [weak self] in
-                    guard let self, let entry = await self.deliver(
-                        frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, copy: .never, showsCard: false, playsSound: false
-                    ) else { return }
-                    self.openInEditor?(entry, scale)
-                }
+                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, playsSound: false, followUp: CaptureFollowUp(action: .annotate)) }
             },
             cancel: { [weak self] in self?.overlay.cancel() }
         )
@@ -679,7 +678,9 @@ final class CaptureCoordinator {
     /// settings say. `marks` are drawn on it first (in-place annotation); the background chosen for
     /// every screenshot is set under them. Returns its record.
     /// `followUp`'s action comes on top of the settings: copy copies whatever they say, save saves; annotate and
-    /// pin keep the capture as the editor and Capture Area and Pin do, off the clipboard and without a card.
+    /// pin keep the capture as the editor and Capture Area and Pin do, off the clipboard and without a card. A capture
+    /// for the editor that can't be kept opens there all the same, outside History until History takes it, so what was
+    /// drawn on it is not lost.
     /// `pixelsPerPoint` is the capture's scale where its frame does not give it (a window's, larger by its shadow).
     @discardableResult
     private func deliver(
@@ -700,14 +701,30 @@ final class CaptureCoordinator {
         // The picture still to be put on the clipboard, with the file beside it, once the file is there.
         var waiting: (picture: ScreenshotFiles.Picture, png: Data, scale: Double)?
         var copiedAt: Int?
+        let scale = pixelsPerPoint ?? (frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1)
+        // One moment for the name and the record, which a copy saved later is named from again.
+        let takenAt = Date.now
+        let name = settings.nextFileName(date: takenAt, appName: appName, windowTitle: windowTitle)
+        // The capture as it was taken, kept in the history under that name.
+        let add = { [history] (png: Data) in
+            try history.add(
+                data: png, name: name, fileExtension: ImageExporter.Format.png.fileExtension, kind: .screenshot,
+                pixelWidth: frame.image.width, pixelHeight: frame.image.height, appName: appName, pixelsPerPoint: Double(scale),
+                windowTitle: windowTitle, isTemplateNamed: true, date: takenAt
+            )
+        }
+        // What there is of the capture should keeping it fail: its PNG, the document drawn on it, and its record once
+        // History has it without them.
+        var png: Data?
+        var document: Data?
+        var added: HistoryItem?
         do {
-            let png = try await ImageExporter.encode(frame.image, as: .png)
+            let encoded = try await ImageExporter.encode(frame.image, as: .png)
+            png = encoded
             // Marks drawn in place, and the background chosen for every screenshot, are drawn in first. The
             // capture's file then shows them while the capture and the document stay beside it, as edits
             // do, so the editor can change or remove them.
-            var shown = (image: frame.image, png: png)
-            var document: Data?
-            let scale = pixelsPerPoint ?? (frame.frame.width > 0 ? CGFloat(frame.image.width) / frame.frame.width : 1)
+            var shown = (image: frame.image, png: encoded)
             if let composed = try await composed(frame.image, scale: scale, marks: marks, background: background) {
                 shown = (composed.image, try await ImageExporter.encode(composed.image, as: .png))
                 document = composed.document
@@ -719,9 +736,6 @@ final class CaptureCoordinator {
             }
             // The extended-range copy goes only with the picture as it was captured: marks or a background change it.
             let picture = ScreenshotFiles.Picture(shown.image, hdr: document == nil ? frame.hdrImage : nil)
-            // One moment for the name and the record, which a copy saved later is named from again.
-            let takenAt = Date.now
-            let name = settings.nextFileName(date: takenAt, appName: appName, windowTitle: windowTitle)
             // On the clipboard before anything is written, so the picture is not lost if keeping it fails; with the
             // file beside it, once the file is there.
             if copies, settings.clipboardFormat == .fileAndPicture {
@@ -731,19 +745,8 @@ final class CaptureCoordinator {
                     copiedAt = NSPasteboard.general.changeCount
                 }
             }
-            var entry = try history.add(
-                data: png,
-                name: name,
-                fileExtension: ImageExporter.Format.png.fileExtension,
-                kind: .screenshot,
-                pixelWidth: frame.image.width,
-                pixelHeight: frame.image.height,
-                appName: appName,
-                pixelsPerPoint: Double(scale),
-                windowTitle: windowTitle,
-                isTemplateNamed: true,
-                date: takenAt
-            )
+            var entry = try add(encoded)
+            added = entry
             if let document {
                 entry = try history.replaceImage(
                     of: entry, with: shown.png, pixelWidth: shown.image.width, pixelHeight: shown.image.height, annotations: document
@@ -814,9 +817,19 @@ final class CaptureCoordinator {
             if let pending = waiting {
                 await files.copy(pending.picture, png: pending.png, name: "OhMyShot", scale: pending.scale, withFile: false)
             }
-            // Said out loud too: the overlay is gone, and nothing else would show that the capture was not kept.
             NSSound.beep()
-            VoiceOver.announce(String(localized: "The capture couldn’t be kept."))
+            if action == .annotate, let openNotKeptInEditor {
+                // The editor holds it, with its marks, and tries History again as it keeps them: on the record History
+                // already has of it, which the editor holds from now on, or adding the capture as taken first.
+                let marked = document.flatMap { try? JSONDecoder().decode(AnnotationDocument.self, from: $0) } ?? marks
+                openNotKeptInEditor(frame.image, marked, scale, name, added) { [png] in
+                    try add(png ?? ImageExporter.encoded(frame.image, as: .png))
+                }
+                notice.show(String(localized: "The capture couldn’t be added to History. It’s open in the editor."), near: NSEvent.mouseLocation)
+            } else {
+                // Said out loud too: the overlay is gone, and nothing else would show that the capture was not kept.
+                VoiceOver.announce(String(localized: "The capture couldn’t be kept."))
+            }
             followUp.finish(nil)
             return nil
         }

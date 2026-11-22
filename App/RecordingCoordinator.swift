@@ -1031,13 +1031,22 @@ final class RecordingCoordinator {
     }
 
     /// Keeps a clip saved from the replay as a stopped recording is kept: history, clipboard, card. Named for
-    /// when it began and the app in front now.
-    func keepReplay(_ movie: RecordingFinisher.Movie, savedAt: Date, displayID: CGDirectDisplayID, pixelsPerPoint: Double?) async throws -> HistoryItem {
-        try await deliver(
-            KeptFile(url: movie.url, pixelWidth: movie.pixelWidth, pixelHeight: movie.pixelHeight, duration: movie.duration, byteCount: movie.byteCount),
-            startedAt: savedAt.addingTimeInterval(-movie.duration), appName: NSWorkspace.shared.frontmostApplication?.localizedName,
-            pixelsPerPoint: pixelsPerPoint, displayID: displayID, countsAsRecording: true
+    /// when it began and the app in front now. A replay has no draft to be kept from again, and its seconds are gone from
+    /// the buffer, so a clip History can't take goes to the export folder under that name instead, as Save would save it
+    /// (`.folder`); one that can't go there either stays where it is, and the error is thrown.
+    func keepReplay(_ movie: RecordingFinisher.Movie, savedAt: Date, displayID: CGDirectDisplayID, pixelsPerPoint: Double?) async throws -> HistoryStore.Moved {
+        let startedAt = savedAt.addingTimeInterval(-movie.duration)
+        let appName = NSWorkspace.shared.frontmostApplication?.localizedName
+        let moved = try history.add(
+            movingFileAt: movie.url, name: fileName(startedAt: startedAt, appName: appName), kind: .recording, pixelWidth: movie.pixelWidth,
+            pixelHeight: movie.pixelHeight, appName: appName, duration: movie.duration, pixelsPerPoint: pixelsPerPoint,
+            orSavingInto: settings.exportDirectory
         )
+        guard case .history(let entry) = moved else { return moved }
+        onRecordingCompleted?()
+        await present(entry, displayID: displayID)
+        onKept?(entry)
+        return moved
     }
 
     /// A recording's name, from the file name pattern. A recording is the one file it will ever be, so it takes its

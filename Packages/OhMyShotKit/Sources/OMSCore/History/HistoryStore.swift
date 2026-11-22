@@ -313,6 +313,47 @@ public final class HistoryStore: Sendable {
         ) { try FileManager.default.moveItem(at: source, to: $0) } undoWrite: { try FileManager.default.moveItem(at: $0, to: source) }
     }
 
+    /// Where `add(movingFileAt:…, orSavingInto:)` put a file.
+    public enum Moved: Equatable, Sendable {
+        /// In History, with this record.
+        case history(HistoryItem)
+        /// In the folder, as this file: History couldn't take it.
+        case folder(URL)
+    }
+
+    /// `add(movingFileAt:…)` for a file nothing else keeps and nothing could make again, as a saved replay is (its
+    /// seconds are gone from the buffer): when History can't take it (its record can't be written, on a full disk say),
+    /// it is moved into `folder` instead, under `name` made unique as a saved copy's is, as Save would save it from
+    /// History, rather than handed back to be deleted. When it can't go there either, it stays where it is, which is
+    /// logged, and History's error is thrown.
+    public func add(
+        movingFileAt source: URL, name: String, kind: HistoryItem.Kind, pixelWidth: Int, pixelHeight: Int, appName: String?,
+        duration: TimeInterval?, pixelsPerPoint: Double?, orSavingInto folder: URL
+    ) throws -> Moved {
+        do {
+            return .history(try add(
+                movingFileAt: source, name: name, kind: kind, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName,
+                duration: duration, pixelsPerPoint: pixelsPerPoint
+            ))
+        } catch {
+            let manager = FileManager.default
+            // One History couldn't give back stays in it, which `add` has logged.
+            guard manager.fileExists(atPath: source.path(percentEncoded: false)) else { throw error }
+            do {
+                try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+                let destination = ImageExporter.availableURL(
+                    in: folder, name: name.replacingOccurrences(of: "/", with: "-"), fileExtension: source.pathExtension
+                )
+                try manager.moveItem(at: source, to: destination)
+                Log.history.error("History couldn't take \(destination.lastPathComponent, privacy: .private), so it was saved to the folder: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+                return .folder(destination)
+            } catch let saving {
+                Log.history.error("\(source.path(percentEncoded: false), privacy: .private) stays where it is: History couldn't take it (\(Log.kind(of: error), privacy: .public)), nor the folder (\(Log.kind(of: saving), privacy: .public), \(saving.localizedDescription, privacy: .private))")
+                throw error
+            }
+        }
+    }
+
     /// Copies a picture or a recording of the user's into the history under its own name, leaving the file where it
     /// is: the URL API's `add-quick-access-overlay`. A movie or a GIF is kept as a recording, with its size and
     /// length; anything else must be a picture ImageIO reads. Runs off the caller's actor: a movie on another drive takes
@@ -429,7 +470,7 @@ public final class HistoryStore: Sendable {
                 do {
                     try undoWrite(url)
                 } catch let undo {
-                    Log.history.error("\(url.lastPathComponent, privacy: .public) stays in History without a record: \(undo.localizedDescription, privacy: .public)")
+                    Log.history.error("\(url.path(percentEncoded: false), privacy: .private) stays in History without a record: \(Log.kind(of: undo), privacy: .public), \(undo.localizedDescription, privacy: .private)")
                 }
                 try? manager.removeItem(at: record)
                 throw error

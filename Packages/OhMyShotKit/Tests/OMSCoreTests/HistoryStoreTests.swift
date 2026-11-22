@@ -115,6 +115,87 @@ struct HistoryStoreTests {
         #expect(try manager.contentsOfDirectory(atPath: directory.path(percentEncoded: false)).isEmpty)
     }
 
+    /// A replay History can't take is not handed back to be deleted, as nothing could make it again: it goes to the export
+    /// folder under the name it was to have, made unique as a saved copy's is, and History keeps nothing of it.
+    @Test func aFileHistoryCannotTakeIsSavedToTheFolderInstead() throws {
+        let manager = FileManager.default
+        let directory = manager.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)")
+        let outside = manager.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)")
+        let folder = outside.appending(path: "Saved", directoryHint: .isDirectory)
+        try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer {
+            try? manager.removeItem(at: directory)
+            try? manager.removeItem(at: outside)
+        }
+        let store = HistoryStore(directory: directory) { _, _ in throw CocoaError(.fileWriteOutOfSpace) }
+        // A saved copy of an earlier capture already has the name.
+        try Data([9]).write(to: folder.appending(path: "Replay 1.mp4"))
+        let clip = outside.appending(path: "Replay \(UUID().uuidString).mp4")
+        try Data([3]).write(to: clip)
+        let moved = try store.add(
+            movingFileAt: clip, name: "Replay 1", kind: .recording, pixelWidth: 1, pixelHeight: 1, appName: nil, duration: 15,
+            pixelsPerPoint: 2, orSavingInto: folder
+        )
+        let saved = folder.appending(path: "Replay 1 (2).mp4")
+        #expect(moved == .folder(saved))
+        #expect(try Data(contentsOf: saved) == Data([3]))
+        #expect(try Data(contentsOf: folder.appending(path: "Replay 1.mp4")) == Data([9]))
+        #expect(!manager.fileExists(atPath: clip.path(percentEncoded: false)))
+        #expect(HistoryStore(directory: directory).items().isEmpty)
+        #expect(try manager.contentsOfDirectory(atPath: directory.path(percentEncoded: false)).isEmpty)
+    }
+
+    /// A file that can go neither into History nor into the folder stays where it was, for whoever has it to keep.
+    @Test func aFileThatCanGoNowhereStaysWhereItWas() throws {
+        let manager = FileManager.default
+        let directory = manager.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)")
+        let outside = manager.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)")
+        try manager.createDirectory(at: outside, withIntermediateDirectories: true)
+        defer {
+            try? manager.removeItem(at: directory)
+            try? manager.removeItem(at: outside)
+        }
+        let store = HistoryStore(directory: directory) { _, _ in throw CocoaError(.fileWriteOutOfSpace) }
+        // A file where the folder should be: no folder can be made there.
+        let folder = outside.appending(path: "Saved")
+        try Data().write(to: folder)
+        let clip = outside.appending(path: "Replay.mp4")
+        try Data([3]).write(to: clip)
+        #expect(throws: CocoaError(.fileWriteOutOfSpace)) {
+            try store.add(
+                movingFileAt: clip, name: "Replay 1", kind: .recording, pixelWidth: 1, pixelHeight: 1, appName: nil, duration: 15,
+                pixelsPerPoint: 2, orSavingInto: folder
+            )
+        }
+        #expect(try Data(contentsOf: clip) == Data([3]))
+        #expect(HistoryStore(directory: directory).items().isEmpty)
+    }
+
+    /// While History takes it, a file goes there as `add(movingFileAt:…)` puts it, and the folder is left alone.
+    @Test func aFileHistoryTakesGoesThere() throws {
+        let store = makeStore(), manager = FileManager.default
+        let folder = manager.temporaryDirectory.appending(path: "HistoryStoreTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let clip = manager.temporaryDirectory.appending(path: "Replay \(UUID().uuidString).mp4")
+        try Data([3]).write(to: clip)
+        defer {
+            try? manager.removeItem(at: store.directory)
+            try? manager.removeItem(at: folder)
+            try? manager.removeItem(at: clip)
+        }
+        let moved = try store.add(
+            movingFileAt: clip, name: "Replay 1", kind: .recording, pixelWidth: 1, pixelHeight: 1, appName: nil, duration: 15,
+            pixelsPerPoint: 2, orSavingInto: folder
+        )
+        guard case .history(let item) = moved else {
+            Issue.record("Expected the replay in History, got \(moved)")
+            return
+        }
+        #expect(item.fileName == "Replay 1.mp4" && item.kind == .recording)
+        #expect(store.items().map(\.id) == [item.id])
+        #expect(try Data(contentsOf: store.fileURL(for: item)) == Data([3]))
+        #expect(!manager.fileExists(atPath: folder.path(percentEncoded: false)))
+    }
+
     @Test func copyingAndMovingSkipANameAlreadyClaimedByAnotherCapture() async throws {
         let store = makeStore(), manager = FileManager.default
         try manager.createDirectory(at: store.directory, withIntermediateDirectories: true)

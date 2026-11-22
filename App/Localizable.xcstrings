@@ -8119,6 +8119,40 @@
         }
       }
     },
+    "The capture couldn’t be added to History. It’s open in the editor." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido añadir la captura al historial. Está abierta en el editor."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d’ajouter la capture à l’historique. Elle est ouverte dans l’éditeur."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャプチャを履歴に追加できませんでした。エディタで開いています。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法将截图添加到历史记录。它已在编辑器中打开。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法將擷取內容加入記錄。它已在編輯器中打開。"
+          }
+        }
+      }
+    },
     "The capture couldn’t be kept." : {
       "localizations" : {
         "es" : {
@@ -8251,6 +8285,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法儲存最後 15 秒。"
+          }
+        }
+      }
+    },
+    "The last 15 seconds of %lld displays were saved to %@ but couldn’t be added to History." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los últimos 15 segundos de %lld pantallas se han guardado en %@, pero no se han podido añadir al historial."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les 15 dernières secondes de %lld écrans ont été enregistrées dans %@, mais n’ont pas pu être ajoutées à l’historique."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld台のディスプレイの直近15秒を%@に保存しましたが、履歴には追加できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 个显示器的最后 15 秒已存储到“%@”，但无法添加到历史记录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 個顯示器的最後 15 秒已儲存到「%@」，但無法加入記錄。"
+          }
+        }
+      }
+    },
+    "The last 15 seconds were saved to %@ but couldn’t be added to History." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Los últimos 15 segundos se han guardado en %@, pero no se han podido añadir al historial."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Les 15 dernières secondes ont été enregistrées dans %@, mais n’ont pas pu être ajoutées à l’historique."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直近15秒を%@に保存しましたが、履歴には追加できませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最后 15 秒已存储到“%@”，但无法添加到历史记录。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最後 15 秒已儲存到「%@」，但無法加入記錄。"
           }
         }
       }

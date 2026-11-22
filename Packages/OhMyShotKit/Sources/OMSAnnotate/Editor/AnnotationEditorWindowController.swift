@@ -28,8 +28,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// Puts the rendered picture on the clipboard, with its pixels per point, and returns whether it succeeded. Without a
         /// callback, the PNG goes as it is.
         public var copy: ((_ image: CGImage, _ png: Data, _ scale: CGFloat) async -> Bool)?
-        /// Pins the picture as it looks now over the screen, at its pixels per point. Nil when the editor offers no Pin to Screen.
-        public var pin: ((_ image: CGImage, _ scale: CGFloat) -> Void)?
+        /// Pins the picture as it looks now over the screen, at its pixels per point, and whether it was kept in the capture's
+        /// file: one that wasn't is the pin's own, since the file doesn't show it. Nil when the editor offers no Pin to Screen.
+        public var pin: ((_ image: CGImage, _ scale: CGFloat, _ kept: Bool) -> Void)?
         /// What the editor offers for uploading, asked each time the window comes forward: nothing without a destination.
         public var uploadMenu: () -> UploadMenu = { .hidden }
         /// Uploads the capture's file, its edits kept, to the default destination (nil) or the one chosen. Nil when the
@@ -50,7 +51,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     private let model: EditorModel
     private let content: EditorContentView
     private let actions: Actions
-    private var fileURL: URL
+    private var fileURL: URL?
     private var windowLease: ActiveResources.Lease?
     private var closing: Task<Bool, Never>?
     public private(set) var didClose = false
@@ -61,9 +62,12 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     ///   - image: the capture as it was taken.
     ///   - scale: pixels per point of the screen it came from.
     ///   - document: marks made on it before.
-    ///   - fileURL: the capture's file, which holds the marked-up picture once edits are kept.
-    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument?, title: String, fileURL: URL, actions: Actions) {
+    ///   - fileURL: the capture's file, which holds the marked-up picture once edits are kept. Nil for a capture in no file
+    ///     yet (History couldn't take it): the picture and its marks start unkept, so nothing that needs the file goes
+    ///     without them, and closing asks before they are lost, until `keep` gives a file.
+    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument?, title: String, fileURL: URL?, actions: Actions) {
         session = AnnotationSession(image: image, scale: scale, document: document)
+        session.hasUnkeptChanges = fileURL == nil
         content = EditorContentView(session: session)
         model = EditorModel()
         self.actions = actions
@@ -430,8 +434,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         return Task {
             guard let pin = actions.pin else { return }
             guard let rendered = await render() else { return NSSound.beep() }
-            _ = keep(rendered)
-            pin(rendered.image, rendered.document.scale)
+            let kept = keep(rendered) != nil
+            pin(rendered.image, rendered.document.scale, kept)
         }
     }
 
@@ -567,7 +571,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.endEditing()
         keepNow()
         // Edits that could not be kept are not in the file: handing it over would drop them.
-        guard !session.hasUnkeptChanges else { return nil }
+        guard !session.hasUnkeptChanges, let fileURL else { return nil }
         return actions.fileToHandOver(fileURL)
     }
 

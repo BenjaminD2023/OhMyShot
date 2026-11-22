@@ -54,12 +54,12 @@ struct EditorOutcomesTests {
 
     @Test func pinKeepsTheEditsAndPinsThePictureAsItLooks() async throws {
         var keptDocument: AnnotationDocument?
-        var pinned: (image: CGImage, scale: CGFloat)?
+        var pinned: (image: CGImage, scale: CGFloat, kept: Bool)?
         var actions = AnnotationEditorWindowController.Actions(keep: { [kept] document, _, _ in
             keptDocument = document
             return kept
         }, save: { _ in nil })
-        actions.pin = { image, scale in pinned = (image, scale) }
+        actions.pin = { image, scale, kept in pinned = (image, scale, kept) }
         let controller = makeEditor(actions: actions)
         defer { controller.window?.delegate = nil; controller.close() }
         crop(controller.session)
@@ -69,8 +69,49 @@ struct EditorOutcomesTests {
 
         let picture = try #require(pinned)
         #expect(picture.image.width == 120 && picture.image.height == 70 && picture.scale == 2)
+        #expect(picture.kept)
         #expect(keptDocument == document)
         #expect(!controller.session.hasUnkeptChanges)
+    }
+
+    /// Edits that can't be kept are pinned all the same, as the pin's own picture: the capture's file doesn't show them,
+    /// so the pin can't stand for it, or its Save and a drag would hand over what a redaction hid.
+    @Test func aPictureWhoseEditsCouldNotBeKeptIsPinnedAsNotKept() async throws {
+        var pinned: (image: CGImage, kept: Bool)?
+        var actions = AnnotationEditorWindowController.Actions(keep: { _, _, _ in nil }, save: { _ in nil })
+        actions.pin = { image, _, kept in pinned = (image, kept) }
+        let controller = makeEditor(actions: actions)
+        defer { controller.window?.delegate = nil; controller.close() }
+        crop(controller.session)
+
+        await controller.pin().value
+
+        let picture = try #require(pinned)
+        #expect(picture.image.width == 120 && picture.image.height == 70)
+        #expect(!picture.kept)
+        #expect(controller.session.hasUnkeptChanges)
+    }
+
+    /// An editor on a picture in no file yet (History couldn't take it) pins it as not kept until a keep gives it a file.
+    @Test func anEditorOnAPictureInNoFilePinsItAsNotKeptUntilItIsKept() async {
+        var keeps = 0
+        var pinned: [Bool] = []
+        var actions = AnnotationEditorWindowController.Actions(keep: { [kept] _, _, _ in
+            keeps += 1
+            return keeps > 1 ? kept : nil
+        }, save: { _ in nil })
+        actions.pin = { _, _, kept in pinned.append(kept) }
+        let controller = AnnotationEditorWindowController(
+            image: makeBase(), scale: 2, document: nil, title: "Outcomes test", fileURL: nil, actions: actions
+        )
+        defer { controller.window?.delegate = nil; controller.close() }
+
+        await controller.pin().value
+        await controller.pin().value
+        await controller.pin().value
+
+        #expect(pinned == [false, true, true])
+        #expect(keeps == 2)
     }
 
     @Test func uploadKeepsTheEditsFirstAndSendsTheKeptFile() async {
@@ -175,7 +216,7 @@ struct EditorOutcomesTests {
         #expect(controller.validateMenuItem(upload))
 
         var withPin = actions
-        withPin.pin = { _, _ in }
+        withPin.pin = { _, _, _ in }
         let pinning = makeEditor(actions: withPin)
         defer { pinning.window?.delegate = nil; pinning.close() }
         #expect(pinning.validateMenuItem(pin))
