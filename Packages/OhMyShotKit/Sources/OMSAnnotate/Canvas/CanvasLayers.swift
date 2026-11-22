@@ -125,18 +125,18 @@ nonisolated final class MarkLayer: StillLayer {
             filteredMaskExtent = nil
             return
         }
-        let width = bounds.width * contentsScale
-        let height = bounds.height * contentsScale
-        let x = frame.minX * contentsScale
-        let y = frame.minY * contentsScale
+        let width = bounds.width
+        let height = bounds.height
+        let x = frame.minX
+        let y = frame.minY
         guard width.isFinite, height.isFinite, x.isFinite, y.isFinite, width > 0, height > 0 else {
             filteredMaskExtent = nil
             compositingFilter = nil
             return
         }
-        let extent = CGRect(x: x, y: y, width: width.rounded(.up), height: height.rounded(.up))
+        let extent = CGRect(x: x, y: y, width: width, height: height)
         guard extent != filteredMaskExtent else { return }
-        // Core Image cannot archive infinite masks; use finite superlayer backing-pixel coordinates.
+        // Core Image cannot archive infinite masks; mask coordinates are superlayer points, independent of contentsScale.
         let blend = CIFilter.blendWithAlphaMask()
         blend.maskImage = CIImage(color: .white).cropped(to: extent)
         compositingFilter = blend
