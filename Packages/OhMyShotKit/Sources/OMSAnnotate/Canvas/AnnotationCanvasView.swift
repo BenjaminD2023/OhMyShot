@@ -129,6 +129,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var erasedAround: (covered: [CGRect], canvas: CGRect) = ([], .null)
     /// Erasures stretched over their boxes during a drag, to fill again once it ends.
     private var staleErasures: Set<Annotation.ID> = []
+    /// The redactions drawn before each blur and pixelation, with what each drew, when it was last made over them.
+    private var redactedBeneath: [Annotation.ID: [(item: Annotation, coverage: Redactor.Coverage?)]] = [:]
     /// The picture the image layer shows, which a turn, a flip, or a resize replaces.
     private var shownPicture: CGImage?
     private var markLayers: [Annotation.ID: MarkLayer] = [:]
@@ -818,8 +820,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             let picture = showCurrentPicture()
             syncMarks()
             if picture {
-                // Blurs and highlights read the picture, which is another now.
-                for layer in markLayers.values {
+                // Blurs and highlights read the picture, which is another now: in drawing order, so each blur reads the
+                // redactions before it as they now are.
+                for item in session.document.items {
+                    guard let layer = markLayers[item.id] else { continue }
                     updateRedaction(layer)
                     updateGround(layer)
                 }
@@ -946,6 +950,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         for (id, layer) in markLayers where !present.contains(id) {
             layer.removeFromSuperlayer()
             markLayers[id] = nil
+            redactedBeneath[id] = nil
         }
         spotlightLayer.spots = document.spots
         refreshRedactionsIfNeeded()
@@ -981,6 +986,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func updateRedaction(_ layer: MarkLayer) {
         guard case .redaction(let redaction) = layer.mark.shape, redaction.method != .solid else {
             layer.coverage = nil
+            redactedBeneath[layer.mark.id] = nil
             return
         }
         let source = session.combinedRedactionSource ?? Redactor.Source(base: session.picture)
@@ -992,9 +998,16 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             staleErasures.insert(layer.mark.id)
             return
         }
+        // A blur or pixelation reads the picture as the redactions drawn before it leave it, as their layers show them.
+        let beneath = session.document.items.prefix { $0.id != layer.mark.id }.compactMap { item -> (item: Annotation, coverage: Redactor.Coverage?)? in
+            guard case .redaction = item.shape else { return nil }
+            return (item, markLayers[item.id]?.coverage)
+        }
+        // An erasure reads nothing any redaction lies over, so nothing is kept for it.
+        redactedBeneath[layer.mark.id] = redaction.method == .erase ? nil : beneath
         layer.coverage = Redactor.coverage(
             for: redaction, id: layer.mark.id, source: source, scale: session.document.scale, covered: session.document.redactedRects,
-            canvas: erasureCanvas
+            canvas: erasureCanvas, beneath: beneath
         )
     }
 
@@ -1014,7 +1027,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// Makes blurs and pixelations again over images that moved, once a drag has ended, and reads again
     /// what highlights lie on: remaking them at every step of a drag would be slow, and they show the
     /// result on release. Erasures are made again as well when a redaction around them came, went, or moved,
-    /// or the canvas they keep inside changed, and once the drag that stretched them ends.
+    /// or the canvas they keep inside changed, and once the drag that stretched them ends; blurs and pixelations
+    /// when a redaction drawn before them did, and a blurred background with the redactions as they now are.
     private func refreshRedactionsIfNeeded() {
         guard !session.isInLiveChange else { return }
         for id in staleErasures {
@@ -1028,7 +1042,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if images != redactionImages {
             redactionImages = images
             erasedAround = around
-            for layer in markLayers.values {
+            // In drawing order, so each blur reads the redactions before it as they now are.
+            for item in session.document.items {
+                guard let layer = markLayers[item.id] else { continue }
                 if case .redaction = layer.mark.shape {
                     updateRedaction(layer)
                     position(layer, frames: frames)
@@ -1040,6 +1056,23 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             for layer in markLayers.values {
                 guard case .redaction(let redaction) = layer.mark.shape, redaction.method == .erase else { continue }
                 updateRedaction(layer)
+                position(layer, frames: frames)
+            }
+        }
+        var beneath: [(item: Annotation, coverage: Redactor.Coverage?)] = []
+        for item in session.document.items {
+            guard case .redaction(let redaction) = item.shape, let layer = markLayers[item.id] else { continue }
+            let reads = redaction.method == .blur || redaction.method == .pixelate
+            if reads, redactedBeneath[item.id].map({ !$0.elementsEqual(beneath) { $0.item == $1.item && $0.coverage == $1.coverage } }) ?? true {
+                updateRedaction(layer)
+                position(layer, frames: frames)
+            }
+            beneath.append((item, layer.coverage))
+        }
+        if backdropLayer.content?.fill == .blur, case let blur = session.blurredCapture, blur !== backdropLayer.blur {
+            backdropLayer.blur = blur
+            // A filtered redaction over the picture's clear pixels shows the background under it.
+            for layer in markLayers.values where layer.underlay != nil {
                 position(layer, frames: frames)
             }
         }

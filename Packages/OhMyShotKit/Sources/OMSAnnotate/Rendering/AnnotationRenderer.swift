@@ -196,7 +196,7 @@ nonisolated public enum AnnotationRenderer {
         return (width, height)
     }
 
-    private static func bitmapContext(for size: CGSize, space: CGColorSpace) -> CGContext? {
+    static func bitmapContext(for size: CGSize, space: CGColorSpace) -> CGContext? {
         guard let (width, height) = bitmapDimensions(for: size) else { return nil }
         return CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: width * 4, space: space,
@@ -221,12 +221,28 @@ nonisolated public enum AnnotationRenderer {
         context.translateBy(x: 0, y: output.height)
         context.scaleBy(x: 1, y: -1)
         context.translateBy(x: -output.minX, y: -output.minY)
+        // Blurs and pixelations show what lies under them, highlights take to it, and magnifiers show it larger,
+        // images included.
+        let readsPicture = document.items.contains { item in
+            switch item.shape {
+            case .redaction(let redaction): redaction.method != .solid
+            case .magnifier: true
+            default: item.multiplies
+            }
+        }
+        let combined = readsPicture ? redactionSource(document, base: base, composite: composite) : nil
+        let source = combined ?? Redactor.Source(base: base)
+        let picture = source.picture ?? (base, .zero)
+        // Every redaction's cover, made before anything is drawn: a magnifier shows them all, above it or below, and a
+        // blurred background is made from the picture with them on it.
+        let redactions = document.redactionCovers(source: source, filter: redactionFilter)
         let surface = layout.flatMap { layout in
             document.backdrop.map { BackdropPainter.Surface(fill: $0.fill, layout: layout, shadow: CardShadow($0, scale: document.scale)) }
         }
         let matte = layout?.matte ?? edges.flatMap { document.canvasMatte(edges: $0) }
         let underlay = BackdropPainter.Underlay(
-            surface: surface, blur: surface?.fill == .blur ? BackdropPainter.blurredCapture(base, canvas: canvas) : nil,
+            surface: surface,
+            blur: surface?.fill == .blur ? BackdropPainter.blurredCapture(base, canvas: canvas, redactions: redactions, scale: document.scale) : nil,
             matte: matte?.cgColor(in: space), canvas: canvas
         )
         underlay.paint(in: context)
@@ -241,27 +257,6 @@ nonisolated public enum AnnotationRenderer {
         }
         drawSpotlight(document.spots, canvas: layout?.card ?? canvas, in: context)
         context.restoreGState()
-        // Blurs and pixelations show what lies under them, highlights take to it, and magnifiers show it larger,
-        // images included.
-        let readsPicture = document.items.contains { item in
-            switch item.shape {
-            case .redaction(let redaction): redaction.method != .solid
-            case .magnifier: true
-            default: item.multiplies
-            }
-        }
-        let combined = readsPicture ? redactionSource(document, base: base, composite: composite) : nil
-        let source = combined ?? Redactor.Source(base: base)
-        let picture = source.picture ?? (base, .zero)
-        let covered = document.redactedRects
-        // Every redaction's cover, made before any mark is drawn: a magnifier shows them all, above it or below.
-        let redactions = document.items.compactMap { item -> (item: Annotation, coverage: Redactor.Coverage?)? in
-            guard case .redaction(let redaction) = item.shape else { return nil }
-            return (item, Redactor.coverage(
-                for: redaction, id: item.id, source: source, scale: document.scale, covered: covered, canvas: document.canvas,
-                filter: redactionFilter
-            ))
-        }
         for item in document.items where !item.isPicturePart {
             var coverage: Redactor.Coverage?
             var ground = HighlightGround.light
@@ -392,5 +387,19 @@ nonisolated extension AnnotationDocument {
             if case .redaction(let redaction) = item.shape { return redaction.rect }
             return nil
         }
+    }
+
+    /// Every redaction with what it draws (`Redactor.coverage`), in drawing order, each made from the picture as it
+    /// lies beneath it: `source` (the picture with any combined images) with every earlier redaction on it.
+    func redactionCovers(source: Redactor.Source, filter: Redactor.Filter = Redactor.apply) -> [(item: Annotation, coverage: Redactor.Coverage?)] {
+        let covered = redactedRects
+        var covers: [(item: Annotation, coverage: Redactor.Coverage?)] = []
+        for item in items {
+            guard case .redaction(let redaction) = item.shape else { continue }
+            covers.append((item, Redactor.coverage(
+                for: redaction, id: item.id, source: source, scale: scale, covered: covered, canvas: canvas, beneath: covers, filter: filter
+            )))
+        }
+        return covers
     }
 }

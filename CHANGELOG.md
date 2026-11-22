@@ -42,6 +42,8 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
+- A blur or pixelation drawn over another redaction now blurs or pixelates that redaction as it is drawn, not the picture under it. A Blur over a Solid redaction keeps the solid's color instead of bringing back a blurred copy of what the Solid hides. The editor, Annotate Area, and every copy, save, upload, and pin show the same.
+- A Blurred Capture background is made from the picture with its redactions on it, so it no longer carries a blurred trace of what a redaction covers.
 - Marking up in place, plugging in, taking away, or rearranging a display no longer throws the marks away. While the display holding the selection stays as it was, the annotation goes on; when that display goes or changes, the marked selection opens in the editor, kept in Capture History with its marks editable, as Open in Editor does.
 - A copy in another format, made ahead of a drag as a card appears, can no longer arrive late and stand in for the picture as it is now: a drag, Share…, or upload after you mark up or redact a capture hands over the marked-up picture, never the one from before.
 - Two projects with the same name from different folders, open at once, no longer share one picture: dragging out or saving a copy from either editor hands over its own.

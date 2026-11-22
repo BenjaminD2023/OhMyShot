@@ -192,17 +192,37 @@ nonisolated enum BackdropPainter {
         return (mask, rect)
     }
 
-    /// The capture's canvas, small and blurred until only its colors are left, for a `.blur` fill. A
-    /// tiny picture scaled up smoothly is as soft as a large blur at a fraction of the work.
-    static func blurredCapture(_ base: CGImage, canvas: CGRect) -> CGImage? {
+    /// The capture's canvas with its redactions on it, as they are drawn, and none of the other marks, small and blurred
+    /// until only its colors are left, for a `.blur` fill: it carries nothing a redaction hides. A tiny picture scaled up
+    /// smoothly is as soft as a large blur at a fraction of the work. `redactions` are the document's, in drawing order,
+    /// with what each draws (`AnnotationDocument.redactionCovers`); `scale` is the document's.
+    static func blurredCapture(
+        _ base: CGImage, canvas: CGRect, redactions: [(item: Annotation, coverage: Redactor.Coverage?)], scale: CGFloat
+    ) -> CGImage? {
         let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
         let region = canvas.standardized.integral.intersection(bounds)
-        guard !region.isNull, region.width >= 1, region.height >= 1, let cropped = base.cropping(to: region) else { return nil }
+        guard !region.isNull, region.width >= 1, region.height >= 1, var picture = base.cropping(to: region) else { return nil }
+        let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        let over = redactions.filter { $0.item.bounds(scale: scale).intersects(region) }
+        if !over.isEmpty {
+            // The redactions go on at the picture's own size, before it is made small: made small first, each small pixel
+            // along a redaction's edge would keep some of what lies under it. No such picture, no blur, never one made
+            // without them.
+            guard let context = AnnotationRenderer.bitmapContext(for: region.size, space: space) else { return nil }
+            context.translateBy(x: 0, y: region.height)
+            context.scaleBy(x: 1, y: -1)
+            context.translateBy(x: -region.minX, y: -region.minY)
+            AnnotationRenderer.drawImage(picture, in: region, context: context)
+            for (item, coverage) in over {
+                AnnotationRenderer.draw(item, in: context, scale: scale, coverage: coverage, ground: .light)
+            }
+            guard let redacted = context.makeImage() else { return nil }
+            picture = redacted
+        }
         let longest: CGFloat = 48
         let factor = min(longest / max(region.width, region.height), 1)
         let width = max(Int((region.width * factor).rounded()), 1)
         let height = max(Int((region.height * factor).rounded()), 1)
-        let space = base.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
         var small = Bitmap(width: width, height: height, colorSpace: space)
         let drawn = small.bytes.withUnsafeMutableBytes { raw -> Bool in
             guard let context = CGContext(
@@ -213,7 +233,7 @@ nonisolated enum BackdropPainter {
             // Opaque underneath, so a window's clear surroundings do not darken the blur.
             context.setFillColor(CGColor(gray: 1, alpha: 1))
             context.fill(CGRect(x: 0, y: 0, width: width, height: height))
-            context.draw(cropped, in: CGRect(x: 0, y: 0, width: width, height: height))
+            context.draw(picture, in: CGRect(x: 0, y: 0, width: width, height: height))
             return true
         }
         guard drawn else { return nil }
