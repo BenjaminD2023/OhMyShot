@@ -497,6 +497,46 @@ struct PictureExportTests {
         #expect(try raw(decode(Data(contentsOf: again)).image, 0, 0)[2] > 200)
     }
 
+    @Test func aPinsCopyIsMadeOnceForEachWayOfWritingIt() throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let pin = UUID()
+        var drawn = 0
+        let draw = { () throws -> CGImage in
+            drawn += 1
+            return try self.picture(60, 40, color: [30, 120, 60, 255])
+        }
+        let output = ScreenshotOutput(format: .jpeg, retinaAtOneX: true)
+        let first = try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 2, output: output, in: cache, picture: draw)
+        #expect(first.lastPathComponent == "Shot.jpg")
+        let decoded = try decode(Data(contentsOf: first))
+        #expect(decoded.type == UTType.jpeg.identifier && decoded.image.width == 30)
+        // A second drag hands over the same file, whatever the pattern would name it now, without drawing it again.
+        #expect(try ExportedFiles.file(forPin: pin, named: "Later", pixelsPerPoint: 2, output: output, in: cache, picture: draw) == first)
+        #expect(drawn == 1)
+        // Another way of writing it is another copy, and another pin's copy never stands in.
+        let heic = try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 2, output: ScreenshotOutput(format: .heic), in: cache, picture: draw)
+        #expect(heic.pathExtension == "heic")
+        let other = try ExportedFiles.file(forPin: UUID(), named: "Shot", pixelsPerPoint: 2, output: output, in: cache, picture: draw)
+        #expect(other != first && drawn == 3)
+    }
+
+    @Test func aPinsPictureThatCantBeDrawnLeavesNothingInItsPlace() throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let pin = UUID()
+        let output = ScreenshotOutput(format: .jpeg)
+        #expect(throws: ImageExporter.ExportError.cannotEncode) {
+            try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache) { throw ImageExporter.ExportError.cannotEncode }
+        }
+        #expect(!FileManager.default.fileExists(atPath: cache.path(percentEncoded: false)))
+        // Drawn the next time, it is made then.
+        let made = try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache) { try self.picture(10, 10) }
+        #expect(FileManager.default.fileExists(atPath: made.path(percentEncoded: false)))
+    }
+
     @Test func aCaptureLeftAsItIsAndARecordingAreHandedOverUnconverted() throws {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -524,6 +564,32 @@ struct PictureExportTests {
         #expect(FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
         ExportedFiles.removeOld(in: cache, now: .now.addingTimeInterval(ExportedFiles.lifetime + 60))
         #expect(!FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
+    }
+
+    @Test func aCopyHandedOverAgainStaysAsLongAsOneJustMade() throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let file = folder.appending(path: "Shot.png")
+        try writePNG(try picture(10, 10), to: file)
+        let output = ScreenshotOutput(format: .jpeg)
+        let pin = UUID()
+        let draw = { () throws -> CGImage in try self.picture(10, 10) }
+        let copies = [
+            try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache),
+            try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache, picture: draw),
+        ]
+        let daysAgo = Date.now.addingTimeInterval(-ExportedFiles.lifetime - 60)
+        for copy in copies {
+            try FileManager.default.setAttributes([.modificationDate: daysAgo], ofItemAtPath: copy.path(percentEncoded: false))
+        }
+        // Made days ago and dragged again now: the sweep that follows the drag leaves them for the app they go to.
+        #expect(try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache) == copies[0])
+        #expect(try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache, picture: draw) == copies[1])
+        ExportedFiles.removeOld(in: cache)
+        for copy in copies {
+            #expect(FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
+        }
     }
 
     @Test func theFoldersOldCopiesLeaveEmptyGoToo() throws {

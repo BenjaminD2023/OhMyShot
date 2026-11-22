@@ -5,14 +5,16 @@ import OMSCore
 import OSLog
 
 /// The pins open now, kept on disk so they come back after the app quits, updates, or crashes: `Pins.json` holds each
-/// pin's kind, place, zoom, opacity, and lock, its text or color, and whether the pins were hidden; each picture is a
-/// PNG beside it, named by its pin. Nothing is there while no pin is open. Reads and writes go through one queue of
-/// their own, in the order they were asked for, so a picture is on disk before the list that names it.
+/// pin's kind, place, zoom, opacity, and lock, its text or color, when it was pinned, and whether the pins were hidden;
+/// each picture is a PNG beside it, named by its pin, as is the capture of a pin that shows it without the background it
+/// was put on (`PinController.Pin.onBackground`). Nothing is there while no pin is open. Reads and writes go through one
+/// queue of their own, in the order they were asked for, so a picture is on disk before the list that names it.
 nonisolated final class PinArchive: Sendable {
     /// One pin as it is kept.
     struct Record: Codable, Equatable, Sendable {
         enum Content: Codable, Equatable, Sendable {
-            /// The picture is `<id>.png`, at `scale` pixels per point.
+            /// The picture is `<id>.png`, at `scale` pixels per point; its capture on its background, when it has one,
+            /// `<id>-background.png`.
             case picture(scale: CGFloat)
             case text(String)
             /// The color as it came: its color space's name and its components.
@@ -27,6 +29,10 @@ nonisolated final class PinArchive: Sendable {
         var zoom: CGFloat
         var opacity: CGFloat
         var locked: Bool
+        /// When it was pinned, in seconds since 2001 (`Date.timeIntervalSinceReferenceDate`): to the fraction, which the
+        /// list's ISO 8601 dates drop, while Capture Area and Pin writes its capture's file in the second before it pins.
+        /// Nil in a list kept before pins kept it.
+        var pinnedAt: TimeInterval?
     }
 
     struct Manifest: Codable, Equatable, Sendable {
@@ -46,15 +52,19 @@ nonisolated final class PinArchive: Sendable {
 
     private func pictureURL(_ id: UUID) -> URL { folder.appending(path: "\(id.uuidString).png") }
 
-    /// Writes a pin's picture, once, as it opens or as keeping begins.
-    func keepPicture(_ image: CGImage, id: UUID) {
-        queue.async { [self] in writePicture(image, id: id) }
+    private func backgroundURL(_ id: UUID) -> URL { folder.appending(path: "\(id.uuidString)-background.png") }
+
+    /// Writes a pin's picture, and its capture on its background when it has one (`PinController.Pin.onBackground`),
+    /// once, as it opens or as keeping begins.
+    func keepPicture(_ image: CGImage, onBackground: Data? = nil, id: UUID) {
+        queue.async { [self] in writePicture(image, onBackground: onBackground, id: id) }
     }
 
-    /// On the queue: writes a pin's picture.
-    private func writePicture(_ image: CGImage, id: UUID) {
+    /// On the queue: writes a pin's picture, its capture on its background first, so a picture on disk has it beside it.
+    private func writePicture(_ image: CGImage, onBackground: Data?, id: UUID) {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            if let onBackground { try ImageExporter.write(onBackground, to: backgroundURL(id)) }
             try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: pictureURL(id))
         } catch {
             Log.app.error("Could not keep a pin's picture: \(error.localizedDescription, privacy: .public)")
@@ -62,16 +72,16 @@ nonisolated final class PinArchive: Sendable {
     }
 
     /// Writes the list of pins, and each of `pictures` (the open picture pins', by pin) that isn't on disk, as one whose
-    /// first write failed; or with no pin removes everything kept. `waits` when the app is about to quit: until the list
-    /// is written, and every picture asked for before it.
-    func save(_ manifest: Manifest, pictures: [UUID: CGImage] = [:], waits: Bool = false) {
+    /// first write failed, with its capture on its background from `onBackground`; or with no pin removes everything
+    /// kept. `waits` when the app is about to quit: until the list is written, and every picture asked for before it.
+    func save(_ manifest: Manifest, pictures: [UUID: CGImage] = [:], onBackground: [UUID: Data] = [:], waits: Bool = false) {
         let write: @Sendable () -> Void = { [self] in
             if manifest.pins.isEmpty {
                 try? FileManager.default.removeItem(at: folder)
                 return
             }
             for (id, image) in pictures where !FileManager.default.fileExists(atPath: pictureURL(id).path(percentEncoded: false)) {
-                writePicture(image, id: id)
+                writePicture(image, onBackground: onBackground[id], id: id)
             }
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -83,10 +93,10 @@ nonisolated final class PinArchive: Sendable {
         if waits { queue.sync(execute: write) } else { queue.async(execute: write) }
     }
 
-    /// Removes a closed pin's picture; the list follows with the next save.
+    /// Removes a closed pin's picture, and its capture on its background; the list follows with the next save.
     func forget(_ id: UUID) {
-        let url = pictureURL(id)
-        queue.async { try? FileManager.default.removeItem(at: url) }
+        let urls = [pictureURL(id), backgroundURL(id)]
+        queue.async { urls.forEach { try? FileManager.default.removeItem(at: $0) } }
     }
 
     /// Removes everything kept.
@@ -99,15 +109,15 @@ nonisolated final class PinArchive: Sendable {
     /// all (the app stopped before writing it). A list that is there but can't be read now is left for the next
     /// launch. `done` runs on the main actor, only when a pin was kept; with nothing kept this does no more than find
     /// that the list isn't there.
-    func load(_ done: @escaping @MainActor @Sendable (Manifest, [UUID: CGImage]) -> Void) {
+    func load(_ done: @escaping @MainActor @Sendable (Manifest, [UUID: CGImage], [UUID: Data]) -> Void) {
         queue.async { [self] in
-            guard let (manifest, pictures) = read() else { return }
-            Task { @MainActor in done(manifest, pictures) }
+            guard let (manifest, pictures, onBackground) = read() else { return }
+            Task { @MainActor in done(manifest, pictures, onBackground) }
         }
     }
 
     /// What `load` reads, read now, for tests.
-    func loadNow() -> (Manifest, [UUID: CGImage])? {
+    func loadNow() -> (Manifest, [UUID: CGImage], [UUID: Data])? {
         queue.sync { read() }
     }
 
@@ -116,8 +126,9 @@ nonisolated final class PinArchive: Sendable {
         queue.sync {}
     }
 
-    /// On the queue: the list and its pictures, nil when no pin was kept.
-    private func read() -> (Manifest, [UUID: CGImage])? {
+    /// On the queue: the list, its pictures, and the captures on their backgrounds kept beside them; nil when no pin was
+    /// kept.
+    private func read() -> (Manifest, [UUID: CGImage], [UUID: Data])? {
         let data: Data
         do {
             data = try Data(contentsOf: manifestURL)
@@ -133,21 +144,22 @@ nonisolated final class PinArchive: Sendable {
             try? FileManager.default.removeItem(at: folder)
             return nil
         }
-        var pictures: [UUID: CGImage] = [:]
+        var pictures: [UUID: CGImage] = [:], onBackground: [UUID: Data] = [:]
         manifest.pins.removeAll { record in
             guard case .picture = record.content else { return false }
             guard let source = CGImageSourceCreateWithURL(pictureURL(record.id) as CFURL, nil),
                   let image = CGImageSourceCreateImageAtIndex(source, 0, [kCGImageSourceShouldCacheImmediately: true] as CFDictionary)
             else { return true }
             pictures[record.id] = image
+            onBackground[record.id] = try? Data(contentsOf: backgroundURL(record.id))
             return false
         }
-        let named = Set(manifest.pins.map { "\($0.id.uuidString).png" })
+        let named = Set(manifest.pins.flatMap { [pictureURL($0.id).lastPathComponent, backgroundURL($0.id).lastPathComponent] })
         let files = (try? FileManager.default.contentsOfDirectory(atPath: folder.path(percentEncoded: false))) ?? []
         for file in files where file.hasSuffix(".png") && !named.contains(file) {
             try? FileManager.default.removeItem(at: folder.appending(path: file))
         }
-        return manifest.pins.isEmpty ? nil : (manifest, pictures)
+        return manifest.pins.isEmpty ? nil : (manifest, pictures, onBackground)
     }
 }
 
@@ -169,7 +181,20 @@ extension PinArchive.Record {
             guard let named, let space = named.colorSpace?.name as String?, let components = named.components else { return nil }
             content = .color(space: space, components: components)
         }
-        self.init(id: pin.id, content: content, origin: pin.origin, frame: frame, zoom: zoom, opacity: opacity, locked: locked)
+        self.init(
+            id: pin.id, content: content, origin: pin.origin, frame: frame, zoom: zoom, opacity: opacity, locked: locked,
+            pinnedAt: pin.pinnedAt.timeIntervalSinceReferenceDate
+        )
+    }
+
+    /// The pin as it was kept, with its picture when it is one and its capture on its background when it has one; nil when
+    /// it can't be made. It was pinned when it was, so a capture changed since, before the app quit, still holds a picture
+    /// other than the pin's; one from a list kept before pins kept that is taken as pinned before its capture's every
+    /// change, and hands over its own picture.
+    func pin(picture: CGImage?, onBackground: Data? = nil) -> PinController.Pin? {
+        guard let content = pinContent(picture: picture) else { return nil }
+        let pinnedAt = pinnedAt.map(Date.init(timeIntervalSinceReferenceDate:)) ?? .distantPast
+        return PinController.Pin(id: id, content: content, origin: origin, pinnedAt: pinnedAt, onBackground: onBackground)
     }
 
     /// What the pin shows, made again, with its picture when it is one; nil when it can't be.

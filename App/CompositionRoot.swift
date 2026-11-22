@@ -376,11 +376,13 @@ final class CompositionRoot {
         captures.selfTimerKeys = { [weak self] in
             self?.hotkeys.keys(for: .selfTimer)
         }
-        captures.onPin = { [weak self] frame, entry in
+        captures.onPin = { [weak self] frame, entry, onBackground in
             guard let self else { return }
-            // A window captured with its shadow is larger than its frame: the scale is its display's.
-            let scale = displays.layout.display(id: frame.displayID)?.pixelsPerPoint ?? frame.pixelsPerPoint
-            pins.pin(frame.image, scale: scale, origin: entry.map { .capture($0.id) } ?? .clipboard, over: frame.frame)
+            // The capture's scale as the history keeps it: a selection across displays is taken at the largest of theirs,
+            // and a window captured with its shadow is larger than its frame. Without a record, its display's.
+            let scale = entry?.pixelsPerPoint.map { CGFloat($0) }
+                ?? displays.layout.display(id: frame.displayID)?.pixelsPerPoint ?? frame.pixelsPerPoint
+            pins.pin(frame.image, scale: scale, origin: entry.map { .capture($0.id) } ?? .clipboard, over: frame.frame, onBackground: onBackground)
         }
         // Pins are in new captures as they are on screen (Settings can leave them out); a pin just opened
         // is fetched into the capturable content at once, so the next capture has it.

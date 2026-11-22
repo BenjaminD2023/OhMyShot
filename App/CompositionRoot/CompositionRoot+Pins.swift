@@ -22,11 +22,14 @@ extension CompositionRoot {
                 Task { await files.copy(.init(image), png: nil, name: String(localized: "Pin"), scale: Double(scale), withFile: false) }
             },
             save: { [weak self] pin in
-                guard let self, case .image(let image, let scale) = pin.content else { return }
+                guard let self, case .image(_, let scale) = pin.content else { return }
                 if let entry = unchangedCapture(of: pin) {
                     Task { _ = self.savedOrSaidWhy(await self.files.saveScreenshot(fileAt: self.history.fileURL(for: entry), entry: entry, asks: true)) }
                 } else {
-                    Task { _ = self.savedOrSaidWhy(await self.files.saveScreenshot(.init(image), scale: Double(scale), asks: true)) }
+                    Task {
+                        guard let picture = await self.ownPicture(of: pin) else { return }
+                        _ = self.savedOrSaidWhy(await self.files.saveScreenshot(.init(picture), scale: Double(scale), asks: true))
+                    }
                 }
             },
             saveAs: { [weak self] pin in self?.savePinAs(pin) },
@@ -43,11 +46,15 @@ extension CompositionRoot {
                 self?.textCapture.openPanel(image: image, scale: scale, source: String(localized: "Pin"))
             },
             fileForDrag: { [weak self] pin in
-                guard let self else { return nil }
-                if case .image = pin.content, let entry = unchangedCapture(of: pin) {
+                guard let self, case .image(let image, let scale) = pin.content else { return nil }
+                if let entry = unchangedCapture(of: pin) {
                     return handedOverOrSaidWhy(files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint))
                 }
-                return pin.ownFile()
+                // A capture's pin hands over what it shows as its capture would leave; a picture from elsewhere goes as it came.
+                guard case .capture = pin.origin else { return pin.ownFile() }
+                return handedOverOrSaidWhy(files.fileToHandOver(pin: pin.id, scale: Double(scale)) {
+                    try Self.picture(image, onBackground: pin.onBackground)
+                })
             }
         )
     }
@@ -132,16 +139,41 @@ extension CompositionRoot {
     }
 
     /// The capture a picture pin came from while its file still holds the pin's picture. Once the editor keeps later edits
-    /// in it, Save and a drag take the pin's own picture, as for a pin from the clipboard.
+    /// in it, or it leaves the history, Save and a drag take the pin's own picture as it leaves the app (`ownPicture`).
     private func unchangedCapture(of pin: PinController.Pin) -> HistoryItem? {
         guard case .capture(let id) = pin.origin, let entry = history.item(id: id) else { return nil }
         let file = history.fileURL(for: entry).path(percentEncoded: false)
         guard let changed = (try? FileManager.default.attributesOfItem(atPath: file))?[.modificationDate] as? Date else { return nil }
-        return changed <= pin.pinnedAt ? entry : nil
+        return pin.shows(fileChangedAt: changed) ? entry : nil
+    }
+
+    /// A picture pin's own picture as it leaves the app, read off the main actor: for one laid over where it was taken,
+    /// which leaves out the background its capture was put on, the capture as the history kept it, on that background
+    /// (`PinController.Pin.onBackground`). Nil when that can't be read, which the pointer says: the picture without it
+    /// does not leave in its place.
+    private func ownPicture(of pin: PinController.Pin) async -> CGImage? {
+        guard case .image(let image, _) = pin.content else { return nil }
+        let onBackground = pin.onBackground
+        let read = await Task.detached(priority: .userInitiated) {
+            Result { try Self.picture(image, onBackground: onBackground) }.mapError { ExportFailure.converting($0) }
+        }.value
+        return handedOverOrSaidWhy(read)
+    }
+
+    /// `image`, or the capture on its background a pin keeps in its place (`PinController.Pin.onBackground`); throws when
+    /// that can't be read.
+    nonisolated private static func picture(_ image: CGImage, onBackground: Data?) throws -> CGImage {
+        guard let onBackground else { return image }
+        guard let source = CGImageSourceCreateWithData(onBackground as CFData, nil), let read = CGImageSourceCreateImageAtIndex(source, 0, nil)
+        else { throw ImageExporter.ExportError.cannotRead }
+        return read
     }
 
     private func savePinAs(_ pin: PinController.Pin) {
-        guard case .image(let image, let scale) = pin.content else { return }
-        Task { _ = savedOrSaidWhy(await files.saveScreenshotAs(.init(image), scale: Double(scale))) }
+        guard case .image(_, let scale) = pin.content else { return }
+        Task {
+            guard let picture = await ownPicture(of: pin) else { return }
+            _ = savedOrSaidWhy(await files.saveScreenshotAs(.init(picture), scale: Double(scale)))
+        }
     }
 }

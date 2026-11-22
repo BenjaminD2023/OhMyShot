@@ -287,6 +287,17 @@ final class ScreenshotFiles {
         return Self.logged(ExportedFiles.handOver(url, pixelsPerPoint: scale, output: output), "Converting", url.lastPathComponent)
     }
 
+    /// The same for a capture's pin whose capture's file no longer holds its picture (gone from the history, or changed
+    /// since it was pinned): `picture`, the pin's own as it leaves the app, written as Settings say and named from the
+    /// file name pattern. The pin's copy for the way Settings write it is kept, so a second drag is quick, and `picture`
+    /// is drawn only when there is none; why it could not be made, and then nothing goes.
+    func fileToHandOver(pin id: UUID, scale: Double, picture: () throws -> CGImage) -> Result<URL, ExportFailure> {
+        defer { sweepConvertedCopies() }
+        let name = settings.nextFileName(date: .now, appName: nil, windowTitle: nil)
+        let result = Result { try ExportedFiles.file(forPin: id, named: name, pixelsPerPoint: scale, output: output, picture: picture) }
+        return Self.logged(result.mapError { .converting($0) }, "Converting", name)
+    }
+
     /// The same where nobody drags, for a capture whose bytes are in hand: an upload, which must not depend on the
     /// capture's file staying. Converted off the main actor; why it could not be, when the bytes are no picture or
     /// the copy cannot be written.

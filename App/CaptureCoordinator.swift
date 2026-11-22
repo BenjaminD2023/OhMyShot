@@ -35,9 +35,10 @@ final class CaptureCoordinator {
     var saveFailed: ((ExportFailure, UUID?) -> Void)?
     /// A color taken with C over the magnifier while capturing: where it was, and the keys held then.
     var onColor: ((ScreenColor, CGPoint, NSEvent.ModifierFlags, Bool) -> Void)?
-    /// Receives a capture to pin where it was taken, with its record in the history. Set by the
-    /// composition root, which has the pins.
-    var onPin: ((CapturedFrame, HistoryItem?) -> Void)?
+    /// Receives a capture to pin where it was taken, with its record in the history and, when it was put on a background,
+    /// the capture as kept (a PNG), which the pin over the area shows without it. Set by the composition root, which has
+    /// the pins.
+    var onPin: ((CapturedFrame, HistoryItem?, Data?) -> Void)?
     /// How Self-Timer is cancelled, told to VoiceOver when it starts: the keys of its shortcut, or nil
     /// when it has none and the menu bar is the way. Set by the composition root.
     var selfTimerKeys: (() -> String?)?
@@ -782,15 +783,19 @@ final class CaptureCoordinator {
             switch action {
             case .annotate: openInEditor?(entry, scale)
             case .pin:
+                // The background is the capture's alone: the pin lies over the area without it, and keeps the capture as the
+                // history keeps it, on that background, to hand over in place of the capture's file.
+                let decorated = document.flatMap { try? JSONDecoder().decode(AnnotationDocument.self, from: $0) }?.backdrop != nil
+                let onBackground = decorated ? shown.png : nil
                 // Marks drawn in place are on the pin too, or a redaction made there would show the original.
                 if let marks, !marks.items.isEmpty {
                     if let pinned = await CaptureRendition.pinned(marks, on: frame.image) {
-                        onPin?(CapturedFrame(image: pinned, hdrImage: nil, displayID: frame.displayID, frame: frame.frame), entry)
+                        onPin?(CapturedFrame(image: pinned, hdrImage: nil, displayID: frame.displayID, frame: frame.frame), entry, onBackground)
                     } else {
                         NSSound.beep()
                     }
                 } else {
-                    onPin?(frame, entry)
+                    onPin?(frame, entry, onBackground)
                 }
             case .copy, .save, .upload, nil: break
             }
