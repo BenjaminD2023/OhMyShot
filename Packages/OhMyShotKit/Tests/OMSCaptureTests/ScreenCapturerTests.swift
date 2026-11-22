@@ -110,6 +110,19 @@ struct ScreenCapturerTests {
         #expect(corner.blue > 200 && corner.red < 50 && corner.alpha > 200)
     }
 
+    @Test func liveWindowFrameUsesFreshSCWindowFrameFlippedToAppKitSpace() {
+        let primary = Self.display(CGRect(x: 0, y: 0, width: 1440, height: 900))
+        let layout = DisplayLayout(displays: [primary])
+        let stale = CGRect(x: 100, y: 200, width: 400, height: 300)
+        // Fresh SCWindow resized in CG coordinates (y down from primary top): top=100, height=400 -> AppKit y=400..800.
+        let freshCG = CGRect(x: 120, y: 100, width: 600, height: 400)
+        #expect(
+            ScreenCapturer.liveWindowFrame(scWindowFrame: freshCG, fallback: stale, layout: layout)
+                == CGRect(x: 120, y: 400, width: 600, height: 400)
+        )
+        #expect(ScreenCapturer.liveWindowFrame(scWindowFrame: .zero, fallback: stale, layout: layout) == stale)
+    }
+
     private static func solid(width: Int, height: Int, red: CGFloat, blue: CGFloat) throws -> CGImage {
         let context = try #require(CGContext(
             data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,

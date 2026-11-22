@@ -151,22 +151,9 @@ final class CaptureCoordinator {
             if let area = outcome.takenArea { lastArea = area }
             switch outcome {
             case .allInOne(let choice, let rect, let display, let frozen):
-                remember(rect, on: display)
-                switch choice {
-                case .screenshot(let action):
-                    previousArea = rect
-                    let followUp = CaptureFollowUp(action: action)
-                    let window = overlay.window(framing: rect)
-                    let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
-                    if let frozen {
-                        Task { await self.deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
-                    } else {
-                        Task { await self.captureArea(rect, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
-                    }
-                case .text: allInOneText?(rect, frozen)
-                case .scroll: allInOneScroll?(rect)
-                case .record: break
-                }
+                handleAllInOne(choice, windows: [], area: rect, display: display, frozen: frozen, app: app, title: title, copiesToClipboard: copiesToClipboard)
+            case .allInOneWindows(let choice, let targets, let rect, let display, let frozen):
+                handleAllInOne(choice, windows: targets, area: rect, display: display, frozen: frozen, app: app, title: title, copiesToClipboard: copiesToClipboard)
             case .window(let target, let modifiers):
                 Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
             case .windows(let targets, let modifiers):
@@ -185,6 +172,38 @@ final class CaptureCoordinator {
             case .region, .annotated, .scroll:
                 break
             }
+        }
+    }
+
+    private func handleAllInOne(
+        _ choice: AllInOneChoice, windows: [WindowTarget], area: CGRect, display: DisplayInfo, frozen: CapturedFrame?,
+        app: String?, title: String?, copiesToClipboard: Bool
+    ) {
+        remember(area, on: display)
+        switch choice {
+        case .screenshot(let action):
+            previousArea = area
+            let followUp = CaptureFollowUp(action: action)
+            if !windows.isEmpty {
+                if windows.count == 1 {
+                    Task { await captureWindow(windows[0], copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display) }
+                } else {
+                    Task { await captureWindows(windows, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                }
+                return
+            }
+            let window = overlay.window(framing: area)
+            let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
+            if let window {
+                Task { await captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display) }
+            } else if let frozen {
+                Task { await deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+            } else {
+                Task { await captureArea(area, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+            }
+        case .text: allInOneText?(area, frozen)
+        case .scroll: allInOneScroll?(area)
+        case .record: break
         }
     }
 
@@ -496,7 +515,7 @@ final class CaptureCoordinator {
             case .color(let color, let point, _, let modifiers, let keyboard):
                 onColor?(color, point, modifiers, keyboard)
                 followUp.finish(nil)
-            case .annotated, .record, .scroll, .allInOne, .cancelled:
+            case .annotated, .record, .scroll, .allInOne, .allInOneWindows, .cancelled:
                 followUp.finish(nil)
             }
         }
@@ -505,17 +524,27 @@ final class CaptureCoordinator {
     /// Captures a window on its own, with its shadow while Settings keep it, on the background Settings choose for
     /// windows; `modifiers` with Shift, as the window was clicked, takes it the other way round.
     private func captureWindow(
-        _ target: WindowTarget, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none, modifiers: NSEvent.ModifierFlags = []
+        _ target: WindowTarget, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none,
+        modifiers: NSEvent.ModifierFlags = [], clipTo: DisplayInfo? = nil
     ) async {
         let probe = LatencyProbe("capture.window")
         do {
-            let frame = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
+            var captured = try await capturer.captureWindow(target, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
+            let captureScale = displays.layout.display(id: captured.displayID)?.pixelsPerPoint ?? captured.pixelsPerPoint
+            if let clipTo, !clipTo.frame.contains(captured.frame) {
+                let pictureFrame = WallpaperCrop.pictureFrame(of: captured.image, window: captured.frame, pixelsPerPoint: captureScale)
+                guard let clipped = captured.cropped(to: clipTo.frame, mappedFrom: pictureFrame, pixelsPerPoint: captureScale) else {
+                    throw CaptureError.emptyResult
+                }
+                captured = CapturedFrame(image: clipped.image, hdrImage: clipped.hdrImage, displayID: clipTo.id, frame: clipped.frame)
+            }
+            let frame = captured
             probe.end()
-            let background = await windowBackground(for: frame, shiftHeld: modifiers.contains(.shift))
+            let background = await windowBackground(for: frame, shiftHeld: modifiers.contains(.shift), pixelsPerPoint: captureScale)
             // The display's scale: the capture is larger than the window's frame by its shadow.
             await deliver(
                 frame, appName: target.ownerName, windowTitle: target.title, copiesToClipboard: copiesToClipboard, background: background,
-                pixelsPerPoint: displays.layout.display(id: frame.displayID)?.pixelsPerPoint, followUp: followUp
+                pixelsPerPoint: captureScale, followUp: followUp
             )
         } catch CaptureError.windowNotFound {
             tellWindowClosed(at: target.frame)
@@ -568,13 +597,13 @@ final class CaptureCoordinator {
     /// Corners and Shadow is not put on a window, which keeps its own corners and shadow. The desktop picture is taken
     /// around the window as the display shows it now and kept with the pictures backgrounds use, so the capture can be
     /// marked up and kept the same later.
-    private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool) async -> CaptureBackground {
+    private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool, pixelsPerPoint: CGFloat? = nil) async -> CaptureBackground {
         let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automaticForWindows != nil, shiftHeld: shiftHeld)
         switch resolved {
         case .none: return .none
         case .preset: return .automatic
         case .wallpaper:
-            guard let backdrop = await wallpaperBackdrop(around: frame) else {
+            guard let backdrop = await wallpaperBackdrop(around: frame, pixelsPerPoint: pixelsPerPoint) else {
                 Log.capture.notice("Window screenshot without the desktop picture: it could not be taken")
                 return .none
             }
@@ -598,14 +627,16 @@ final class CaptureCoordinator {
     #endif
 
     /// The desktop picture around a window capture as a background: as much of it as the finished picture covers.
-    private func wallpaperBackdrop(around frame: CapturedFrame) async -> Backdrop? {
+    private func wallpaperBackdrop(around frame: CapturedFrame, pixelsPerPoint: CGFloat? = nil) async -> Backdrop? {
         let layout = displays.layout
         guard let display = layout.display(id: frame.displayID) ?? layout.display(at: CGPoint(x: frame.frame.midX, y: frame.frame.midY)),
               let wallpaper = try? await capturer.captureWallpapers(of: [display])[display.id] else { return nil }
         let padding = CaptureBackground.wallpaperPadding
-        let picture = WallpaperCrop.pictureFrame(of: frame.image, window: frame.frame, pixelsPerPoint: display.pixelsPerPoint)
+        let imageScale = pixelsPerPoint ?? display.pixelsPerPoint
+        let picture = WallpaperCrop.pictureFrame(of: frame.image, window: frame.frame, pixelsPerPoint: imageScale)
         guard let region = WallpaperCrop.region(
-            around: picture, picturePixels: CGSize(width: frame.image.width, height: frame.image.height), padding: padding, on: display
+            around: picture, picturePixels: CGSize(width: frame.image.width, height: frame.image.height),
+            pixelsPerPoint: imageScale, padding: padding, on: display
         ), let crop = wallpaper.cropping(to: region) else { return nil }
         // A background is soft: a JPEG of it, no larger than a background is ever read, keeps the pictures folder
         // small. The same picture is kept once.

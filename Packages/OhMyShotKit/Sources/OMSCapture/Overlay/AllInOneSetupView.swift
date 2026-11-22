@@ -35,12 +35,15 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     }
 
     /// A way to take the area was chosen: the choice and the area in global points.
-    var onChoose: ((AllInOneChoice, CGRect) -> Void)?
+    var onChoose: ((AllInOneChoice, CGRect, Bool) -> Void)?
     /// A shape was chosen on the ratio chip of Capture Area's size control: the shape Shift keeps from now on.
     var onShapeKept: ((AspectRatio) -> Void)?
+    /// Called when the initial window selection becomes an edited area.
+    var onAreaAdjusted: ((CGRect) -> Void)?
 
     private let offersUpload: Bool
     private let kind: Kind
+    private var windowFrames: [CGRect]
     /// The area in global points.
     private(set) var area: CGRect
     /// The shape kept while the area is resized or a size typed; nil for any shape.
@@ -49,9 +52,13 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     /// `ratio` is the shape already kept when the frame opens; the area is not reshaped to it here.
     /// `showsCopy`: whether the bar has a Copy chip, which only while Settings don't copy every capture says more than
     /// Capture does; Command-C copies either way.
-    init(display: DisplayInfo, area: CGRect, offersUpload: Bool, showsCopy: Bool = true, kind: Kind = .allInOne, ratio: AspectRatio? = nil) {
+    init(
+        display: DisplayInfo, area: CGRect, offersUpload: Bool, showsCopy: Bool = true, kind: Kind = .allInOne,
+        ratio: AspectRatio? = nil, windowFrames: [CGRect] = []
+    ) {
         self.offersUpload = offersUpload
         self.kind = kind
+        self.windowFrames = windowFrames
         self.area = area
         self.ratio = ratio
         super.init(display: display, bar: AllInOneActionBar(offersUpload: offersUpload, showsCopy: showsCopy, sizingOnly: kind == .sizing))
@@ -100,6 +107,10 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     override func areaAdjusted(_ area: CGRect) {
         self.area = area
+        if !windowFrames.isEmpty {
+            windowFrames = []
+            onAreaAdjusted?(area)
+        }
         update()
     }
 
@@ -131,7 +142,16 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     private func update() {
         chrome.selection = frameRect
-        chrome.showsHandles = true
+        let localWindowFrames = windowFrames.compactMap { frame -> CGRect? in
+            let clipped = frame.intersection(display.frame)
+            guard !clipped.isNull, !clipped.isEmpty else { return nil }
+            return AreaFrame.local(clipped, on: display)
+        }
+        chrome.selectionPath = localWindowFrames.isEmpty ? nil : OverlayView.roundedWindowPath(localWindowFrames)
+        chrome.selectionMaskPath = localWindowFrames.isEmpty
+            ? nil
+            : SelectionChromeView.unionPath(OverlayView.roundedWindowPaths(localWindowFrames))
+        chrome.showsHandles = localWindowFrames.isEmpty
         bar.show(pixelSize: pixelSize, ratio: ratio)
         placeBar()
         setAccessibilityValue(pixelReading)
@@ -148,10 +168,16 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     private func keep(_ ratio: AspectRatio?) {
         // A size being typed is set first, under the shape it was typed for.
         endTyping()
+        let changed = self.ratio != ratio
         self.ratio = ratio
         if let ratio {
+            if changed { clearFit() }
+            let before = area
             let local = AreaFrame.local(area, on: display)
             setArea(AreaFrame.shaped(local, to: ratio.value, in: bounds))
+            // `setArea` deliberately skips `areaAdjusted` when snapping leaves the geometry unchanged. The ratio chip
+            // still needs to reflect the newly kept shape, without clearing a selected window outline on a no-op resize.
+            if area == before { update() }
             if kind == .sizing { onShapeKept?(ratio) }
         } else {
             update()
@@ -178,11 +204,11 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
         NSAccessibility.post(element: self, notification: .valueChanged)
     }
 
-    private func choose(_ choice: AllInOneChoice, area: CGRect? = nil) {
+    private func choose(_ choice: AllInOneChoice, area: CGRect? = nil, wholeDisplay: Bool = false) {
         if case .screenshot(.upload) = choice, !offersUpload { return NSSound.beep() }
         // A size being typed is set first: what is taken is what the fields say.
         endTyping()
-        onChoose?(choice, area ?? self.area)
+        onChoose?(choice, area ?? self.area, wholeDisplay)
     }
 
     /// Sets a size being typed in the bar's fields, and takes the keys back from them.
@@ -218,7 +244,7 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
             guard kind == .allInOne, !flags.contains(.command), !flags.contains(.control) else { return super.keyDown(with: event) }
             if character == "f" {
                 // The whole display, at once.
-                choose(.screenshot(nil), area: display.frame)
+                choose(.screenshot(nil), area: display.frame, wholeDisplay: true)
             } else if let choice = Self.choice(for: character) {
                 choose(choice)
             } else {

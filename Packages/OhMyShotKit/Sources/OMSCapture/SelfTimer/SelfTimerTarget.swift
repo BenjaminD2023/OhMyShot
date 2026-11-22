@@ -19,7 +19,7 @@ public enum SelfTimerTarget: Equatable {
         case .windows(let targets, let modifiers):
             guard !targets.isEmpty else { return nil }
             self = .windows(targets, modifiers)
-        case .annotated, .color, .record, .scroll, .allInOne, .cancelled: return nil
+        case .annotated, .color, .record, .scroll, .allInOne, .allInOneWindows, .cancelled: return nil
         }
     }
 

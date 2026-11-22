@@ -18,7 +18,6 @@ struct ScreenshotsSettingsView: View {
                 HelpTopic(String(localized: "After screenshot", bundle: .module), hasDestination
                     ? Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below. Upload sends it to your default destination.", bundle: .module)
                     : Text("Copy puts the capture on the clipboard. Quick Access shows it as a card in the corner of the screen, to copy, save, or drag into another app. Save puts it in the folder below.", bundle: .module)),
-                HelpTopic(String(localized: "Background", bundle: .module), Text("Puts each new screenshot on a background. Rounded corners and shadow rounds an area’s or a display’s corners and lays a soft shadow around it on clear room, which JPEG fills with white; a window keeps its own. Save others as presets with the editor’s Background tool.", bundle: .module)),
             ]) {
                 AfterCaptureChoices(
                     settings: settings, kind: .screenshot, hasDestination: hasDestination,
@@ -41,7 +40,9 @@ struct ScreenshotsSettingsView: View {
                     }
                 }
             }
-            SettingsRow(String(localized: "Background", bundle: .module)) {
+            SettingsRow(String(localized: "Background", bundle: .module), help: [
+                HelpTopic(String(localized: "Background", bundle: .module), Text("Sets the automatic background for new captures. Rounded corners and shadow rounds area and display captures and adds a soft shadow. Window captures keep native rounded corners; their native shadow is controlled separately in Capture › Windows. In Capture › Windows, Screenshot background uses the saved preset selected here, skipping Rounded corners and shadow for windows. Save a background as a preset with the editor’s Background tool.", bundle: .module)),
+            ]) {
                 Picker(selection: Binding(
                         get: { automaticBackground },
                     set: { choice in

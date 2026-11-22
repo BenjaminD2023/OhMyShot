@@ -36,6 +36,9 @@ public final class OverlayController {
         /// All-In-One's area (global points, on one display) and what to do with it; `frozen` as for a region. A
         /// recording chosen there is set up in the same session, and ends it as `record`.
         case allInOne(AllInOneChoice, CGRect, display: DisplayInfo, frozen: CapturedFrame?)
+        /// All-In-One's selected windows are framed by the setup bar before the final action. The area is their union
+        /// for text and scrolling actions; screenshots use the original targets for native multi-window capture.
+        case allInOneWindows(AllInOneChoice, [WindowTarget], CGRect, display: DisplayInfo, frozen: CapturedFrame?)
         case cancelled
 
         /// The area this outcome took, in global points, for L to bring back: a region, All-In-One's area whatever it
@@ -43,7 +46,7 @@ public final class OverlayController {
         /// annotation, or nothing.
         public var takenArea: CGRect? {
             switch self {
-            case .region(let rect, _, _, _), .allInOne(_, let rect, _, _), .scroll(let rect, _, _): rect
+            case .region(let rect, _, _, _), .allInOne(_, let rect, _, _), .allInOneWindows(_, _, let rect, _, _), .scroll(let rect, _, _): rect
             case .record(.area(let rect), _, _): rect
             case .record(.display, let display, _): display.frame
             case .record(.window, _, _), .window, .windows, .annotated, .color, .cancelled: nil
@@ -240,6 +243,10 @@ public final class OverlayController {
     private var hovered: HoveredWindow?
     /// The window under the press, which the release frames while the press stays a click.
     private var pressedWindow: HoveredWindow?
+    /// Windows selected with Shift while All-In-One stays in its live, area-mode hover picker.
+    private var allInOneSelectedWindows: [WindowTarget] = []
+    /// The selected windows carried through All-In-One's frozen setup bar, until its final action is chosen.
+    private var allInOneCaptureWindows: [WindowTarget] = []
     /// The window a click framed, and the area it framed, in this session or the one just ended (`window(framing:)`).
     private var framed: (window: WindowTarget, area: CGRect)?
     private var windowPicker: WindowPickerController?
@@ -342,6 +349,8 @@ public final class OverlayController {
         hoverWindows = []
         hovered = nil
         pressedWindow = nil
+        allInOneSelectedWindows = []
+        allInOneCaptureWindows = []
         framed = nil
         previousApp = NSWorkspace.shared.frontmostApplication.flatMap { $0 == .current ? nil : $0 }
 
@@ -510,9 +519,13 @@ public final class OverlayController {
     }
 
     /// The window a click in All-In-One framed `area` from, in this session or the one just ended; nil for any other
-    /// area, dragged out or changed after it was framed. What is taken in that area is named after this window, its app
-    /// and title, as a window capture is, rather than after the app in front.
+    /// area, dragged out or changed after it was framed. Screenshot uses this exact match to retain native window
+    /// corners and shadow; other choices use its app and title for naming.
     public func window(framing area: CGRect) -> WindowTarget? {
+        Self.framedWindow(framed, matching: area)
+    }
+
+    static func framedWindow(_ framed: (window: WindowTarget, area: CGRect)?, matching area: CGRect) -> WindowTarget? {
         guard let framed, framed.area == area else { return nil }
         return framed.window
     }
@@ -880,24 +893,42 @@ public final class OverlayController {
     /// Capture, the size, and the shape on its bar, keeping `ratio`. False, and nothing framed, when too little of the
     /// area is on the display.
     @discardableResult
-    private func startAllInOneSetup(on display: DisplayInfo, area: CGRect, sizing: Bool = false, ratio: AspectRatio? = nil) -> Bool {
+    private func startAllInOneSetup(
+        on display: DisplayInfo, area: CGRect, sizing: Bool = false, ratio: AspectRatio? = nil, windowFrames: [CGRect] = []
+    ) -> Bool {
         guard let entry = entries[display.id], let area = AreaFrame.fitted(area, in: display.frame) else { return false }
+        hovered = nil
+        pressedWindow = nil
+        allInOneSelectedWindows = []
+        for entry in entries.values { entry.view.setSelectedWindows([]) }
         keepOnly(entry)
         let setup = AllInOneSetupView(
-            display: display, area: area, offersUpload: (options.allInOne?.offersUpload ?? false) && !sizing, showsCopy: options.allInOne?.showsCopy ?? true,
-            kind: sizing ? .sizing : .allInOne, ratio: sizing ? ratio : nil
+            display: display, area: area, offersUpload: (options.allInOne?.offersUpload ?? false) && !sizing,
+            showsCopy: options.allInOne?.showsCopy ?? true, kind: sizing ? .sizing : .allInOne,
+            ratio: sizing ? ratio : nil, windowFrames: windowFrames
         )
         setup.onShapeKept = { [weak self] shape in self?.onKeptShapeChange?(shape) }
+        setup.onAreaAdjusted = { [weak self] _ in
+            self?.allInOneCaptureWindows = []
+            self?.framed = nil
+        }
         setup.codeFinder = codes
         setup.edgeTolerance = measureTolerance
-        setup.onChoose = { [weak self, weak setup] choice, area in
+        setup.onChoose = { [weak self, weak setup] choice, area, wholeDisplay in
             guard let self else { return }
+            if wholeDisplay {
+                framed = nil
+                allInOneSelectedWindows = []
+                allInOneCaptureWindows = []
+                for entry in entries.values { entry.view.setSelectedWindows([]) }
+            }
             if sizing {
                 // Taken as the drag would have taken it. In-place annotation hosts its interface in the overlay's view,
                 // which the frame no longer covers.
                 setup?.removeFromSuperview()
                 select(area, startingOn: display, modifiers: [])
             } else if choice == .record {
+                allInOneCaptureWindows = []
                 setup?.removeFromSuperview()
                 setUpRecording(on: display, target: area == display.frame ? .display : .area(area))
             } else {
@@ -912,7 +943,11 @@ public final class OverlayController {
     private func endAllInOne(_ choice: AllInOneChoice, _ area: CGRect, on display: DisplayInfo) {
         let frozen = holdsStill ? frozenArea(area, on: [display]) : nil
         Log.capture.notice("All-In-One \(String(describing: choice), privacy: .public) on \(NSStringFromRect(area), privacy: .public)")
-        end(.allInOne(choice, area, display: display, frozen: frozen))
+        if allInOneCaptureWindows.isEmpty {
+            end(.allInOne(choice, area, display: display, frozen: frozen))
+        } else {
+            end(.allInOneWindows(choice, allInOneCaptureWindows, area, display: display, frozen: frozen))
+        }
     }
 
     /// A recording chosen in All-In-One, set up in the same session (another would have to take the keyboard back):
@@ -947,6 +982,8 @@ public final class OverlayController {
         isActive = false
         options = SessionOptions()
         allInOneMode = nil
+        allInOneSelectedWindows = []
+        allInOneCaptureWindows = []
         chosenAhead = nil
         pendingAnnotation = nil
         annotatedDisplay = nil
@@ -1087,9 +1124,40 @@ extension OverlayController {
     /// Draws the window highlighted (during a press, the one pressed on while the press is a click) on its display alone.
     private func showHover() {
         let shown = drag == nil ? hovered : pressedWindow
+        let syncAllInOneSelection = isAllInOne && allInOneMode == nil && entries.values.allSatisfy { $0.view.mode == .area }
         for (id, entry) in entries {
+            if syncAllInOneSelection { entry.view.setSelectedWindows(allInOneSelectedWindows) }
             entry.view.highlight(id == shown?.display.id ? shown : nil)
         }
+    }
+
+    static func displayForSetup(targets: [WindowTarget], in layout: DisplayLayout) -> DisplayInfo? {
+        layout.displays.max { first, second in
+            func coveredArea(on display: DisplayInfo) -> CGFloat {
+                targets.reduce(0) { total, target in
+                    let part = target.frame.intersection(display.frame)
+                    return total + (part.isNull ? 0 : part.width * part.height)
+                }
+            }
+            return coveredArea(on: first) < coveredArea(on: second)
+        }.flatMap { display in
+            targets.contains { $0.frame.intersects(display.frame) } ? display : nil
+        }
+    }
+
+    static func toggledWindow(_ target: WindowTarget, in selected: [WindowTarget]) -> [WindowTarget] {
+        if let index = selected.firstIndex(of: target) {
+            var selected = selected
+            selected.remove(at: index)
+            return selected
+        }
+        return selected + [target]
+    }
+
+    private func toggleAllInOneWindow(_ target: WindowTarget, on view: OverlayView) {
+        allInOneSelectedWindows = Self.toggledWindow(target, in: allInOneSelectedWindows)
+        showHover()
+        view.announceValue()
     }
 
     /// Frames the window a click in All-In-One was on, its part on the display clicked on, as a drag over it would have:
@@ -1101,18 +1169,18 @@ extension OverlayController {
         guard let rect = selection.rect, !selection.isTooSmall else { return }
         framed = (clicked.window, rect)
         Log.capture.notice("All-In-One window \(clicked.window.id, privacy: .public) clicked: \(NSStringFromRect(rect), privacy: .public) on display \(clicked.display.id, privacy: .public)")
-        select(rect, startingOn: clicked.display, modifiers: modifiers)
+        select(rect, startingOn: clicked.display, modifiers: modifiers, windowFrames: [clicked.window.frame])
     }
 
     /// Ends the session with an area: handed to in-place annotation, or kept as it was frozen on screen,
     /// or captured once the overlay has gone. `display` is where the drag began; the outcome names the
     /// display holding most of the area.
-    private func select(_ rect: CGRect, startingOn display: DisplayInfo, modifiers: NSEvent.ModifierFlags) {
+    private func select(_ rect: CGRect, startingOn display: DisplayInfo, modifiers: NSEvent.ModifierFlags, windowFrames: [CGRect] = []) {
         if isAllInOne {
             switch allInOneMode {
             case .record?: setUpRecording(on: display, target: rect == display.frame ? .display : .area(rect))
             case let mode?: endAllInOne(mode, rect, on: display)
-            case nil: startAllInOneSetup(on: display, area: rect)
+            case nil: startAllInOneSetup(on: display, area: rect, windowFrames: windowFrames)
             }
             return
         }
@@ -1219,8 +1287,22 @@ extension OverlayController: OverlayViewDelegate {
         pressedWindow = nil
         guard let rect = selection.rect, !selection.isTooSmall else {
             selection.reset()
-            // A click on the window All-In-One highlights frames that window.
-            if let clicked { return frameWindow(clicked, modifiers: modifiers) }
+            if let clicked {
+                if isAllInOne, allInOneMode == nil, purpose == .screenshot, modifiers.contains(.shift) {
+                    toggleAllInOneWindow(clicked.window, on: view)
+                    updateHover(at: drag.point)
+                    showSelection()
+                    return
+                }
+                if isAllInOne, allInOneMode == nil, !allInOneSelectedWindows.isEmpty {
+                    var targets = allInOneSelectedWindows
+                    if !targets.contains(clicked.window) { targets.append(clicked.window) }
+                    overlayView(view, didSelectWindows: targets, modifiers: modifiers)
+                    return
+                }
+                // A click on the window All-In-One highlights frames that window.
+                return frameWindow(clicked, modifiers: modifiers)
+            }
             showSelection()
             updateCursorVisibility(at: drag.point)
             // A click, not a drag: recording takes the whole display.
@@ -1228,6 +1310,8 @@ extension OverlayController: OverlayViewDelegate {
             updateHover(at: drag.point)
             return
         }
+        allInOneSelectedWindows = []
+        showHover()
         logSelection(rect, from: display, endingAt: drag.point, highest: drag.top)
         select(rect, startingOn: display, modifiers: modifiers)
     }
@@ -1405,6 +1489,18 @@ extension OverlayController: OverlayViewDelegate {
         drag?.spaceHeld = false
     }
 
+    func overlayViewDidRequestDisplayCapture(_ view: OverlayView) {
+        framed = nil
+        allInOneSelectedWindows = []
+        allInOneCaptureWindows = []
+        for entry in entries.values { entry.view.setSelectedWindows([]) }
+        if isAllInOne, allInOneMode == nil {
+            endAllInOne(.screenshot(nil), view.display.frame, on: view.display)
+        } else {
+            overlayView(view, didSelect: view.display.frame, modifiers: [])
+        }
+    }
+
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {
         // All-In-One's Screen (or F) takes the whole display at once; a mode chosen before takes it too.
         if isAllInOne, allInOneMode == nil {
@@ -1418,6 +1514,9 @@ extension OverlayController: OverlayViewDelegate {
         // Choosing the purpose in hand again, or a plain capture (Area, A), lets it go.
         let next: AllInOneChoice? = if case .screenshot = choice { nil } else if choice == allInOneMode { nil } else { choice }
         guard next != allInOneMode else { return }
+        allInOneSelectedWindows = []
+        allInOneCaptureWindows = []
+        for entry in entries.values { entry.view.setSelectedWindows([]) }
         allInOneMode = next
         let mark = next.flatMap(AllInOneBar.Choice.init(purpose:))
         for entry in entries.values { entry.view.markPurpose(mark) }
@@ -1449,6 +1548,9 @@ extension OverlayController: OverlayViewDelegate {
         hoverWindows = []
         hovered = nil
         pressedWindow = nil
+        allInOneSelectedWindows = []
+        allInOneCaptureWindows = []
+        framed = nil
         cancelTextDetections()
         snapsToText = false
         let point = pointer ?? NSEvent.mouseLocation
@@ -1554,11 +1656,22 @@ extension OverlayController: OverlayViewDelegate {
 
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
         guard let first = targets.first else { return }
+        let unionFrame = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
+        if isAllInOne, allInOneMode == nil, purpose == .screenshot {
+            guard let setupDisplay = Self.displayForSetup(targets: targets, in: topology.layout) else { return }
+            allInOneCaptureWindows = targets
+            guard startAllInOneSetup(
+                on: setupDisplay, area: unionFrame.intersection(setupDisplay.frame), windowFrames: targets.map(\.frame)
+            ) else {
+                allInOneCaptureWindows = []
+                return
+            }
+            return
+        }
         if targets.count == 1 {
             overlayView(view, didSelectWindow: first, modifiers: modifiers)
             return
         }
-        let unionFrame = targets.dropFirst().reduce(first.frame) { $0.union($1.frame) }
         if isAllInOne, let mode = allInOneMode {
             endAllInOne(mode, unionFrame.intersection(view.display.frame), on: view.display)
             return
@@ -1576,6 +1689,8 @@ extension OverlayController: OverlayViewDelegate {
         guard pendingAnnotation == nil, !isAnnotating else { return }
         selection.reset()
         drag = nil
+        allInOneSelectedWindows = []
+        showHover()
         if mode == .window, windows.isEmpty {
             windows = WindowCatalog.snapshot(layout: topology.layout, excludingPID: windowsExcluded)
         }

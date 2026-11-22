@@ -73,12 +73,12 @@ extension SettingsTab {
                 ], keywords: String(localized: "SEARCH_KEYWORDS_MAGNIFIER", defaultValue: "loupe, zoom, lens, pixel", bundle: .module)),
                 SettingsSearchRow(String(localized: "Self-Timer", bundle: .module), keywords: String(localized: "SEARCH_KEYWORDS_SELF_TIMER", defaultValue: "timer, delay, delayed capture, countdown, wait", bundle: .module)),
                 SettingsSearchRow(String(localized: "Windows", bundle: .module), terms: [
-                    String(localized: "Capture the shadow", bundle: .module),
-                    String(localized: "Window background", bundle: .module),
-                    String(localized: "Same background as screenshots", bundle: .module),
-                    String(localized: "No background", bundle: .module),
+                    String(localized: "Include window shadow", bundle: .module),
+                    String(localized: "Background around windows", bundle: .module),
+                    String(localized: "Screenshot background", bundle: .module),
+                    String(localized: "Transparent background", bundle: .module),
                     String(localized: "Desktop wallpaper", bundle: .module),
-                ], keywords: String(localized: "SEARCH_KEYWORDS_WINDOWS", defaultValue: "window screenshot, drop shadow, padding", bundle: .module)),
+                ], keywords: String(localized: "SEARCH_KEYWORDS_WINDOWS", defaultValue: "window screenshot, drop shadow, padding, no background", bundle: .module)),
             ]
         case .screenshots:
             [

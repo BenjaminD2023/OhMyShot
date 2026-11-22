@@ -112,8 +112,15 @@ public final class ScreenCapturer {
         // shadow's margin. Setting the window's own size would shrink a shadowed capture to fit.
         let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
         guard let image = output.sdrImage else { throw CaptureError.emptyResult }
-        let displayID = target.display(in: layout)?.id ?? 0
-        return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: target.frame)
+        let liveFrame = Self.liveWindowFrame(scWindowFrame: window.frame, fallback: target.frame, layout: layout)
+        let liveTarget = WindowTarget(id: target.id, frame: liveFrame, ownerName: target.ownerName, title: target.title, pid: target.pid)
+        let displayID = liveTarget.display(in: layout)?.id ?? 0
+        return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: liveFrame)
+    }
+
+    /// Resolves a live global frame from an `SCWindow` frame (CG top-left coordinates), falling back to `fallback` if empty.
+    nonisolated static func liveWindowFrame(scWindowFrame: CGRect, fallback: CGRect, layout: DisplayLayout) -> CGRect {
+        scWindowFrame.isEmpty ? fallback : layout.flipped(scWindowFrame)
     }
 
     /// Captures several windows on their own and composites them in back-to-front order onto a transparent canvas
@@ -133,7 +140,7 @@ public final class ScreenCapturer {
         for target in sorted {
             let captured = try await captureWindow(target, shadow: shadow, layout: layout, showsCursor: showsCursor)
             let pixelsPerPoint = layout.display(id: captured.displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
-            parts.append((captured.image, target.frame, pixelsPerPoint))
+            parts.append((captured.image, captured.frame, pixelsPerPoint))
             // The canvas takes the sharpest window's scale, and its display.
             if pixelsPerPoint >= scale {
                 scale = pixelsPerPoint
