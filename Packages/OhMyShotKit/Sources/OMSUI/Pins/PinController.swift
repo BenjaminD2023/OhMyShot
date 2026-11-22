@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import OMSCore
 import OMSDesign
 
@@ -22,18 +23,36 @@ public final class PinController {
         /// laid over the area it was taken from, which shows the capture without it. What the pin hands over in place of
         /// its capture's file. Nil for a pin that shows all of its picture.
         public let onBackground: Data?
+        /// Whether handing the capture over requires its background, even when the saved background is missing.
+        public let requiresBackground: Bool
 
-        init(id: UUID, content: Content, origin: Origin, pinnedAt: Date = .now, onBackground: Data? = nil) {
+        init(
+            id: UUID, content: Content, origin: Origin, pinnedAt: Date = .now, onBackground: Data? = nil, requiresBackground: Bool? = nil
+        ) {
             self.id = id
             self.content = content
             self.origin = origin
             self.pinnedAt = pinnedAt
             self.onBackground = onBackground
+            self.requiresBackground = requiresBackground ?? (onBackground != nil)
         }
 
         /// Whether a capture's file last written at `date` still holds the pin's picture: it was not written since.
         public func shows(fileChangedAt date: Date) -> Bool {
             date <= pinnedAt
+        }
+
+        public nonisolated static func pictureForHandOver(
+            _ image: CGImage, onBackground: Data?, requiresBackground: Bool
+        ) throws -> CGImage {
+            guard let onBackground else {
+                guard !requiresBackground else { throw ImageExporter.ExportError.cannotRead }
+                return image
+            }
+            guard let source = CGImageSourceCreateWithData(onBackground as CFData, nil),
+                  let read = CGImageSourceCreateImageAtIndex(source, 0, nil)
+            else { throw ImageExporter.ExportError.cannotRead }
+            return read
         }
 
         /// A picture pin's own picture as a file to drag out: the file it was opened from while that is there, else a

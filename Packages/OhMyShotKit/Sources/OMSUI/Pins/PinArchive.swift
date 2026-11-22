@@ -33,6 +33,8 @@ nonisolated final class PinArchive: Sendable {
         /// list's ISO 8601 dates drop, while Capture Area and Pin writes its capture's file in the second before it pins.
         /// Nil in a list kept before pins kept it.
         var pinnedAt: TimeInterval?
+        /// Whether a capture's background is required for handover. Nil in lists written before this was recorded.
+        var requiresBackground: Bool?
     }
 
     struct Manifest: Codable, Equatable, Sendable {
@@ -54,6 +56,15 @@ nonisolated final class PinArchive: Sendable {
 
     private func backgroundURL(_ id: UUID) -> URL { folder.appending(path: "\(id.uuidString)-background.png") }
 
+    private func hasReadableBackground(_ id: UUID) -> Bool {
+        let url = backgroundURL(id)
+        guard let values = try? url.resourceValues(forKeys: [.isRegularFileKey]), values.isRegularFile == true,
+              FileManager.default.isReadableFile(atPath: url.path(percentEncoded: false)),
+              let source = CGImageSourceCreateWithURL(url as CFURL, nil), CGImageSourceGetCount(source) > 0
+        else { return false }
+        return true
+    }
+
     /// Writes a pin's picture, and its capture on its background when it has one (`PinController.Pin.onBackground`),
     /// once, as it opens or as keeping begins.
     func keepPicture(_ image: CGImage, onBackground: Data? = nil, id: UUID) {
@@ -64,10 +75,19 @@ nonisolated final class PinArchive: Sendable {
     private func writePicture(_ image: CGImage, onBackground: Data?, id: UUID) {
         do {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
-            if let onBackground { try ImageExporter.write(onBackground, to: backgroundURL(id)) }
+            if let onBackground { writeBackground(onBackground, id: id) }
             try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: pictureURL(id))
         } catch {
             Log.app.error("Could not keep a pin's picture: \(error.localizedDescription, privacy: .public)")
+        }
+    }
+
+    private func writeBackground(_ data: Data, id: UUID) {
+        do {
+            try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+            try ImageExporter.write(data, to: backgroundURL(id))
+        } catch {
+            Log.app.error("Could not keep a pin's capture on its background: \(error.localizedDescription, privacy: .public)")
         }
     }
 
@@ -80,8 +100,14 @@ nonisolated final class PinArchive: Sendable {
                 try? FileManager.default.removeItem(at: folder)
                 return
             }
-            for (id, image) in pictures where !FileManager.default.fileExists(atPath: pictureURL(id).path(percentEncoded: false)) {
-                writePicture(image, onBackground: onBackground[id], id: id)
+            for (id, image) in pictures {
+                let pictureMissing = !FileManager.default.fileExists(atPath: pictureURL(id).path(percentEncoded: false))
+                let background = onBackground[id]
+                if pictureMissing {
+                    writePicture(image, onBackground: background, id: id)
+                } else if let background, !hasReadableBackground(id) {
+                    writeBackground(background, id: id)
+                }
             }
             do {
                 try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -183,7 +209,7 @@ extension PinArchive.Record {
         }
         self.init(
             id: pin.id, content: content, origin: pin.origin, frame: frame, zoom: zoom, opacity: opacity, locked: locked,
-            pinnedAt: pin.pinnedAt.timeIntervalSinceReferenceDate
+            pinnedAt: pin.pinnedAt.timeIntervalSinceReferenceDate, requiresBackground: pin.requiresBackground
         )
     }
 
@@ -194,7 +220,10 @@ extension PinArchive.Record {
     func pin(picture: CGImage?, onBackground: Data? = nil) -> PinController.Pin? {
         guard let content = pinContent(picture: picture) else { return nil }
         let pinnedAt = pinnedAt.map(Date.init(timeIntervalSinceReferenceDate:)) ?? .distantPast
-        return PinController.Pin(id: id, content: content, origin: origin, pinnedAt: pinnedAt, onBackground: onBackground)
+        return PinController.Pin(
+            id: id, content: content, origin: origin, pinnedAt: pinnedAt, onBackground: onBackground,
+            requiresBackground: requiresBackground ?? (onBackground != nil)
+        )
     }
 
     /// What the pin shows, made again, with its picture when it is one; nil when it can't be.

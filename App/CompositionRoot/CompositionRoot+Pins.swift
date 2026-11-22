@@ -53,7 +53,9 @@ extension CompositionRoot {
                 // A capture's pin hands over what it shows as its capture would leave; a picture from elsewhere goes as it came.
                 guard case .capture = pin.origin else { return pin.ownFile() }
                 return handedOverOrSaidWhy(files.fileToHandOver(pin: pin.id, scale: Double(scale)) {
-                    try Self.picture(image, onBackground: pin.onBackground)
+                    try PinController.Pin.pictureForHandOver(
+                        image, onBackground: pin.onBackground, requiresBackground: pin.requiresBackground
+                    )
                 })
             }
         )
@@ -154,19 +156,13 @@ extension CompositionRoot {
     private func ownPicture(of pin: PinController.Pin) async -> CGImage? {
         guard case .image(let image, _) = pin.content else { return nil }
         let onBackground = pin.onBackground
+        let requiresBackground = pin.requiresBackground
         let read = await Task.detached(priority: .userInitiated) {
-            Result { try Self.picture(image, onBackground: onBackground) }.mapError { ExportFailure.converting($0) }
+            Result {
+                try PinController.Pin.pictureForHandOver(image, onBackground: onBackground, requiresBackground: requiresBackground)
+            }.mapError { ExportFailure.converting($0) }
         }.value
         return handedOverOrSaidWhy(read)
-    }
-
-    /// `image`, or the capture on its background a pin keeps in its place (`PinController.Pin.onBackground`); throws when
-    /// that can't be read.
-    nonisolated private static func picture(_ image: CGImage, onBackground: Data?) throws -> CGImage {
-        guard let onBackground else { return image }
-        guard let source = CGImageSourceCreateWithData(onBackground as CFData, nil), let read = CGImageSourceCreateImageAtIndex(source, 0, nil)
-        else { throw ImageExporter.ExportError.cannotRead }
-        return read
     }
 
     private func savePinAs(_ pin: PinController.Pin) {
