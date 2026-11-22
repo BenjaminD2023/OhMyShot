@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
+### Más formas de editar en Studio
+
+- **Controla el ritmo y el sonido.** Cambia la velocidad de un tramo entre 0,5× y 4×, ajusta por separado el sonido del sistema y el micrófono, y dirige el zoom a un punto fijo en vez de seguir al puntero.
+- **Cambia el fondo.** Desenfoca o quita el fondo de la cámara y coloca la grabación sobre una imagen o una copia desenfocada de sí misma. La exportación conserva el aspecto de la vista previa.
+- **Exporta GIF y abre MP4 y MOV.** Exporta como GIF un proyecto editado en Studio, o abre un MP4 o MOV en la ventana de grabación para recortarlo o crear un GIF.
+
+### Captura, anota y comparte
+
+- **Lupa y Borrado.** Amplía un detalle hasta 4× o cubre una zona con los colores que la rodean. Los proyectos con estas marcas requieren OhMyShot 0.4.0 o posterior.
+- **Fija y comparte sin salir.** Fija o sube una captura desde Anotar área; desde el editor también puedes compartirla. Las imágenes fijadas se pueden recuperar al volver a abrir la app.
+- **Aprovecha el Historial de capturas.** Conserva los favoritos más allá del plazo habitual, arrastra o comparte varias capturas a la vez y copia texto desde el historial o Acceso rápido sin abrir el panel de reconocimiento.
+- **Consulta las teclas al momento.** Pulsa ? al elegir un área o una ventana para ver sus teclas. En una pantalla congelada, pulsa B para ajustar el marco a su contenido.
+
+### Ocultaciones y guardados más fiables
+
+- **Lo que ocultas sigue oculto.** El desenfoque y el pixelado superpuestos usan las ocultaciones ya dibujadas, y los fondos desenfocados se crean con la captura ya ocultada. El editor, las exportaciones y las capturas compartidas respetan el mismo orden.
+- **Conserva tu trabajo si falla el guardado.** Las anotaciones hechas en el área se pueden abrir en el editor aunque no se guarden en el historial. Los clips de repetición se conservan aunque no se puedan añadir al historial.
+
 ## [0.3.0] - 2026-11-21
 
 ### Todo en uno: elige una ventana y mide al momento

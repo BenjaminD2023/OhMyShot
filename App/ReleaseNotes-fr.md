@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
+### Plus de possibilités de montage dans Studio
+
+- **Réglez le rythme et le son.** Modifiez la vitesse d’un passage de 0,5× à 4×, ajustez séparément le son du système et celui du micro, et cadrez le zoom sur un point fixe plutôt que de suivre le pointeur.
+- **Changez l’arrière-plan.** Floutez ou retirez l’arrière-plan de la caméra et placez l’enregistrement sur une image ou sur une copie floutée de lui-même. L’export conserve le rendu de l’aperçu.
+- **Exportez en GIF, ouvrez les MP4 et MOV.** Exportez en GIF un projet monté dans Studio ou ouvrez un MP4 ou un MOV dans la fenêtre d’enregistrement pour le rogner ou créer un GIF.
+
+### Capturer, annoter et partager
+
+- **Loupe et Effacer.** Agrandissez un détail jusqu’à 4× ou recouvrez une zone avec les couleurs qui l’entourent. Les projets utilisant ces marques nécessitent OhMyShot 0.4.0 ou une version ultérieure.
+- **Épinglez et partagez sans quitter votre travail.** Épinglez ou envoyez la capture depuis Annoter une zone. Vous pouvez aussi la partager depuis l’éditeur. Les épingles peuvent réapparaître à la réouverture de l’app.
+- **Profitez de l’Historique des captures.** Conservez vos favoris au-delà de la durée habituelle, faites glisser ou partagez plusieurs captures à la fois et copiez du texte depuis l’historique ou Accès rapide sans ouvrir le panneau de reconnaissance.
+- **Retrouvez les raccourcis sur place.** Appuyez sur ? en sélectionnant une zone ou une fenêtre pour afficher ses touches. Sur l’écran figé, B ajuste le cadre à ce qu’il contient.
+
+### Masquage et sauvegarde plus fiables
+
+- **Ce qui est masqué le reste.** Les flous et les pixellisations superposés utilisent les masquages déjà tracés. Les arrière-plans floutés partent eux aussi de la capture masquée. L’éditeur, les exports et le partage respectent le même ordre.
+- **Gardez votre travail si la sauvegarde échoue.** Les annotations faites sur place peuvent toujours s’ouvrir dans l’éditeur si l’historique ne peut pas les enregistrer. Les extraits du replay sont conservés même si l’historique ne peut pas les ajouter.
+
 ## [0.3.0] - 2026-11-21
 
 ### Tout-en-un : choisissez une fenêtre, mesurez sur place

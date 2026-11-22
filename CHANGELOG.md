@@ -9,6 +9,26 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+## [0.4.0] - 2026-11-22
+
+### More ways to edit in Studio
+
+- **Control speed, sound, and zoom.** Speed up or slow down a selected stretch from 0.5× to 4×, adjust system sound and microphone separately, and aim a zoom at a fixed spot instead of following the pointer.
+- **Change what’s behind you.** Blur or remove the camera background, and put the recording on an image or a blurred copy of itself. What you see in the preview is what you export.
+- **Work with more formats.** Export an edited Studio project as a GIF, or open an MP4 or MOV in OhMyShot’s recording window to trim it or make a GIF.
+
+### Faster capture, annotation, and sharing
+
+- **Magnifier and Erase.** Enlarge a detail up to 4× or cover it with colors from around it. Projects using these marks need OhMyShot 0.4.0 or later.
+- **Pin and share without leaving your work.** Pin or upload from Annotate Area, and pin, share, or upload from the editor. Pins can come back after relaunch.
+- **Do more from Capture History.** Keep favorites past the usual retention period, drag or share multiple captures at once, and copy text from History or Quick Access without opening the OCR panel.
+- **Find the right shortcut.** Press ? while choosing an area or window to see its keys. Press B on a frozen screen to fit the frame to what’s inside it.
+
+### Safer redactions and saves
+
+- **Redactions stay on top.** Blur and Pixelate use the redactions already drawn beneath them, and blurred screenshot backgrounds use the redacted picture. The editor, exports, and shares follow the same order.
+- **Keep your work if a save fails.** In-place annotations can still open in the editor if History can’t save them, and replay clips are kept even if History can’t add them.
+
 ### Added
 
 - Studio can blur the room behind the person on camera or cut the person out, as a Background setting for the camera: Original, Blur, or Cutout. The person is found on this Mac, frame by frame, in every layout. Cut out, they sit right on the recording in picture in picture and on the movie's background side by side or filling the movie. Both show in the preview and the exported movie alike.
@@ -323,7 +343,8 @@ Each entry links its implementation commits or merged pull request and credits v
 - Outlined Text in the annotation editor has a black outline around white and colored text (white only around black and very dark text) and shows the outline while the text is typed. ([6647d69]; by [@fzlzjerry])
 - Windows opened from the menu bar icon come to the front instead of opening behind the active app. ([ec080f7]; by [@bobbyhuang-dev])
 
-[Unreleased]: https://github.com/MMFoundation/OhMyShot/compare/v0.1.0...HEAD
+[Unreleased]: https://github.com/MMFoundation/OhMyShot/compare/v0.4.0...HEAD
+[0.4.0]: https://github.com/MMFoundation/OhMyShot/releases/tag/v0.4.0
 [0.1.0]: https://github.com/MMFoundation/OhMyShot/releases/tag/v0.1.0
 [7502f44]: https://github.com/MMFoundation/OhMyShot/commit/7502f44fe7ed357d46b451e2b9d772e1727fa5d7
 [0b20def]: https://github.com/MMFoundation/OhMyShot/commit/0b20defc0f9585a62237ab9f6901a838127f1217
