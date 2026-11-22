@@ -89,8 +89,8 @@ public final class AnnotationSession {
     @ObservationIgnored private let remembersTool: Bool
     /// The selected marks, in the order they were selected.
     public private(set) var selection: [Annotation.ID] = []
-    /// Whether the document changed since it was last kept.
-    public private(set) var hasUnkeptChanges = false
+    /// Whether the document changed since it was last kept, or was never kept: an editor on a picture in no file yet.
+    public internal(set) var hasUnkeptChanges = false
     /// What the redaction tool suggests covering, once it has been in hand: under way, in, or failed.
     private var redactionReading = ToolReading<[RedactionSuggestion]>()
     /// The lines of text the highlighter snaps to, once it has been in hand, the same way.
@@ -124,7 +124,7 @@ public final class AnnotationSession {
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored private var pictureCache: (transform: CaptureTransform?, image: CGImage)?
     @ObservationIgnored private var edgeCache: (canvas: CGRect, picture: CGImage, edges: EdgeAnalysis)?
-    @ObservationIgnored private var blurCache: (canvas: CGRect, picture: CGImage, image: CGImage?)?
+    @ObservationIgnored private var blurCache: (canvas: CGRect, picture: CGImage, marks: [Annotation], image: CGImage?)?
     @ObservationIgnored private var redactionCache: (images: [Annotation], picture: CGImage, source: Redactor.Source?)?
     /// How the capture was turned and sized when the readings were made; a different one makes them stale.
     @ObservationIgnored private var readingsTransform: CaptureTransform?
@@ -347,13 +347,24 @@ public final class AnnotationSession {
         document.backdrop == nil ? nil : document.backdropLayout(edges: edges)
     }
 
-    /// The blurred capture a blur background shows, made once per canvas.
+    /// The blurred capture a blur background shows, with the redactions on it as they are drawn: made once per canvas
+    /// and again when a redaction or a combined image (which blurs show) changes, but not at every step of a drag, once
+    /// it ends.
     public var blurredCapture: CGImage? {
         let canvas = document.canvas.standardized
         let picture = self.picture
-        if let blurCache, blurCache.canvas == canvas, blurCache.picture === picture { return blurCache.image }
-        let image = BackdropPainter.blurredCapture(picture, canvas: canvas)
-        blurCache = (canvas, picture, image)
+        let marks = document.items.filter {
+            switch $0.shape {
+            case .redaction, .image: true
+            default: false
+            }
+        }
+        if let blurCache, blurCache.canvas == canvas, blurCache.picture === picture, isInLiveChange || blurCache.marks == marks {
+            return blurCache.image
+        }
+        let source = combinedRedactionSource ?? Redactor.Source(base: picture)
+        let image = BackdropPainter.blurredCapture(picture, canvas: canvas, redactions: document.redactionCovers(source: source), scale: document.scale)
+        blurCache = (canvas, picture, marks, image)
         return image
     }
 

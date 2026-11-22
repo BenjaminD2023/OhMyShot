@@ -699,7 +699,7 @@ final class RecordingCoordinator {
                 if let interruption { presentInterruptionNoFrames(interruption) }
             } catch {
                 // The movie may still be readable up to its last fragment.
-                Log.recording.error("Stopping the recording failed: \(String(describing: error), privacy: .public)")
+                Log.recording.error("Stopping the recording failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
                 let partial = await session.recorder.currentStatistics()
                 var salvagedTelemetry: StudioTelemetry?
                 if var raw {
@@ -823,7 +823,7 @@ final class RecordingCoordinator {
                     // The draft's movie stays until its sounds are kept apart: it is the only copy with them in tracks of their own.
                     keptDraft = try drafts.markKeptInHistory(draft, historyID: entry.id, keptMovie: keptMovie, removingMovie: false)
                 } catch {
-                    Log.recording.error("Recording kept history id on draft \(draft.id.uuidString, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                    Log.recording.error("Recording kept history id on draft \(draft.id.uuidString, privacy: .public) failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
                 }
                 var project = StudioProject(zooms: AutoZoom.zooms(for: resolvedTelemetry, duration: file.duration))
                 project.cursor.showsClicks = plan?.choices.showsClicks ?? recoveredDraftTelemetry?.showsClicks ?? true
@@ -876,7 +876,7 @@ final class RecordingCoordinator {
             )
             drafts.remove(draft)
             probe.end()
-            Log.recording.notice("Kept a recording of \(file.duration, format: .fixed(precision: 2), privacy: .public) s, \(file.pixelWidth, privacy: .public)x\(file.pixelHeight, privacy: .public), \(file.byteCount, privacy: .public) bytes as \(entry.fileName, privacy: .public)\(writer.map { ", \($0.framesWritten) frames written, \($0.framesDropped) dropped" } ?? "", privacy: .public)")
+            Log.recording.notice("Kept a recording of \(file.duration, format: .fixed(precision: 2), privacy: .public) s, \(file.pixelWidth, privacy: .public)x\(file.pixelHeight, privacy: .public), \(file.byteCount, privacy: .public) bytes as \(entry.fileName, privacy: .private)\(writer.map { ", \($0.framesWritten) frames written, \($0.framesDropped) dropped" } ?? "", privacy: .public)")
             if let interruption {
                 presentInterruptionKept(interruption, keptDuration: file.duration)
             } else {
@@ -884,7 +884,7 @@ final class RecordingCoordinator {
             }
         } catch {
             try? FileManager.default.removeItem(at: destination)
-            Log.recording.error("Keeping the recording failed: \(String(describing: error), privacy: .public)")
+            Log.recording.error("Keeping the recording failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             if let interruption {
                 presentInterruptionKeepFailed(interruption)
             } else if plan != nil {
@@ -910,7 +910,7 @@ final class RecordingCoordinator {
         if result.isComplete {
             Log.recording.notice("Kept a Studio project: \(telemetry.samples.count, privacy: .public) pointer readings, \(telemetry.cursors.count, privacy: .public) cursor(s), \(telemetry.clicks.count, privacy: .public) click(s), \(telemetry.keys.count, privacy: .public) key(s)\(telemetry.camera.map { String(format: ", the camera from %.2f s, filling %d time(s)", $0.start, $0.fills.count) } ?? "", privacy: .public)")
         } else {
-            Log.recording.error("Keeping the Studio project failed: \(result.errorDescription ?? "unknown error", privacy: .public)")
+            Log.recording.error("Keeping the Studio project failed: \(result.errorDescription ?? "unknown error", privacy: .private)")
         }
         return result
     }
@@ -1031,13 +1031,22 @@ final class RecordingCoordinator {
     }
 
     /// Keeps a clip saved from the replay as a stopped recording is kept: history, clipboard, card. Named for
-    /// when it began and the app in front now.
-    func keepReplay(_ movie: RecordingFinisher.Movie, savedAt: Date, displayID: CGDirectDisplayID, pixelsPerPoint: Double?) async throws -> HistoryItem {
-        try await deliver(
-            KeptFile(url: movie.url, pixelWidth: movie.pixelWidth, pixelHeight: movie.pixelHeight, duration: movie.duration, byteCount: movie.byteCount),
-            startedAt: savedAt.addingTimeInterval(-movie.duration), appName: NSWorkspace.shared.frontmostApplication?.localizedName,
-            pixelsPerPoint: pixelsPerPoint, displayID: displayID, countsAsRecording: true
+    /// when it began and the app in front now. A replay has no draft to be kept from again, and its seconds are gone from
+    /// the buffer, so a clip History can't take goes to the export folder under that name instead, as Save would save it
+    /// (`.folder`); one that can't go there either stays where it is, and the error is thrown.
+    func keepReplay(_ movie: RecordingFinisher.Movie, savedAt: Date, displayID: CGDirectDisplayID, pixelsPerPoint: Double?) async throws -> HistoryStore.Moved {
+        let startedAt = savedAt.addingTimeInterval(-movie.duration)
+        let appName = NSWorkspace.shared.frontmostApplication?.localizedName
+        let moved = try history.add(
+            movingFileAt: movie.url, name: fileName(startedAt: startedAt, appName: appName), kind: .recording, pixelWidth: movie.pixelWidth,
+            pixelHeight: movie.pixelHeight, appName: appName, duration: movie.duration, pixelsPerPoint: pixelsPerPoint,
+            orSavingInto: settings.exportDirectory
         )
+        guard case .history(let entry) = moved else { return moved }
+        onRecordingCompleted?()
+        await present(entry, displayID: displayID)
+        onKept?(entry)
+        return moved
     }
 
     /// A recording's name, from the file name pattern. A recording is the one file it will ever be, so it takes its
@@ -1076,6 +1085,7 @@ final class RecordingCoordinator {
         var item = QuickAccessItem(entry, fileURL: url, thumbnail: thumbnail, displayID: displayID)
         let saved = after.saves ? files.saveRecording(fileAt: url) : nil
         item.savedURL = saved?.url
+        item.ownSavedURL = saved?.url
         if after.uploads { uploadKept?(entry) }
         onRecorded?(item)
         if let failure = saved?.failure { saveFailed?(failure, entry.id) }
@@ -1153,7 +1163,7 @@ final class RecordingCoordinator {
             drafts.remove(draft)
             Log.recording.notice("Finished recovering Studio assets for history \(historyID.uuidString, privacy: .public)")
         case .incomplete(let result):
-            Log.recording.error("Recovering Studio assets for history \(historyID.uuidString, privacy: .public) still incomplete: \(result.errorDescription ?? "unknown error", privacy: .public)")
+            Log.recording.error("Recovering Studio assets for history \(historyID.uuidString, privacy: .public) still incomplete: \(result.errorDescription ?? "unknown error", privacy: .private)")
         case .movieReplaced:
             drafts.remove(draft)
             Log.recording.notice("Dropped Studio draft \(draft.id.uuidString, privacy: .public) for history \(historyID.uuidString, privacy: .public) because the kept movie was replaced")
@@ -1209,6 +1219,7 @@ final class RecordingCoordinator {
     /// A kept recording changed (edited, or put back as it was made): the composition root refreshes its
     /// card and Capture History.
     var onChanged: ((HistoryItem) -> Void)?
+    var onSaved: ((UUID, URL, Bool) -> Void)?
 
     /// Opens a kept recording in the recording window: to play, trim, leave the sound out, make smaller, or
     /// make a GIF of; a GIF only plays.
@@ -1250,7 +1261,7 @@ final class RecordingCoordinator {
         do {
             source = try history.studioSource(for: entry)
         } catch {
-            Log.recording.error("The Studio project has lost the recording as it was made; opening the recording window: \(String(describing: error), privacy: .public)")
+            Log.recording.error("The Studio project has lost the recording as it was made; opening the recording window: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             return makeWindow(for: entry).show()
         }
         let asset = AVURLAsset(url: source)
@@ -1295,6 +1306,7 @@ final class RecordingCoordinator {
                 }
             )
         )
+        controller.onSaved = { [weak self] destination, isCurrent in self?.onSaved?(id, destination, isCurrent) }
         controller.onClose = { [weak self] in
             self?.studioWindows[id] = nil
             self?.windowClosed?(id)
@@ -1372,6 +1384,7 @@ final class RecordingCoordinator {
                 copy: { [weak self] url in self?.files.copy(fileAt: url) }
             )
         )
+        controller.onSaved = { [weak self] destination, isCurrent in self?.onSaved?(id, destination, isCurrent) }
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
             self?.windows[id] = nil
             self?.windowClosed?(id)
@@ -1397,7 +1410,7 @@ final class RecordingCoordinator {
             return history.fileURL(for: updated)
         } catch {
             try? FileManager.default.removeItem(at: edited)
-            Log.recording.error("Editing the recording failed: \(String(describing: error), privacy: .public)")
+            Log.recording.error("Editing the recording failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             throw error
         }
     }
@@ -1427,7 +1440,7 @@ final class RecordingCoordinator {
             let displayID = displayID ?? displays.layout.pointerDisplay?.id ?? 0
             let file = KeptFile(url: gif.url, pixelWidth: gif.pixelWidth, pixelHeight: gif.pixelHeight, duration: gif.duration, byteCount: gif.byteCount)
             let made = try await deliver(file, startedAt: entry.createdAt, appName: entry.appName, pixelsPerPoint: entry.pixelsPerPoint, displayID: displayID)
-            Log.recording.notice("Made a GIF of a recording: \(gif.frameCount, privacy: .public) frames, \(gif.pixelWidth, privacy: .public)x\(gif.pixelHeight, privacy: .public), \(gif.byteCount, privacy: .public) bytes as \(made.fileName, privacy: .public)")
+            Log.recording.notice("Made a GIF of a recording: \(gif.frameCount, privacy: .public) frames, \(gif.pixelWidth, privacy: .public)x\(gif.pixelHeight, privacy: .public), \(gif.byteCount, privacy: .public) bytes as \(made.fileName, privacy: .private)")
         } catch {
             try? FileManager.default.removeItem(at: destination)
             throw error

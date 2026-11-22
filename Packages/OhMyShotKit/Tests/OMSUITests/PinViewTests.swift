@@ -87,6 +87,25 @@ extension PinViewTests {
         return (view, try #require(view.textView))
     }
 
+    @Test func aPictureGoesOnlyAsTheAppHandsItOver() throws {
+        let context = try #require(CGContext(
+            data: nil, width: 4, height: 4, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpaceCreateDeviceRGB(), bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        let content = PinController.Content.image(try #require(context.makeImage()), scale: 1)
+        let pin = PinController.Pin(id: UUID(), content: content, origin: .capture(UUID()))
+        var actions = PinController.Actions(copy: { _ in }, save: { _ in }, saveAs: { _ in }, annotate: { _ in }, recognizeText: { _ in })
+        let frame = CGRect(origin: .zero, size: PinWindow.baseSize(of: content))
+        // The app could not make the copy Settings ask for: the pin's own picture does not go in its place.
+        actions.fileForDrag = { _ in nil }
+        #expect(PinWindow(pin: pin, frame: frame, zoom: 1, appearance: Self.appearance, actions: actions).fileForDrag() == nil)
+        // Left to itself, a pin hands over its own picture.
+        actions.fileForDrag = nil
+        let own = try #require(PinWindow(pin: pin, frame: frame, zoom: 1, appearance: Self.appearance, actions: actions).fileForDrag())
+        defer { try? FileManager.default.removeItem(at: own) }
+        #expect(FileManager.default.fileExists(atPath: own.path(percentEncoded: false)))
+    }
+
     /// A picture resized in the editor to fewer pixels than points pins at the size the editor shows it; a scale that is
     /// none at all pins at one point a pixel.
     @Test func aPictureKeepsAScaleBelowOne() throws {

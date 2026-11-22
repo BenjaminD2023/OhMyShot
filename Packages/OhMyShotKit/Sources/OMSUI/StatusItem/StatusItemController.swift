@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import KeyboardShortcuts
 import OMSCore
@@ -137,6 +138,22 @@ public final class StatusItemController {
     private let quit: () -> Void
     private let debugEntries: [Entry]
     private let updateEntries: [Entry]
+
+    /// The window ID is useful only while the popover is open; callers may use this exact ID for a scoped capture.
+    public var launcherWindowID: CGWindowID? {
+        guard launcher.isShown, let number = launcher.contentViewController?.view.window?.windowNumber, number > 0 else { return nil }
+        return CGWindowID(number)
+    }
+
+    /// Whether a shortcut starts an area capture that can preserve an already-open launcher.
+    public static func shouldKeepLauncherOpen(for shortcut: CaptureShortcut) -> Bool {
+        switch shortcut {
+        case .captureArea, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload, .pinArea:
+            true
+        default:
+            false
+        }
+    }
 
     public init(
         captureEntries: [Entry],

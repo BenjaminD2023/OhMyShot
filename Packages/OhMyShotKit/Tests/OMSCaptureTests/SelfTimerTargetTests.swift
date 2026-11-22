@@ -39,5 +39,6 @@ struct SelfTimerTargetTests {
         #expect(SelfTimerTarget(.cancelled) == nil)
         #expect(SelfTimerTarget(.annotated) == nil)
         #expect(SelfTimerTarget(.scroll(Self.left.frame, display: Self.display, autoScrolls: false)) == nil)
+        #expect(SelfTimerTarget(.allInOneWindows(.screenshot(nil), [Self.left], Self.left.frame, display: Self.display, frozen: nil)) == nil)
     }
 }

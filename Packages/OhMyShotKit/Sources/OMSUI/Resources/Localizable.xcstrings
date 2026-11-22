@@ -5811,36 +5811,36 @@
         }
       }
     },
-    "Capture the shadow" : {
+    "Include window shadow" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Capturar la sombra"
+            "value" : "Incluir la sombra de la ventana"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Capturer l’ombre"
+            "value" : "Inclure l’ombre de la fenêtre"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "影をキャプチャ"
+            "value" : "ウインドウの影を含める"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "截取阴影"
+            "value" : "包含窗口阴影"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "擷取陰影"
+            "value" : "包含視窗陰影"
           }
         }
       }
@@ -9759,36 +9759,36 @@
         }
       }
     },
-    "Desktop wallpaper puts a window on the desktop picture around it, as the screen shows it. Hold Shift as you click a window to take it the other way: with no background, or on the desktop wallpaper." : {
+    "Include window shadow captures the window’s native shadow; Background around windows is added outside the captured window. Screenshot background uses the automatic background from Screenshots, except Rounded corners and shadow is skipped because windows already have native rounded corners and a separately controlled native shadow. For an ordinary single-window capture, Shift toggles the chosen background off or on (a saved preset becomes transparent); in All-in-One, Shift adds or removes windows from the selection." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“Fondo de escritorio” coloca una ventana sobre la imagen de escritorio que la rodea, tal como se ve en pantalla. Mantén pulsada Mayúsculas al hacer clic en una ventana para capturarla de la otra forma: sin fondo o sobre el fondo de escritorio."
+            "value" : "La sombra de la ventana es su sombra nativa y se captura junto con ella; el fondo alrededor de las ventanas se añade fuera de la ventana capturada. «Fondo de capturas» usa el fondo automático de Capturas, excepto «Esquinas redondeadas y sombra», que se omite porque las ventanas ya tienen esquinas redondeadas y una sombra nativa controlada por separado. En una captura normal de una sola ventana, Mayúsculas activa o desactiva el fondo elegido (un fondo guardado pasa a ser transparente); en Todo en uno, Mayúsculas añade o quita ventanas de la selección."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fond d’écran du bureau place une fenêtre sur l’image du bureau qui l’entoure, telle que l’écran l’affiche. Maintenez Maj enfoncée en cliquant sur une fenêtre pour la capturer de l’autre façon : sans arrière-plan, ou sur le fond d’écran du bureau."
+            "value" : "L’option « Inclure l’ombre de la fenêtre » capture l’ombre native de la fenêtre ; l’arrière-plan autour des fenêtres est ajouté à l’extérieur de la fenêtre capturée. « Arrière-plan des captures » utilise l’arrière-plan automatique choisi dans Captures, sauf « Coins arrondis et ombre », ignoré car les fenêtres ont déjà leurs coins arrondis et une ombre native réglée séparément. Pour une capture classique d’une seule fenêtre, Maj active ou désactive l’arrière-plan choisi (un préréglage enregistré devient transparent) ; dans Tout-en-un, Maj ajoute ou retire des fenêtres de la sélection."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「デスクトップの壁紙」では、画面に表示されているとおり、ウインドウの周囲にデスクトップピクチャを付けます。shiftキーを押しながらウインドウをクリックすると、もう一方の方法（背景なし、またはデスクトップの壁紙付き）でキャプチャします。"
+            "value" : "「ウインドウの影を含める」はウインドウ本来の影をキャプチャします。ウインドウ周囲の背景は、キャプチャしたウインドウの外側に追加されます。「スクリーンショットの背景」は「スクリーンショット」で選択した自動背景を使いますが、「角丸と影」はウインドウに元からある角丸と、別設定のネイティブな影が重複しないよう省略します。通常の単一ウインドウ撮影では Shift キーで選択中の背景を切り替えます（保存済みプリセットは透明になります）。All-in-One では Shift キーでウインドウを選択／解除します。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "“桌面墙纸”会将窗口放在其周围的桌面图片上，与屏幕显示的一样。点按窗口时按住 Shift 键可采用另一种方式：无背景，或放在桌面墙纸上。"
+            "value" : "“包含窗口阴影”会捕获窗口自身的原生阴影；窗口周围背景会添加在窗口之外。“截图背景”使用“截图”设置中的自动背景，但窗口会跳过“圆角与阴影”，因为窗口已有原生圆角，原生阴影由单独设置控制。普通单窗口截图中，按住 Shift 可切换所选背景的开/关（保存的预设会变为透明）；在 All-in-One 中，Shift 用于添加或移除窗口。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "「桌面背景」會將視窗放在其周圍的桌面圖片上，如同螢幕上所見。按一下視窗時按住 Shift 可採用另一種方式：無背景，或放在桌面背景上。"
+            "value" : "「包含視窗陰影」會擷取視窗本身的原生陰影；視窗周圍背景會加在視窗之外。「截圖背景」使用「截圖」設定中的自動背景，但視窗會略過「圓角與陰影」，因為視窗已有原生圓角，原生陰影由個別設定控制。一般單一視窗截圖中，按住 Shift 可切換所選背景的開／關（已儲存的預設組合會變成透明）；在 All-in-One 中，Shift 用於新增或移除視窗。"
           }
         }
       }
@@ -17866,36 +17866,36 @@
         }
       }
     },
-    "No background" : {
+    "Transparent background" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Sin fondo"
+            "value" : "Fondo transparente"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Aucun arrière-plan"
+            "value" : "Arrière-plan transparent"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "背景なし"
+            "value" : "透明な背景"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "无背景"
+            "value" : "透明背景"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "無背景"
+            "value" : "透明背景"
           }
         }
       }
@@ -20933,36 +20933,36 @@
         }
       }
     },
-    "Puts each new screenshot on a background. Rounded corners and shadow rounds an area’s or a display’s corners and lays a soft shadow around it on clear room, which JPEG fills with white; a window keeps its own. Save others as presets with the editor’s Background tool." : {
+    "Sets the automatic background for new captures. Rounded corners and shadow rounds area and display captures and adds a soft shadow. Window captures keep native rounded corners; their native shadow is controlled separately in Capture › Windows. In Capture › Windows, Screenshot background uses the saved preset selected here, skipping Rounded corners and shadow for windows. Save a background as a preset with the editor’s Background tool." : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Coloca cada nueva captura sobre un fondo. “Esquinas redondeadas y sombra” redondea las esquinas de un área o de una pantalla y le pone alrededor una sombra suave sobre un margen transparente, que JPEG rellena de blanco; una ventana conserva las suyas. Guarda otros fondos como preajustes con la herramienta Fondo del editor."
+            "value" : "Configura el fondo automático de las nuevas capturas. «Esquinas redondeadas y sombra» redondea las capturas de áreas y pantallas y añade una sombra suave. Las capturas de ventanas conservan sus esquinas redondeadas nativas; su sombra nativa se controla por separado en Capturar › Ventanas. En Capturar › Ventanas, «Fondo de capturas de pantalla» usa el preajuste guardado elegido aquí y omite «Esquinas redondeadas y sombra» en las ventanas. Guarda un fondo como preajuste con la herramienta Fondo del editor."
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Place chaque nouvelle capture d’écran sur un arrière-plan. « Coins arrondis et ombre » arrondit les coins d’une zone ou d’un écran et pose autour une ombre douce sur une marge transparente, que JPEG remplit de blanc ; une fenêtre garde les siens. Enregistrez d’autres arrière-plans comme préréglages avec l’outil Arrière-plan de l’éditeur."
+            "value" : "Définit l’arrière-plan automatique des nouvelles captures. « Coins arrondis et ombre » arrondit les captures de zone et d’écran et ajoute une ombre douce. Les fenêtres conservent leurs coins arrondis natifs ; leur ombre native se règle séparément dans Capturer › Fenêtres. Dans Capturer › Fenêtres, « Arrière-plan des captures » utilise le préréglage choisi ici en ignorant « Coins arrondis et ombre » pour les fenêtres. Enregistrez un arrière-plan comme préréglage avec l’outil Arrière-plan de l’éditeur."
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "新しいスクリーンショットごとに背景を付けます。「角丸と影」は、領域やディスプレイ全体のスクリーンショットの角を丸め、その周りの透明な余白にやわらかい影を付けます（JPEGでは透明部分が白で塗られます）。ウインドウは自身の角と影を保ちます。ほかの背景は、エディタの背景ツールでプリセットとして保存できます。"
+            "value" : "新しいキャプチャの自動背景を設定します。「角丸と影」は領域やディスプレイのキャプチャの角を丸め、柔らかな影を付けます。ウインドウはネイティブの角丸を保ち、ネイティブな影は「キャプチャ › ウインドウ」で別に設定します。「キャプチャ › ウインドウ」の「スクリーンショットの背景」では、ここで選んだ保存済みプリセットが使われ、ウインドウには「角丸と影」を適用しません。背景はエディタの「背景」ツールでプリセットとして保存できます。"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "为每张新截图添加背景。“圆角与阴影”会为区域或整个显示器的截图加上圆角，并在透明边距上围绕它铺一圈柔和阴影（JPEG 会把透明处填成白色）；窗口截图保留自身的圆角和阴影。可使用编辑器的“背景”工具将其他背景存储为预设。"
+            "value" : "为新截图设置自动背景。“圆角与阴影”会为区域和显示器截图添加圆角和柔和阴影。窗口截图保留原生圆角；原生阴影由“截取 › 窗口”中的设置单独控制。在“截取 › 窗口”中，“截图背景”会使用此处选定的已保存预设，但窗口截图会跳过“圆角与阴影”。可使用编辑器的“背景”工具将背景保存为预设。"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "為每張新截圖加上背景。「圓角與陰影」會為區域或整個顯示器的截圖加上圓角，並在透明邊距上環繞它鋪一圈柔和陰影（JPEG 會將透明處填成白色）；視窗截圖保留自身的圓角和陰影。可使用編輯器的「背景」工具將其他背景儲存為預設組合。"
+            "value" : "為新截圖設定自動背景。「圓角與陰影」會為區域和顯示器截圖加上圓角和柔和陰影。視窗截圖保留原生圓角；原生陰影由「擷取 › 視窗」中的設定個別控制。在「擷取 › 視窗」中，「截圖背景」會使用此處選定的已儲存預設組合，但視窗截圖會略過「圓角與陰影」。可使用編輯器的「背景」工具將背景儲存為預設組合。"
           }
         }
       }
@@ -26206,37 +26206,37 @@
         "en" : {
           "stringUnit" : {
             "state" : "new",
-            "value" : "window screenshot, drop shadow, padding"
+            "value" : "window screenshot, drop shadow, padding, no background"
           }
         },
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "captura de ventana, sombra, margen"
+            "value" : "captura de ventana, sombra, margen, sin fondo"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "capture de fenêtre, ombre portée, marge"
+            "value" : "capture de fenêtre, ombre portée, marge, aucun arrière-plan"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ウインドウのキャプチャ, 影, 余白"
+            "value" : "ウインドウのキャプチャ, 影, 余白, 背景なし"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "窗口截图, 阴影, 边距"
+            "value" : "窗口截图, 阴影, 边距, 无背景"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "視窗擷取, 陰影, 邊距"
+            "value" : "視窗擷取, 陰影, 邊距, 無背景"
           }
         }
       }
@@ -26317,36 +26317,36 @@
         }
       }
     },
-    "Same background as screenshots" : {
+    "Screenshot background" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Mismo fondo que las capturas de pantalla"
+            "value" : "Fondo de capturas de pantalla"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Même arrière-plan que les captures d’écran"
+            "value" : "Arrière-plan des captures"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "スクリーンショットと同じ背景"
+            "value" : "スクリーンショットの背景"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "与截图使用相同背景"
+            "value" : "截图背景"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "與截圖相同的背景"
+            "value" : "截圖背景"
           }
         }
       }
@@ -34676,36 +34676,36 @@
         }
       }
     },
-    "Window background" : {
+    "Background around windows" : {
       "localizations" : {
         "es" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Fondo de la ventana"
+            "value" : "Fondo alrededor de las ventanas"
           }
         },
         "fr" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "Arrière-plan des fenêtres"
+            "value" : "Arrière-plan autour des fenêtres"
           }
         },
         "ja" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "ウインドウの背景"
+            "value" : "ウインドウ周囲の背景"
           }
         },
         "zh-Hans" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "窗口背景"
+            "value" : "窗口周围背景"
           }
         },
         "zh-Hant" : {
           "stringUnit" : {
             "state" : "translated",
-            "value" : "視窗背景"
+            "value" : "視窗周圍背景"
           }
         }
       }

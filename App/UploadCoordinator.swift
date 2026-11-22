@@ -122,9 +122,10 @@ final class UploadCoordinator {
 
     // MARK: Links
 
-    /// The link of a capture's last upload that still works: this session's, or one kept in the records.
+    /// The link of the capture's newest upload that still works, asked of the records each time: a link past its
+    /// expiry, or one whose upload was deleted or forgotten, is never offered. The center only says how a transfer goes.
     private func link(for captureID: UUID) -> URL? {
-        center.link(for: captureID) ?? records.link(for: captureID)
+        records.link(for: captureID)
     }
 
     /// Whether a capture has a link to copy. With no destination set up the capture interface offers nothing
@@ -220,8 +221,7 @@ final class UploadCoordinator {
                 defer { deleting.remove(record.id) }
                 do {
                     try await uploader.delete(record, from: destination)
-                    records.forget(id: record.id)
-                    refreshCard(record)
+                    records.forgetDeleted(record).forEach(refreshCard)
                     tell(String(localized: "Deleted from storage"), near: record.captureID)
                     Log.upload.notice("Deleted an upload from \(destination.kindName, privacy: .public)")
                 } catch {

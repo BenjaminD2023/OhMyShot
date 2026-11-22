@@ -109,9 +109,16 @@ public final class HistoryStore: Sendable {
     /// Each capture's file name by its id, as records are written and read: `item(id:)` reads one sidecar, not the
     /// whole history. A name it holds is checked against the record before it is trusted.
     private let fileNames = Mutex<[UUID: String]>([:])
+    /// Writes a record's bytes to its sidecar; a test makes it fail.
+    private let writeRecordData: @Sendable (Data, URL) throws -> Void
 
-    public init(directory: URL) {
+    public convenience init(directory: URL) {
+        self.init(directory: directory) { try $0.write(to: $1, options: .atomic) }
+    }
+
+    init(directory: URL, writingRecords: @escaping @Sendable (Data, URL) throws -> Void) {
         self.directory = directory
+        self.writeRecordData = writingRecords
     }
 
     /// The standard location: Application Support, under this build's bundle identifier.
@@ -303,7 +310,48 @@ public final class HistoryStore: Sendable {
         try add(
             name: name, fileExtension: source.pathExtension, kind: kind, pixelWidth: pixelWidth, pixelHeight: pixelHeight,
             appName: appName, duration: duration, pixelsPerPoint: pixelsPerPoint, windowTitle: windowTitle, isTemplateNamed: isTemplateNamed, date: date
-        ) { try FileManager.default.moveItem(at: source, to: $0) }
+        ) { try FileManager.default.moveItem(at: source, to: $0) } undoWrite: { try FileManager.default.moveItem(at: $0, to: source) }
+    }
+
+    /// Where `add(movingFileAt:…, orSavingInto:)` put a file.
+    public enum Moved: Equatable, Sendable {
+        /// In History, with this record.
+        case history(HistoryItem)
+        /// In the folder, as this file: History couldn't take it.
+        case folder(URL)
+    }
+
+    /// `add(movingFileAt:…)` for a file nothing else keeps and nothing could make again, as a saved replay is (its
+    /// seconds are gone from the buffer): when History can't take it (its record can't be written, on a full disk say),
+    /// it is moved into `folder` instead, under `name` made unique as a saved copy's is, as Save would save it from
+    /// History, rather than handed back to be deleted. When it can't go there either, it stays where it is, which is
+    /// logged, and History's error is thrown.
+    public func add(
+        movingFileAt source: URL, name: String, kind: HistoryItem.Kind, pixelWidth: Int, pixelHeight: Int, appName: String?,
+        duration: TimeInterval?, pixelsPerPoint: Double?, orSavingInto folder: URL
+    ) throws -> Moved {
+        do {
+            return .history(try add(
+                movingFileAt: source, name: name, kind: kind, pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: appName,
+                duration: duration, pixelsPerPoint: pixelsPerPoint
+            ))
+        } catch {
+            let manager = FileManager.default
+            // One History couldn't give back stays in it, which `add` has logged.
+            guard manager.fileExists(atPath: source.path(percentEncoded: false)) else { throw error }
+            do {
+                try manager.createDirectory(at: folder, withIntermediateDirectories: true)
+                let destination = ImageExporter.availableURL(
+                    in: folder, name: name.replacingOccurrences(of: "/", with: "-"), fileExtension: source.pathExtension
+                )
+                try manager.moveItem(at: source, to: destination)
+                Log.history.error("History couldn't take \(destination.lastPathComponent, privacy: .private), so it was saved to the folder: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+                return .folder(destination)
+            } catch let saving {
+                Log.history.error("\(source.path(percentEncoded: false), privacy: .private) stays where it is: History couldn't take it (\(Log.kind(of: error), privacy: .public)), nor the folder (\(Log.kind(of: saving), privacy: .public), \(saving.localizedDescription, privacy: .private))")
+                throw error
+            }
+        }
     }
 
     /// Copies a picture or a recording of the user's into the history under its own name, leaving the file where it
@@ -380,10 +428,13 @@ public final class HistoryStore: Sendable {
     }
 
     /// An empty sidecar claims a name exclusively, but isn't a readable record until its capture has been written.
+    /// A capture whose record cannot be written leaves the folder again, by `undoWrite` (a file moved in goes back
+    /// where it came from; one written or copied is removed): with no record nothing would show it, and no retention
+    /// would ever remove it. A capture that cannot leave again either is logged, being nowhere else to be found.
     private func add(
         name: String, fileExtension: String, kind: HistoryItem.Kind, pixelWidth: Int, pixelHeight: Int, appName: String?,
         duration: TimeInterval?, pixelsPerPoint: Double? = nil, windowTitle: String? = nil, isTemplateNamed: Bool? = nil,
-        date: Date, writeFile: (URL) throws -> Void
+        date: Date, writeFile: (URL) throws -> Void, undoWrite: (URL) throws -> Void = { try FileManager.default.removeItem(at: $0) }
     ) throws -> HistoryItem {
         let manager = FileManager.default
         try manager.createDirectory(at: directory, withIntermediateDirectories: true)
@@ -408,9 +459,19 @@ public final class HistoryStore: Sendable {
             )
             do {
                 try writeFile(url)
+            } catch {
+                try? manager.removeItem(at: record)
+                throw error
+            }
+            do {
                 try writeRecord(item)
                 return item
             } catch {
+                do {
+                    try undoWrite(url)
+                } catch let undo {
+                    Log.history.error("\(url.path(percentEncoded: false), privacy: .private) stays in History without a record: \(Log.kind(of: undo), privacy: .public), \(undo.localizedDescription, privacy: .private)")
+                }
                 try? manager.removeItem(at: record)
                 throw error
             }
@@ -571,7 +632,7 @@ public final class HistoryStore: Sendable {
 
     /// Writes `item`'s record beside its file.
     private func writeRecord(_ item: HistoryItem) throws {
-        try JSONEncoder.records.encode(item).write(to: sidecarURL(forFileName: item.fileName), options: .atomic)
+        try writeRecordData(JSONEncoder.records.encode(item), sidecarURL(forFileName: item.fileName))
         fileNames.withLock { $0[item.id] = item.fileName }
     }
 

@@ -467,7 +467,7 @@ struct OverlayKeyTests {
         }
     }
 
-    @Test func windowModeCyclesOverlappingWindowsAndCombinesWithShiftClick() throws {
+    @Test func windowModeCyclesOverlappingWindowsAndCombinesShiftClicksIncludingReturn() throws {
         let front = WindowTarget(id: 10, frame: CGRect(x: 100, y: 100, width: 400, height: 300), ownerName: "AppA", title: "Front")
         let back = WindowTarget(id: 20, frame: CGRect(x: 150, y: 120, width: 400, height: 300), ownerName: "AppB", title: "Back")
         let view = OverlayView(display: Self.display)
@@ -484,23 +484,121 @@ struct OverlayKeyTests {
         view.keyDown(with: tab)
         #expect(view.hoveredWindow == back)
 
-        // Shift-click adds `back` to `selectedWindows` without ending the session.
+        // Shift-click adds and toggles `back` in `selectedWindows` without ending the session.
         let shiftUp = try #require(NSEvent.mouseEvent(
             with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
         ))
         view.mouseUp(with: shiftUp)
         #expect(view.selectedWindows == [back] && recorder.heard.isEmpty)
+        view.mouseUp(with: shiftUp)
+        #expect(view.selectedWindows.isEmpty && recorder.heard.isEmpty)
+        view.mouseUp(with: shiftUp)
+        #expect(view.selectedWindows == [back] && recorder.heard.isEmpty)
 
-        // Tab cycles back to `front`, and an unshifted click (or Return) finishes with both windows.
+        // Tab cycles back to `front`; Shift adds it too, and Return finishes with both windows.
         view.keyDown(with: tab)
         #expect(view.hoveredWindow == front)
+        let shiftFrontUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: shiftFrontUp)
+        #expect(view.selectedWindows == [back, front] && recorder.heard.isEmpty)
+        let enter = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
+        ))
+        view.keyDown(with: enter)
+        #expect(recorder.heard == ["windows [20, 10]"])
+    }
+
+    @Test func unshiftedWindowClickFinishesTheSelectedWindows() throws {
+        let front = WindowTarget(id: 10, frame: CGRect(x: 100, y: 100, width: 400, height: 300), ownerName: "AppA", title: "Front")
+        let back = WindowTarget(id: 20, frame: CGRect(x: 150, y: 120, width: 400, height: 300), ownerName: "AppB", title: "Back")
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .window, windows: [front, back], showsToolbar: false, purpose: .screenshot)
+        let tab = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48
+        ))
+        view.keyDown(with: tab)
+        let shiftUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: shiftUp)
+        view.keyDown(with: tab)
         let clickUp = try #require(NSEvent.mouseEvent(
             with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: [], timestamp: 0,
             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
         ))
         view.mouseUp(with: clickUp)
         #expect(recorder.heard == ["windows [20, 10]"])
+    }
+
+    @Test func allInOneWindowModeUsesTheSameShiftMultiSelection() throws {
+        let front = WindowTarget(id: 10, frame: CGRect(x: 100, y: 100, width: 400, height: 300), ownerName: "AppA", title: "Front")
+        let back = WindowTarget(id: 20, frame: CGRect(x: 150, y: 120, width: 400, height: 300), ownerName: "AppB", title: "Back")
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .window, windows: [front, back], showsToolbar: false, purpose: .screenshot, allInOne: true)
+        let tab = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48
+        ))
+        view.keyDown(with: tab)
+        let shiftUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: shiftUp)
+        view.keyDown(with: tab)
+        let shiftFrontUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: shiftFrontUp)
+        let enter = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
+        ))
+        view.keyDown(with: enter)
+        #expect(recorder.heard == ["windows [20, 10]"])
+    }
+
+    @Test func allInOneAreaModeReturnFinishesItsShiftSelectedWindows() throws {
+        let front = WindowTarget(id: 10, frame: CGRect(x: 100, y: 100, width: 400, height: 300), ownerName: "AppA", title: "Front")
+        let back = WindowTarget(id: 20, frame: CGRect(x: 150, y: 120, width: 400, height: 300), ownerName: "AppB", title: "Back")
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot, allInOne: true)
+        view.setSelectedWindows([back, front])
+        let enter = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
+        ))
+        view.keyDown(with: enter)
+        #expect(recorder.heard == ["windows [20, 10]"])
+    }
+
+    @Test func recordWindowModeDoesNotTreatShiftAsMultiSelection() throws {
+        let target = WindowTarget(id: 10, frame: CGRect(x: 100, y: 100, width: 400, height: 300), ownerName: "AppA", title: "Front")
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .window, windows: [target], showsToolbar: false, purpose: .record)
+        let shiftUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: shiftUp)
+        #expect(view.selectedWindows.isEmpty)
+        #expect(recorder.heard == ["window"])
     }
 
     @Test func recallLastAreaAndMidDragReset() throws {
@@ -631,5 +729,28 @@ struct OverlayKeyTests {
         #expect(OverlayView.keysFrame(size: size, pointer: nil, in: bounds, avoiding: CGRect(x: 200, y: 40, width: 400, height: 42)).minY == 94)
         let high = OverlayView.keysFrame(size: size, pointer: nil, in: bounds, avoiding: CGRect(x: 0, y: 500, width: 10, height: 80))
         #expect(high.maxY == 594)
+    }
+
+    @Test func returnDoesNotSubmitRetainedAllInOneWindowsWhileDraggingAnArea() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        let passedOn = PassedOn()
+        view.delegate = recorder
+        view.nextResponder = passedOn
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot, allInOne: true)
+        let first = WindowTarget(id: 10, frame: CGRect(x: 80, y: 80, width: 200, height: 150), ownerName: "Notes", title: nil)
+        let second = WindowTarget(id: 20, frame: CGRect(x: 320, y: 120, width: 220, height: 160), ownerName: "Safari", title: nil)
+        view.setSelectedWindows([first, second])
+
+        var selection = SelectionModel(bounds: Self.display.frame, pixelsPerPoint: Self.display.pixelsPerPoint)
+        selection.begin(at: CGPoint(x: 100, y: 100))
+        selection.drag(to: CGPoint(x: 260, y: 220))
+        view.show(selection: selection, showsReading: true, isDragging: true)
+        view.keyDown(with: try key(36, "\r"))
+        #expect(recorder.heard.isEmpty && passedOn.keys == [36])
+
+        view.show(selection: SelectionModel(bounds: Self.display.frame, pixelsPerPoint: Self.display.pixelsPerPoint), showsReading: false, isDragging: false)
+        view.keyDown(with: try key(36, "\r"))
+        #expect(recorder.heard == ["windows [10, 20]"])
     }
 }

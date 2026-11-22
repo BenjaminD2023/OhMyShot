@@ -55,6 +55,23 @@ struct WallpaperCropTests {
         #expect(WallpaperCrop.region(around: CGRect(x: 5000, y: 5000, width: 10, height: 10), picturePixels: CGSize(width: 20, height: 20), padding: 0.1, on: display) == nil)
     }
 
+    @Test func aMixedScaleCaptureUsesItsOwnScaleInPointsAndTheDisplaysScaleForWallpaperPixels() throws {
+        // A 400 × 300 pt clipped portion of a 2× capture (800 × 600 px) placed on a 1× display.
+        let lowDPI = DisplayInfo(
+            id: 2, name: "LowDPI", frame: CGRect(x: 1000, y: 0, width: 1000, height: 800), pixelSize: CGSize(width: 1000, height: 800),
+            backingScale: 1, maximumPotentialEDR: 1
+        )
+        let picture = CGRect(x: 1300, y: 250, width: 400, height: 300)
+        let region = try #require(WallpaperCrop.region(
+            around: picture, picturePixels: CGSize(width: 800, height: 600), pixelsPerPoint: 2, padding: 0.1, on: lowDPI
+        ))
+        let roomPoints = 0.1 * (400.0 * 300).squareRoot()
+        #expect(abs(region.width - (400 + 2 * roomPoints)) <= 2)
+        #expect(abs(region.height - (300 + 2 * roomPoints)) <= 2)
+        // Centered at (1500, 400) global pt -> (500, 400) px on the 1× display.
+        #expect(abs(region.midX - 500) <= 1 && abs(region.midY - 400) <= 1)
+    }
+
     /// A 2× capture of a 200 × 100 pt window with a shadow 20 px deep above it, 60 px below, and 40 px each side.
     private func shadowedWindow(opaqueMiddle: Bool = true) throws -> CGImage {
         let context = try #require(CGContext(

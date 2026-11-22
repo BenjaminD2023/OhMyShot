@@ -1,4 +1,5 @@
 import CoreGraphics
+import CoreImage
 import CoreText
 import Foundation
 import Metal
@@ -217,8 +218,163 @@ struct RedactionRenderingTests {
         #expect(replacement.compositingFilter == nil && !replacement.masksToBounds)
     }
 
-    private func renderedBytes(_ root: CALayer, width: Int, height: Int) throws -> [UInt8] {
+    @Test func carendererRendersSolidControlsIntoTwoXTexture() throws {
+        let width = 36, height = 20, scale: CGFloat = 2
         let canvas = CGRect(x: 0, y: 0, width: width, height: height)
+        let root = CALayer()
+        root.bounds = canvas
+        root.anchorPoint = .zero
+        root.position = .zero
+        root.transform = CATransform3DMakeScale(scale, scale, 1)
+        root.contentsScale = scale
+        let red = CALayer()
+        red.frame = canvas
+        red.contentsScale = scale
+        red.backgroundColor = CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
+        let green = CALayer()
+        green.frame = CGRect(x: 10, y: 0, width: 3, height: height)
+        green.contentsScale = scale
+        green.backgroundColor = CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)
+        root.addSublayer(red)
+        root.addSublayer(green)
+
+        let bytes = try renderedBytes(
+            root, width: width * 2, height: height * 2,
+            rendererBounds: CGRect(x: 0, y: 0, width: width * 2, height: height * 2)
+        )
+        func bgra(_ x: Int, _ y: Int) -> [UInt8] {
+            let offset = (y * width * 2 + x) * 4
+            return Array(bytes[offset..<offset + 4])
+        }
+        #expect(bgra(8, 20) == [0, 0, 255, 255])
+        #expect(bgra(22, 20) == [0, 255, 0, 255])
+        #expect(bgra(40, 20) == [0, 0, 255, 255])
+    }
+
+    @Test func canvasFilteredLayerAtRetinaScaleMatchesExportAfterMovingAndResizing() throws {
+        let width = 36, height = 20, scale: CGFloat = 2
+        let canvas = CGRect(x: 0, y: 0, width: width, height: height)
+        let upperRect = CGRect(x: 10, y: 0, width: 3, height: height)
+        let baseContext = try context(width: width, height: height)
+        baseContext.setFillColor(CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1))
+        baseContext.fill(canvas)
+        let base = try #require(baseContext.makeImage())
+        let tileContext = try context(width: 24, height: 12)
+        tileContext.setFillColor(CGColor(srgbRed: 0, green: 0, blue: 1, alpha: 0.5))
+        tileContext.fill(CGRect(x: 0, y: 0, width: 12, height: 12))
+        let tile = try #require(tileContext.makeImage())
+
+        func exportPixels(for rect: CGRect) throws -> Pixels {
+            let redaction = Annotation(shape: .redaction(Redaction(rect: rect, method: .pixelate)), style: Style())
+            let document = AnnotationDocument(
+                pixelSize: canvas.size, scale: 1,
+                items: [redaction, box(upperRect, color: RGBA(red: 0, green: 1, blue: 0))]
+            )
+            let image = try #require(AnnotationRenderer.flatten(document, base: base, redactionFilter: { _, _, _, _, _ in tile }))
+            let doubled = try context(width: width * 2, height: height * 2)
+            doubled.interpolationQuality = .none
+            doubled.draw(image, in: CGRect(x: 0, y: 0, width: width * 2, height: height * 2))
+            return Pixels(try #require(doubled.makeImage()))
+        }
+
+        func expectPixels(_ actual: [UInt8], match export: Pixels, at points: [CGPoint]) {
+            for point in points {
+                let x = Int(point.x * scale), y = Int(point.y * scale)
+                let pixel = export[x, y]
+                let offset = (y * width * 2 + x) * 4
+                #expect(Array(actual[offset..<offset + 4]) == [UInt8(pixel.b), UInt8(pixel.g), UInt8(pixel.r), UInt8(pixel.a)])
+            }
+        }
+
+        let initialRect = CGRect(x: 5, y: 4, width: 24, height: 12)
+        let replacement = MarkLayer(mark: Annotation(
+            shape: .redaction(Redaction(rect: canvas, method: .pixelate)), style: Style()
+        ))
+        replacement.coverage = .filtered(tile, initialRect)
+        replacement.frame = initialRect
+        replacement.mapping = LayerMapping(origin: initialRect.origin, zoom: 1)
+        replacement.contentsScale = scale
+
+        let root = CALayer()
+        root.bounds = canvas
+        root.anchorPoint = .zero
+        root.position = .zero
+        root.transform = CATransform3DMakeScale(scale, scale, 1)
+        root.contentsScale = scale
+        let lower = CALayer()
+        lower.frame = canvas
+        lower.contentsScale = scale
+        lower.backgroundColor = CGColor(srgbRed: 1, green: 0, blue: 0, alpha: 1)
+        let upper = CALayer()
+        upper.frame = upperRect
+        upper.contentsScale = scale
+        upper.backgroundColor = CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1)
+        root.addSublayer(lower)
+        root.addSublayer(replacement)
+        root.addSublayer(upper)
+
+        replacement.setNeedsDisplay()
+        replacement.displayIfNeeded()
+        let rendererBounds = CGRect(x: 0, y: 0, width: width * 2, height: height * 2)
+        let initial = try renderedBytes(root, width: width * 2, height: height * 2, rendererBounds: rendererBounds)
+        expectPixels(initial, match: try exportPixels(for: initialRect), at: [
+            CGPoint(x: 4, y: 10), CGPoint(x: 6, y: 10), CGPoint(x: 11, y: 10),
+            CGPoint(x: 24, y: 10), CGPoint(x: 29, y: 10),
+        ])
+
+        let movedResizedRect = CGRect(x: 8, y: 3, width: 26, height: 14)
+        replacement.coverage = .filtered(tile, movedResizedRect)
+        replacement.frame = movedResizedRect
+        replacement.mapping = LayerMapping(origin: movedResizedRect.origin, zoom: 1)
+        replacement.setNeedsDisplay()
+        replacement.displayIfNeeded()
+        let movedResized = try renderedBytes(root, width: width * 2, height: height * 2, rendererBounds: rendererBounds)
+        expectPixels(movedResized, match: try exportPixels(for: movedResizedRect), at: [
+            CGPoint(x: 7, y: 9), CGPoint(x: 14, y: 9), CGPoint(x: 11, y: 9),
+            CGPoint(x: 27, y: 9), CGPoint(x: 34, y: 9),
+        ])
+    }
+
+    @Test func filteredLayerBuildsFiniteAlphaMasksForBoundsAndContentsScale() throws {
+        let mark = Annotation(shape: .redaction(Redaction(rect: CGRect(x: 0, y: 0, width: 30, height: 20), method: .pixelate)), style: Style())
+        let layer = MarkLayer(mark: mark)
+        layer.coverage = .filtered(try #require(context(width: 30, height: 20).makeImage()), mark.drawingBounds(scale: 1))
+        #expect(layer.compositingFilter == nil && layer.masksToBounds)
+        func filterAndMask() throws -> (CIFilter, CIImage) {
+            let filter = try #require(layer.compositingFilter as? CIFilter)
+            let mask = try #require(filter.value(forKey: kCIInputMaskImageKey) as? CIImage)
+            return (filter, mask)
+        }
+
+        layer.frame = CGRect(x: 5, y: 4, width: 30, height: 20)
+        let (first, firstMask) = try filterAndMask()
+        #expect(firstMask.extent == CGRect(x: 5, y: 4, width: 30, height: 20))
+
+        layer.bounds = CGRect(x: 0, y: 0, width: 48, height: 16)
+        let (resized, resizedMask) = try filterAndMask()
+        #expect(resized !== first)
+        #expect(resizedMask.extent == CGRect(x: layer.frame.minX, y: layer.frame.minY, width: 48, height: 16))
+
+        layer.contentsScale = 2
+        let (scaled, scaledMask) = try filterAndMask()
+        #expect(scaled === resized)
+        #expect(scaledMask.extent == CGRect(x: layer.frame.minX, y: layer.frame.minY, width: 48, height: 16))
+
+        layer.frame = layer.frame.offsetBy(dx: 4, dy: 6)
+        let (moved, movedMask) = try filterAndMask()
+        #expect(moved !== scaled)
+        #expect(movedMask.extent == CGRect(x: layer.frame.minX, y: layer.frame.minY, width: 48, height: 16))
+
+        layer.bounds = .zero
+        #expect(layer.compositingFilter == nil && layer.masksToBounds)
+        layer.bounds = CGRect(x: 0, y: 0, width: 48, height: 16)
+        let (restored, restoredMask) = try filterAndMask()
+        #expect(restoredMask.extent == CGRect(x: layer.frame.minX, y: layer.frame.minY, width: 48, height: 16))
+        #expect(try NSKeyedArchiver.archivedData(withRootObject: restored, requiringSecureCoding: false).isEmpty == false)
+    }
+
+    private func renderedBytes(_ root: CALayer, width: Int, height: Int, rendererBounds: CGRect? = nil) throws -> [UInt8] {
+        let canvas = rendererBounds ?? CGRect(x: 0, y: 0, width: width, height: height)
         let device = try #require(MTLCreateSystemDefaultDevice())
         let queue = try #require(device.makeCommandQueue())
         let descriptor = MTLTextureDescriptor.texture2DDescriptor(pixelFormat: .bgra8Unorm, width: width, height: height, mipmapped: false)

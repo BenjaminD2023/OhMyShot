@@ -221,4 +221,36 @@ struct AreaFitTests {
         _ = view.debugAct("cmd-z")
         #expect(view.area == moved)
     }
+
+    /// Locking a ratio that already matches the fitted area still clears fit undo so ⌘Z/B cannot restore a pre-fit
+    /// rectangle with a different aspect ratio.
+    @Test func lockingTheFittedAreasCurrentRatioClearsFitUndo() throws {
+        let fittedCard = CGRect(x: 150, y: 230, width: 150, height: 100) // 3:2 inside 300 × 150 (2:1)
+        let (overlay, view) = setup(frame: try Self.frame(card: fittedCard))
+        defer { overlay.clear() }
+        _ = view.debugAct("b")
+        #expect(view.area == fittedCard)
+        _ = view.debugAct("ratio=3:2")
+        #expect(view.area == fittedCard)
+        _ = view.debugAct("cmd-z")
+        #expect(view.area == fittedCard)
+        _ = view.debugAct("b")
+        #expect(view.area == fittedCard)
+    }
+
+    /// An ordinary no-op geometry update (such as a typed width clamped back to the minimum fitted width) preserves fit
+    /// undo so ⌘Z still restores the area as drawn.
+    @Test func anUnchangedClampedTypedWidthKeepsFitUndo() throws {
+        let dot = CGRect(x: 200, y: 280, width: 6, height: 6)
+        let (overlay, view) = setup(frame: try Self.frame(card: dot))
+        defer { overlay.clear() }
+        _ = view.debugAct("b")
+        let smallest = CGRect(x: dot.midX - 8, y: dot.midY - 8, width: 16, height: 16)
+        #expect(view.area == smallest)
+        // On a 2× display, 16 pt is 32 px; typing 30 px clamps back to 32 px without changing the area.
+        _ = view.debugAct("width=30")
+        #expect(view.area == smallest)
+        _ = view.debugAct("cmd-z")
+        #expect(view.area == Self.area)
+    }
 }

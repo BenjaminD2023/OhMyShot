@@ -27,13 +27,15 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         /// it was not saved. Nil when the editor offers no Save As.
         public var saveAs: ((_ file: URL) async -> URL?)?
         /// The file to hand to another app when the capture is dragged out of the window: the capture's file itself, or a
-        /// copy of it in the format Settings choose.
-        public var fileToHandOver: (_ file: URL) -> URL = { $0 }
+        /// copy of it in the format Settings choose; nil when that copy could not be made, which the app says, and then
+        /// nothing goes.
+        public var fileToHandOver: (_ file: URL) -> URL? = { $0 }
         /// Puts the rendered picture on the clipboard, with its pixels per point, and returns whether it succeeded. Without a
         /// callback, the PNG goes as it is.
         public var copy: ((_ image: CGImage, _ png: Data, _ scale: CGFloat) async -> Bool)?
-        /// Pins the picture as it looks now over the screen, at its pixels per point. Nil when the editor offers no Pin to Screen.
-        public var pin: ((_ image: CGImage, _ scale: CGFloat) -> Void)?
+        /// Pins the picture as it looks now over the screen, at its pixels per point, and whether it was kept in the capture's
+        /// file: one that wasn't is the pin's own, since the file doesn't show it. Nil when the editor offers no Pin to Screen.
+        public var pin: ((_ image: CGImage, _ scale: CGFloat, _ kept: Bool) -> Void)?
         /// What the editor offers for uploading, asked each time the window comes forward: nothing without a destination.
         public var uploadMenu: () -> UploadMenu = { .hidden }
         /// Uploads the capture's file, its edits kept, to the default destination (nil) or the one chosen. Nil when the
@@ -55,7 +57,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     private let model: EditorModel
     let content: EditorContentView
     private let actions: Actions
-    private var fileURL: URL
+    private var fileURL: URL?
     private var windowLease: ActiveResources.Lease?
     private var closing: Task<Bool, Never>?
     public private(set) var didClose = false
@@ -66,10 +68,11 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     ///   - image: the capture as it was taken.
     ///   - scale: pixels per point of the screen it came from.
     ///   - document: marks made on it before.
-    ///   - fileURL: the capture's file, which holds the marked-up picture once edits are kept.
-    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument?, title: String, fileURL: URL, actions: Actions, presentation: Presentation = .editor) {
+    ///   - fileURL: the capture's file, or nil until History can retain the picture and its marks.
+    public init(image: CGImage, scale: CGFloat, document: AnnotationDocument?, title: String, fileURL: URL?, actions: Actions, presentation: Presentation = .editor) {
         self.presentation = presentation
         session = AnnotationSession(image: image, scale: scale, document: document, tool: presentation == .preview ? .select : nil)
+        session.hasUnkeptChanges = fileURL == nil
         content = EditorContentView(session: session, presentation: presentation)
         model = EditorModel()
         self.actions = actions
@@ -480,9 +483,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         return Task {
             guard let pin = actions.pin else { return }
             guard let rendered = await render() else { return NSSound.beep() }
-            // Pins retain this capture's identity for saving and dragging later, so the file must hold these edits.
-            guard keep(rendered) != nil else { return NSSound.beep() }
-            pin(rendered.image, rendered.document.scale)
+            // A failed keep gives the pin its own picture without the stale capture identity.
+            let kept = keep(rendered) != nil
+            pin(rendered.image, rendered.document.scale, kept)
         }
     }
 
@@ -618,7 +621,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.endEditing()
         keepNow()
         // Edits that could not be kept are not in the file: handing it over would drop them.
-        guard !session.hasUnkeptChanges else { return nil }
+        guard !session.hasUnkeptChanges, let fileURL else { return nil }
         return actions.fileToHandOver(fileURL)
     }
 
@@ -990,8 +993,10 @@ final class DragOutView: NSView, NSDraggingSource, CaptureDragSource {
     override func mouseDragged(with event: NSEvent) {
         guard let start = mouseDownPoint else { return }
         let point = convert(event.locationInWindow, from: nil)
-        guard hypot(point.x - start.x, point.y - start.y) > 3, let url = prepare?() else { return }
+        guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
+        // One try a press: a copy that can't be made is not made again, nor said again, at every move after it.
         mouseDownPoint = nil
+        guard let url = prepare?() else { return }
         let item = NSDraggingItem(pasteboardWriter: url as NSURL)
         let image = thumbnail.map { NSImage(cgImage: $0, size: bounds.size) } ?? NSImage()
         item.setDraggingFrame(bounds, contents: image)

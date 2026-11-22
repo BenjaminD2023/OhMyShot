@@ -18,6 +18,8 @@ struct TakenAreaTests {
         for choice: AllInOneChoice in [.screenshot(nil), .screenshot(.copy), .screenshot(.annotate), .text, .scroll, .record] {
             let outcome = OverlayController.Outcome.allInOne(choice, Self.area, display: Self.display, frozen: nil)
             #expect(outcome.takenArea == Self.area, "\(choice)")
+            let windows = OverlayController.Outcome.allInOneWindows(choice, [Self.window], Self.area, display: Self.display, frozen: nil)
+            #expect(windows.takenArea == Self.area, "\(choice) windows")
         }
         #expect(OverlayController.Outcome.region(Self.area, display: Self.display, modifiers: [], frozen: nil).takenArea == Self.area)
         #expect(OverlayController.Outcome.record(.area(Self.area), display: Self.display, choices: RecordingChoices()).takenArea == Self.area)

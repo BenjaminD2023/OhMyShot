@@ -13,6 +13,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     /// waiting to go to the Trash too. Share, Send by Email, and Copy Error are the card's own, as they need the card
     /// (a sheet beside it) or only its upload.
     var onCommand: ((CardCommand) -> Void)?
+    /// The file a drag, Share, or Send by Email hands over: the capture's own, or a copy in the format Settings choose;
+    /// nil when that copy could not be made, which the card then shows, and nothing goes. Left out, the capture's own.
     var fileToHandOver: (() -> URL?)?
     var uploadMenu: () -> UploadMenu = { .hidden }
     var hasLink: () -> Bool = { false }
@@ -728,7 +730,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         guard hypot(point.x - start.x, point.y - start.y) > 3 else { return }
         mouseDownPoint = nil
         // The file in the format Settings choose, made now when it is not the capture itself.
-        let draggingItem = NSDraggingItem(pasteboardWriter: (fileToHandOver?() ?? item.fileURL) as NSURL)
+        guard let file = handedOverFile() else { return }
+        let draggingItem = NSDraggingItem(pasteboardWriter: file as NSURL)
         draggingItem.setDraggingFrame(bounds, contents: NSImage(cgImage: item.thumbnail, size: bounds.size))
         onHold?(.drag, true)
         beginDraggingSession(with: [draggingItem], event: event, source: self)
@@ -1064,7 +1067,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     #endif
 
     @objc private func shareClicked() {
-        let picker = NSSharingServicePicker(items: [fileToHandOver?() ?? item.fileURL])
+        guard let file = handedOverFile() else { return }
+        let picker = NSSharingServicePicker(items: [file])
         sharingPicker = picker
         picker.delegate = self
         onHold?(.action, true)
@@ -1094,7 +1098,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
 
     /// As Share, the file in the format Settings choose; close only after the service succeeds.
     @objc private func emailClicked() {
-        let file = fileToHandOver?() ?? item.fileURL
+        guard let file = handedOverFile() else { return }
         guard let service = NSSharingService(named: .composeEmail), service.canPerform(withItems: [file]) else {
             return NSSound.beep()
         }
@@ -1103,6 +1107,11 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         service.subject = EmailSharing.subject(for: file)
         onHold?(.action, true)
         service.perform(withItems: [file])
+    }
+
+    private func handedOverFile() -> URL? {
+        guard let fileToHandOver else { return item.fileURL }
+        return fileToHandOver()
     }
 
     @objc private func copyClicked() { onCommand?(Self.copyCommand(with: NSEvent.modifierFlags)) }

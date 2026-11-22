@@ -53,6 +53,15 @@ struct CaptureLauncherTests {
         #expect(launcher.captureTiles.isEmpty)
     }
 
+    @Test func onlyAreaCaptureShortcutsKeepAnOpenLauncherAvailable() {
+        for shortcut: CaptureShortcut in [.captureArea, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload, .pinArea] {
+            #expect(StatusItemController.shouldKeepLauncherOpen(for: shortcut))
+        }
+        for shortcut: CaptureShortcut in [.captureFullscreen, .captureWindow, .annotateArea, .captureText] {
+            #expect(!StatusItemController.shouldKeepLauncherOpen(for: shortcut))
+        }
+    }
+
     @Test func cancellationsLeadOnlyWhileSomethingRuns() {
         var scrolling = false
         var formula = false

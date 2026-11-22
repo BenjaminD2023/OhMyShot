@@ -26,6 +26,13 @@ struct ExportFailureTests {
         #expect(failure.detail == error.localizedDescription)
     }
 
+    @Test func exposesItsSummaryAndDetailAsLocalizedError() {
+        let failure = ExportFailure(cause: .diskFull, summary: "Couldn’t save: the disk is full", detail: "No space remains.")
+        #expect(failure.localizedDescription == failure.summary)
+        #expect(failure.errorDescription == failure.summary)
+        #expect(failure.failureReason == failure.detail)
+    }
+
     @Test func findsTheSystemCallsErrorUnderFoundations() {
         let underlying = NSError(domain: NSPOSIXErrorDomain, code: Int(ENOSPC))
         let error = NSError(domain: NSCocoaErrorDomain, code: CocoaError.fileWriteUnknown.rawValue, userInfo: [NSUnderlyingErrorKey: underlying])
@@ -38,6 +45,19 @@ struct ExportFailureTests {
         #expect(ExportFailure.saving(CocoaError(.fileWriteNoPermission), into: gone).cause == .folderUnavailable)
         #expect(!ExportFailure.isOnMissingVolume(folder))
         #expect(!ExportFailure.isOnMissingVolume(URL(filePath: "/Volumes", directoryHint: .isDirectory)))
+    }
+
+    @Test func aCopyToHandOverSaysItCouldNotBePrepared() {
+        let full = ExportFailure.converting(CocoaError(.fileWriteOutOfSpace))
+        #expect(full.step == .converting)
+        #expect(full.cause == .diskFull)
+        let missing = ExportFailure.converting(CocoaError(.fileReadNoSuchFile))
+        #expect(missing.cause == .sourceMissing)
+        let other = ExportFailure.converting(ImageExporter.ExportError.cannotEncode)
+        #expect(other.cause == .other)
+        #expect(Set([full.summary, missing.summary, other.summary]).count == 3)
+        #expect(ExportFailure.saving(CocoaError(.fileWriteOutOfSpace), into: folder).summary != full.summary)
+        #expect(ExportFailure.saving(CocoaError(.fileWriteOutOfSpace), into: folder).step == .saving)
     }
 
     @Test func aSaveTellsCancellingApartFromFailing() async throws {

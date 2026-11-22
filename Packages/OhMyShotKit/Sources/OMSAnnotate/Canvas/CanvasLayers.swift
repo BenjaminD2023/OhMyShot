@@ -36,9 +36,26 @@ nonisolated extension CALayer {
 
 /// One mark, drawn by the renderer exports use.
 nonisolated final class MarkLayer: StillLayer {
+    override var frame: CGRect {
+        didSet {
+            if frame != oldValue { updateFilteredCompositingFilter() }
+        }
+    }
+    override var bounds: CGRect {
+        didSet {
+            if bounds != oldValue { updateFilteredCompositingFilter() }
+        }
+    }
+    override var contentsScale: CGFloat {
+        didSet {
+            if contentsScale != oldValue { updateFilteredCompositingFilter() }
+        }
+    }
+
     var mark: Annotation {
         didSet { if mark != oldValue { setNeedsDisplay() } }
     }
+    private var filteredMaskExtent: CGRect?
     var scale: CGFloat = 2
     var mapping = LayerMapping(origin: .zero, zoom: 1) {
         didSet { if mapping != oldValue { setNeedsDisplay() } }
@@ -95,13 +112,35 @@ nonisolated final class MarkLayer: StillLayer {
     private func blendIntoPicture() {
         if case .filtered = coverage {
             masksToBounds = true
-            let blend = CIFilter.blendWithAlphaMask()
-            blend.maskImage = CIImage(color: .white)
-            compositingFilter = blend
+            updateFilteredCompositingFilter()
         } else {
             masksToBounds = false
+            filteredMaskExtent = nil
             compositingFilter = mark.multiplies ? (ground == .dark ? "screenBlendMode" : "multiplyBlendMode") : nil
         }
+    }
+
+    private func updateFilteredCompositingFilter() {
+        guard case .filtered = coverage else {
+            filteredMaskExtent = nil
+            return
+        }
+        let width = bounds.width
+        let height = bounds.height
+        let x = frame.minX
+        let y = frame.minY
+        guard width.isFinite, height.isFinite, x.isFinite, y.isFinite, width > 0, height > 0 else {
+            filteredMaskExtent = nil
+            compositingFilter = nil
+            return
+        }
+        let extent = CGRect(x: x, y: y, width: width, height: height)
+        guard extent != filteredMaskExtent else { return }
+        // Core Image cannot archive infinite masks; mask coordinates are superlayer points, independent of contentsScale.
+        let blend = CIFilter.blendWithAlphaMask()
+        blend.maskImage = CIImage(color: .white).cropped(to: extent)
+        compositingFilter = blend
+        filteredMaskExtent = extent
     }
 
     @available(*, unavailable)

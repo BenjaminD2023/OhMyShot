@@ -366,7 +366,7 @@ public final class InPlaceAnnotationView: NSView {
             canvas.redo(nil)
         case .cancel:
             canvas.endEditing()
-            if discard.mayDiscard(hasMarks: !session.document.items.isEmpty) {
+            if discard.mayDiscard(hasMarks: hasMarks) {
                 finish { $0.cancel() }
             } else if let deadline = discard.deadline {
                 let hint = String(localized: "Press Esc again or click Cancel to discard your marks.", bundle: .module)
@@ -389,6 +389,20 @@ public final class InPlaceAnnotationView: NSView {
         case .upload:
             if let upload = actions.upload { finish(with: upload) }
         }
+    }
+
+    /// Whether any marks are drawn: what Escape and Cancel ask about before throwing them away.
+    var hasMarks: Bool {
+        !session.document.items.isEmpty
+    }
+
+    /// Finishes as Open in Editor does when the overlay has to go without being asked to (its display changed), so marks
+    /// are kept rather than thrown away. A text mark being written ends first, and an empty one goes, as it does when
+    /// its editing ends; with no marks left nothing is done, and the overlay is cancelled as before.
+    public func openInEditorIfMarked() {
+        canvas.endEditing()
+        guard hasMarks else { return }
+        perform(.openInEditor)
     }
 
     private func clearDiscardHint() {

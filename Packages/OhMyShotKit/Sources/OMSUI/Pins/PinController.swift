@@ -1,4 +1,5 @@
 import AppKit
+import ImageIO
 import OMSCore
 import OMSDesign
 
@@ -17,7 +18,61 @@ public final class PinController {
         public let content: Content
         public let origin: Origin
         /// When it was pinned: a capture whose file changed since holds a picture other than the pin's.
-        public let pinnedAt = Date.now
+        public let pinnedAt: Date
+        /// Its capture as the history kept it, a PNG: the pin's picture on the background the capture was put on, for a pin
+        /// laid over the area it was taken from, which shows the capture without it. What the pin hands over in place of
+        /// its capture's file. Nil for a pin that shows all of its picture.
+        public let onBackground: Data?
+        /// Whether handing the capture over requires its background, even when the saved background is missing.
+        public let requiresBackground: Bool
+
+        init(
+            id: UUID, content: Content, origin: Origin, pinnedAt: Date = .now, onBackground: Data? = nil, requiresBackground: Bool? = nil
+        ) {
+            self.id = id
+            self.content = content
+            self.origin = origin
+            self.pinnedAt = pinnedAt
+            self.onBackground = onBackground
+            self.requiresBackground = requiresBackground ?? (onBackground != nil)
+        }
+
+        /// Whether a capture's file last written at `date` still holds the pin's picture: it was not written since.
+        public func shows(fileChangedAt date: Date) -> Bool {
+            date <= pinnedAt
+        }
+
+        public nonisolated static func pictureForHandOver(
+            _ image: CGImage, onBackground: Data?, requiresBackground: Bool
+        ) throws -> CGImage {
+            guard let onBackground else {
+                guard !requiresBackground else { throw ImageExporter.ExportError.cannotRead }
+                return image
+            }
+            guard let source = CGImageSourceCreateWithData(onBackground as CFData, nil),
+                  let read = CGImageSourceCreateImageAtIndex(source, 0, nil)
+            else { throw ImageExporter.ExportError.cannotRead }
+            return read
+        }
+
+        /// A picture pin's own picture as a file to drag out: the file it was opened from while that is there, else a
+        /// PNG of it in the temporary folder. Nil for a text or color pin, or when the PNG cannot be written.
+        public func ownFile() -> URL? {
+            guard case .image(let image, _) = content else { return nil }
+            if case .file(let url) = origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+                return url
+            }
+            let tempURL = FileManager.default.temporaryDirectory.appending(path: "OhMyShot Pin \(id.uuidString).png")
+            if FileManager.default.fileExists(atPath: tempURL.path(percentEncoded: false)) {
+                return tempURL
+            }
+            do {
+                try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: tempURL)
+                return tempURL
+            } catch {
+                return nil
+            }
+        }
     }
 
     public enum Content {
@@ -42,6 +97,8 @@ public final class PinController {
         public var saveAs: (Pin) -> Void
         public var annotate: (Pin) -> Void
         public var recognizeText: (Pin) -> Void
+        /// The file a picture pin hands over when Option-dragged into another app; nil when it could not be made, which
+        /// the app says, and then nothing goes. Left out, the pin's own picture goes (`Pin.ownFile()`).
         public var fileForDrag: ((Pin) -> URL?)?
 
         public init(
@@ -101,10 +158,11 @@ public final class PinController {
 
     /// Pins `image`: over `area` (global points) at its own size when it came from there, else centered
     /// on the pointer's display. A scale below 1 is kept, for a picture resized to fewer pixels than points; one that is
-    /// no scale at all is taken as 1.
+    /// no scale at all is taken as 1. `onBackground` is its capture as kept, for a pin over the area without its background
+    /// (`Pin.onBackground`).
     @discardableResult
-    public func pin(_ image: CGImage, scale: CGFloat, origin: Origin, over area: CGRect? = nil) -> UUID {
-        open(.image(image, scale: scale.isFinite && scale > 0 ? scale : 1), origin: origin, over: area)
+    public func pin(_ image: CGImage, scale: CGFloat, origin: Origin, over area: CGRect? = nil, onBackground: Data? = nil) -> UUID {
+        open(.image(image, scale: scale.isFinite && scale > 0 ? scale : 1), origin: origin, over: area, onBackground: onBackground)
     }
 
     /// Pins text on a card, centered on the pointer's display.
@@ -119,7 +177,7 @@ public final class PinController {
         open(.color(color), origin: .clipboard, over: nil)
     }
 
-    private func open(_ content: Content, origin: Origin, over area: CGRect?) -> UUID {
+    private func open(_ content: Content, origin: Origin, over area: CGRect?, onBackground: Data? = nil) -> UUID {
         if areHidden { setHidden(false) }
         let size = PinWindow.baseSize(of: content)
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
@@ -131,10 +189,10 @@ public final class PinController {
                 placed.frame = placed.frame.offsetBy(dx: 24, dy: -24)
             }
         }
-        let pin = Pin(id: UUID(), content: content, origin: origin)
+        let pin = Pin(id: UUID(), content: content, origin: origin, onBackground: onBackground)
         let window = add(pin, frame: placed.frame, zoom: placed.zoom)
         window.show()
-        if isKeeping, case .image(let image, _) = content { archive.keepPicture(image, id: pin.id) }
+        if isKeeping, case .image(let image, _) = content { archive.keepPicture(image, onBackground: onBackground, id: pin.id) }
         VoiceOver.announce(String(localized: "Pinned.", bundle: .module), from: window, priority: .medium)
         changed()
         return pin.id
@@ -157,21 +215,21 @@ public final class PinController {
     /// gone) and hidden if they were. While Settings doesn't keep pins, removes what an earlier launch kept instead.
     public func restore() {
         guard isKeeping else { return archive.removeAll() }
-        archive.load { [weak self] manifest, pictures in self?.reopen(manifest, pictures: pictures) }
+        archive.load { [weak self] manifest, pictures, onBackground in self?.reopen(manifest, pictures: pictures, onBackground: onBackground) }
     }
 
-    private func reopen(_ manifest: PinArchive.Manifest, pictures: [UUID: CGImage]) {
+    private func reopen(_ manifest: PinArchive.Manifest, pictures: [UUID: CGImage], onBackground: [UUID: Data]) {
         // A pin opened while these were read keeps the pins shown or hidden as they are now.
         let hidden = windows.isEmpty ? manifest.hidden : areHidden
         let screens = Self.screens
         for record in manifest.pins where !windows.contains(where: { $0.pin.id == record.id }) {
-            guard let content = record.pinContent(picture: pictures[record.id]) else { continue }
+            guard let pin = record.pin(picture: pictures[record.id], onBackground: onBackground[record.id]) else { continue }
             let zoom = PinGeometry.keptZoom(record.zoom)
-            let base = PinWindow.baseSize(of: content)
+            let base = PinWindow.baseSize(of: pin.content)
             // Its size from its own size and zoom, its top left corner where it was.
             let kept = CGRect(x: record.frame.minX, y: record.frame.maxY - base.height * zoom, width: base.width * zoom, height: base.height * zoom)
             let frame = PinGeometry.recovered(kept, on: screens) ?? kept
-            let window = add(Pin(id: record.id, content: content, origin: record.origin), frame: frame, zoom: zoom, opacity: record.opacity)
+            let window = add(pin, frame: frame, zoom: zoom, opacity: record.opacity)
             if record.locked { window.setLocked(true) }
             if !hidden { window.show() }
         }
@@ -191,7 +249,7 @@ public final class PinController {
             return archive.removeAll()
         }
         for window in windows {
-            if case .image(let image, _) = window.pin.content { archive.keepPicture(image, id: window.pin.id) }
+            if case .image(let image, _) = window.pin.content { archive.keepPicture(image, onBackground: window.pin.onBackground, id: window.pin.id) }
         }
         saveNow()
     }
@@ -288,11 +346,14 @@ public final class PinController {
         pendingSave?.cancel()
         pendingSave = nil
         guard isKeeping else { return }
-        var pictures: [UUID: CGImage] = [:]
+        var pictures: [UUID: CGImage] = [:], onBackground: [UUID: Data] = [:]
         for window in windows {
             if case .image(let image, _) = window.pin.content { pictures[window.pin.id] = image }
+            onBackground[window.pin.id] = window.pin.onBackground
         }
-        archive.save(PinArchive.Manifest(hidden: areHidden, pins: windows.compactMap(\.record)), pictures: pictures, waits: waits)
+        archive.save(
+            PinArchive.Manifest(hidden: areHidden, pins: windows.compactMap(\.record)), pictures: pictures, onBackground: onBackground, waits: waits
+        )
     }
 
     #if DEBUG

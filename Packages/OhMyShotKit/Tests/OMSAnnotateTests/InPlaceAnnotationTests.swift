@@ -65,6 +65,46 @@ struct InPlaceAnnotationTests {
         #expect(pixel[0] < 10 && pixel[3] == 255)
     }
 
+    @Test func openingInTheEditorWithoutTheToolbarKeepsTheMarks() throws {
+        var opened: [InPlaceAnnotationView.Result] = [], others = 0
+        let annotator = InPlaceAnnotationView(
+            frame: frame(), scale: 2, size: CGSize(width: 400, height: 300), selection: CGRect(x: 80, y: 40, width: 100, height: 60),
+            actions: .init(copy: { _ in others += 1 }, save: { _ in others += 1 }, openInEditor: { opened.append($0) }, cancel: { others += 1 })
+        )
+        #expect(!annotator.hasMarks)
+        var document = annotator.session.document
+        document.items = [Annotation(shape: .rectangle(Box(rect: CGRect(x: 170, y: 90, width: 20, height: 20))), style: Style())]
+        annotator.session.commit(document, actionName: "Add")
+        #expect(annotator.hasMarks)
+        // As a display change finishes it: once, into the editor, with the marks; never copied, saved, or thrown away.
+        annotator.openInEditorIfMarked()
+        annotator.openInEditorIfMarked()
+        let result = try #require(opened.first)
+        #expect(opened.count == 1)
+        #expect(others == 0)
+        #expect(result.document.items.count == 1)
+        #expect(result.area == CGRect(x: 80, y: 40, width: 100, height: 60))
+    }
+
+    @Test func aDisplayChangeWithOnlyAnEmptyTextMarkKeepsNothing() {
+        var actions = 0
+        let annotator = InPlaceAnnotationView(
+            frame: frame(), scale: 2, size: CGSize(width: 400, height: 300), selection: CGRect(x: 80, y: 40, width: 100, height: 60),
+            actions: .init(copy: { _ in actions += 1 }, save: { _ in actions += 1 }, openInEditor: { _ in actions += 1 }, cancel: { actions += 1 })
+        )
+        // A click with Text: an empty mark, its caret waiting.
+        let blank = Annotation(shape: .text(TextBlock(origin: CGPoint(x: 170, y: 90), string: "", fontSize: 20, look: .label)), style: Style())
+        annotator.session.beginLiveChange()
+        var document = annotator.session.document
+        document.items.append(blank)
+        annotator.session.updateLive(document, selecting: [blank.id])
+        annotator.canvas.beginEditing(blank.id, isNew: true)
+        #expect(annotator.hasMarks)
+        annotator.openInEditorIfMarked()
+        #expect(!annotator.hasMarks)
+        #expect(actions == 0)
+    }
+
     @Test func theResultIsWhereTheSelectionEndedUp() throws {
         let annotator = view()
         #expect(try #require(annotator.result()).area == CGRect(x: 80, y: 40, width: 100, height: 60))

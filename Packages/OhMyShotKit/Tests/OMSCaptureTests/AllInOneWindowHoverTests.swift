@@ -49,6 +49,36 @@ struct AllInOneWindowHoverTests {
         #expect(onRight?.area == CGRect(x: 800, y: 100, width: 390, height: 300))
     }
 
+    @Test func multiWindowSetupUsesADisplayIntersectingTheTargets() {
+        let onRight = WindowTarget(id: 41, frame: CGRect(x: 900, y: 100, width: 200, height: 120), ownerName: "Right", title: nil)
+        let anotherOnRight = WindowTarget(id: 42, frame: CGRect(x: 1_150, y: 180, width: 240, height: 160), ownerName: "Also right", title: nil)
+        let layout = DisplayLayout(displays: [Self.left, Self.right])
+        #expect(OverlayController.displayForSetup(targets: [onRight, anotherOnRight], in: layout) == Self.right)
+    }
+
+    @Test func onlyAnUnchangedFramedWindowRetainsItsWindowTarget() {
+        let framed = (window: Self.front, area: Self.front.frame)
+        #expect(OverlayController.framedWindow(framed, matching: Self.front.frame) == Self.front)
+        #expect(OverlayController.framedWindow(framed, matching: Self.front.frame.offsetBy(dx: 1, dy: 0)) == nil)
+        #expect(OverlayController.framedWindow(nil, matching: Self.front.frame) == nil)
+    }
+
+    @Test func shiftSelectionAddsAndRemovesHoveredWindowsInOrder() {
+        let selected = OverlayController.toggledWindow(Self.back, in: [])
+        #expect(selected == [Self.back])
+        let both = OverlayController.toggledWindow(Self.front, in: selected)
+        #expect(both == [Self.back, Self.front])
+        #expect(OverlayController.toggledWindow(Self.back, in: both) == [Self.front])
+    }
+
+    @Test func windowHoverOutlineUsesContinuousRoundedCorners() {
+        let rect = CGRect(x: 20, y: 30, width: 200, height: 140)
+        let path = OverlayView.roundedWindowPath([rect])
+        #expect(path.boundingBox == rect)
+        #expect(!path.contains(CGPoint(x: rect.minX, y: rect.minY)))
+        #expect(path.contains(CGPoint(x: rect.midX, y: rect.minY)))
+    }
+
     /// A press keeps the window under it while it stays within the drag threshold (under 4 pixels either way), and lets
     /// it go for good once it is a drag, even when the drag comes back to where it began.
     @Test func aPressIsAClickUntilItIsDragged() throws {
@@ -94,5 +124,27 @@ struct AllInOneWindowHoverTests {
         view.highlight(nil)
         view.show(selection: selection, showsReading: true, isDragging: true)
         #expect(view.debugSizeReading == "200 × 100")
+    }
+
+    @Test func shiftSelectedWindowsInAreaModeShowCountAndIgnoreEdgeTouchingWindows() throws {
+        let view = OverlayView(display: Self.left)
+        view.reset(pointer: CGPoint(x: 150, y: 150), mode: .area, windows: [], showsToolbar: false, purpose: .screenshot, allInOne: true)
+        let touchingRight = WindowTarget(id: 50, frame: CGRect(x: 800, y: 100, width: 200, height: 150), ownerName: "Other", title: nil)
+        let second = WindowTarget(id: 51, frame: CGRect(x: 150, y: 120, width: 300, height: 200), ownerName: "Mail", title: nil)
+        view.setSelectedWindows([Self.front, touchingRight])
+        #expect(view.debugSizeReading == "2 windows  ·  600 × 400")
+
+        view.setSelectedWindows([Self.back])
+        #expect(view.debugSizeReading == "Safari  ·  1200 × 800")
+        #expect(view.accessibilityValue() as? String == "Safari  ·  1200 × 800")
+
+        view.setSelectedWindows([second])
+        let hovered = try #require(OverlayController.hoveredWindow(at: CGPoint(x: 150, y: 150), in: Self.windows, on: Self.left))
+        view.highlight(hovered)
+        #expect(view.debugSizeReading == "2 windows  ·  700 × 440")
+
+        view.highlight(nil)
+        view.setSelectedWindows([second, Self.front])
+        #expect(view.debugSizeReading == "2 windows  ·  700 × 440")
     }
 }

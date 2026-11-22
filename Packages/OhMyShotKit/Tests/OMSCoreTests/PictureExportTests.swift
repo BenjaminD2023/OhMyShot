@@ -388,6 +388,34 @@ struct PictureExportTests {
 
     /// How long a drag waits for the converted copy when Settings change the file (Docs/perf.md › Main-thread work after
     /// a capture): a drag converts on the main actor, between two frames. Opt-in: OMS_EXPORT_SPEED=1.
+    @Test func aCopyThatCannotBeMadeIsNeverHandedOverAsTheCaptureItself() async throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "Shot.png")
+        try writePNG(try picture(10, 10), to: file)
+        let output = ScreenshotOutput(format: .jpeg)
+        // The caches cannot be written: a file stands where their folder would be.
+        let blocked = folder.appending(path: "Blocked")
+        try Data([1]).write(to: blocked)
+        let failure = try #require(throws: ExportFailure.self) {
+            try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: output, in: blocked).get()
+        }
+        #expect(failure.step == .converting)
+        #expect(!failure.summary.isEmpty)
+        // Several at once: none goes when one cannot be made, though the others could.
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let gone = folder.appending(path: "Gone.png")
+        let several = await ExportedFiles.handOver([(file, 1), (gone, 1)], output: output, in: cache)
+        #expect(throws: ExportFailure.self) { try several.get() }
+        // An upload's bytes that are no picture.
+        let upload = await ExportedFiles.handOver(pictureData: Data("no picture".utf8), named: "Shot", pixelsPerPoint: 1, output: output, in: cache)
+        #expect(throws: ExportFailure.self) { try upload.get() }
+        // Nothing asked of it, the capture goes as it is.
+        #expect(try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: ScreenshotOutput(), in: blocked).get() == file)
+        let converted = try ExportedFiles.handOver(file, pixelsPerPoint: 1, output: output, in: cache).get()
+        #expect(converted.pathExtension == "jpg")
+    }
+
     @Test(.enabled(if: ProcessInfo.processInfo.environment["OMS_EXPORT_SPEED"] != nil))
     func convertingAFullScreenCaptureForADrag() throws {
         let folder = try makeFolder()
@@ -422,6 +450,93 @@ struct PictureExportTests {
         #expect(try decode(Data(contentsOf: second)).image.width == 90)
     }
 
+    /// A copy begun before the capture changed, which ends after the copy of the capture as it is now was made, is never
+    /// handed over: not by the conversion that made it, and not by a later drag.
+    @Test func aConversionOfThePictureAsItWasThatEndsLateIsNeverHandedOver() throws {
+        final class Outcome: @unchecked Sendable { var value: Result<URL, any Error>? }
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let file = folder.appending(path: "Shot.png")
+        let red = try ImageExporter.encoded(picture(8, 8, color: [255, 0, 0, 255]), as: .png)
+        let blue = try ImageExporter.encoded(picture(8, 8, color: [0, 0, 255, 255]), as: .png)
+        try red.write(to: file, options: .atomic)
+        let output = ScreenshotOutput(format: .jpeg)
+        let read = DispatchSemaphore(value: 0), resume = DispatchSemaphore(value: 0), done = DispatchSemaphore(value: 0)
+        let late = Outcome()
+        // The copy made ahead of a drag as the card appeared has read the picture before the redaction...
+        DispatchQueue.global().async {
+            var held = false
+            late.value = Result {
+                try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, name: nil, in: cache) {
+                    guard !held else { return }
+                    held = true
+                    read.signal()
+                    resume.wait()
+                }
+            }
+            done.signal()
+        }
+        // The worker is let go however the test ends, a wait that timed out included; and the wait is bounded, so a
+        // conversion that fails before reading fails the test rather than hanging it.
+        var resumed = false
+        defer { if !resumed { resume.signal() } }
+        try #require(read.wait(timeout: .now() + 30) == .success)
+        // ...which is kept, and dragged out, while that copy is still being made.
+        try blue.write(to: file, options: .atomic)
+        let current = try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache)
+        #expect(try raw(decode(Data(contentsOf: current)).image, 0, 0)[2] > 200)
+        resume.signal()
+        resumed = true
+        try #require(done.wait(timeout: .now() + 30) == .success)
+        let lateFile = try #require(try late.value?.get())
+        #expect(try raw(decode(Data(contentsOf: lateFile)).image, 0, 0)[2] > 200)
+        #expect(try raw(decode(Data(contentsOf: current)).image, 0, 0)[2] > 200)
+        let again = try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache)
+        #expect(again == current)
+        #expect(try raw(decode(Data(contentsOf: again)).image, 0, 0)[2] > 200)
+    }
+
+    @Test func aPinsCopyIsMadeOnceForEachWayOfWritingIt() throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let pin = UUID()
+        var drawn = 0
+        let draw = { () throws -> CGImage in
+            drawn += 1
+            return try self.picture(60, 40, color: [30, 120, 60, 255])
+        }
+        let output = ScreenshotOutput(format: .jpeg, retinaAtOneX: true)
+        let first = try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 2, output: output, in: cache, picture: draw)
+        #expect(first.lastPathComponent == "Shot.jpg")
+        let decoded = try decode(Data(contentsOf: first))
+        #expect(decoded.type == UTType.jpeg.identifier && decoded.image.width == 30)
+        // A second drag hands over the same file, whatever the pattern would name it now, without drawing it again.
+        #expect(try ExportedFiles.file(forPin: pin, named: "Later", pixelsPerPoint: 2, output: output, in: cache, picture: draw) == first)
+        #expect(drawn == 1)
+        // Another way of writing it is another copy, and another pin's copy never stands in.
+        let heic = try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 2, output: ScreenshotOutput(format: .heic), in: cache, picture: draw)
+        #expect(heic.pathExtension == "heic")
+        let other = try ExportedFiles.file(forPin: UUID(), named: "Shot", pixelsPerPoint: 2, output: output, in: cache, picture: draw)
+        #expect(other != first && drawn == 3)
+    }
+
+    @Test func aPinsPictureThatCantBeDrawnLeavesNothingInItsPlace() throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let pin = UUID()
+        let output = ScreenshotOutput(format: .jpeg)
+        #expect(throws: ImageExporter.ExportError.cannotEncode) {
+            try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache) { throw ImageExporter.ExportError.cannotEncode }
+        }
+        #expect(!FileManager.default.fileExists(atPath: cache.path(percentEncoded: false)))
+        // Drawn the next time, it is made then.
+        let made = try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache) { try self.picture(10, 10) }
+        #expect(FileManager.default.fileExists(atPath: made.path(percentEncoded: false)))
+    }
+
     @Test func aCaptureLeftAsItIsAndARecordingAreHandedOverUnconverted() throws {
         let folder = try makeFolder()
         defer { try? FileManager.default.removeItem(at: folder) }
@@ -449,6 +564,32 @@ struct PictureExportTests {
         #expect(FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
         ExportedFiles.removeOld(in: cache, now: .now.addingTimeInterval(ExportedFiles.lifetime + 60))
         #expect(!FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
+    }
+
+    @Test func aCopyHandedOverAgainStaysAsLongAsOneJustMade() throws {
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let cache = folder.appending(path: "Exports", directoryHint: .isDirectory)
+        let file = folder.appending(path: "Shot.png")
+        try writePNG(try picture(10, 10), to: file)
+        let output = ScreenshotOutput(format: .jpeg)
+        let pin = UUID()
+        let draw = { () throws -> CGImage in try self.picture(10, 10) }
+        let copies = [
+            try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache),
+            try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache, picture: draw),
+        ]
+        let daysAgo = Date.now.addingTimeInterval(-ExportedFiles.lifetime - 60)
+        for copy in copies {
+            try FileManager.default.setAttributes([.modificationDate: daysAgo], ofItemAtPath: copy.path(percentEncoded: false))
+        }
+        // Made days ago and dragged again now: the sweep that follows the drag leaves them for the app they go to.
+        #expect(try ExportedFiles.file(for: file, pixelsPerPoint: 1, output: output, in: cache) == copies[0])
+        #expect(try ExportedFiles.file(forPin: pin, named: "Shot", pixelsPerPoint: 1, output: output, in: cache, picture: draw) == copies[1])
+        ExportedFiles.removeOld(in: cache)
+        for copy in copies {
+            #expect(FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
+        }
     }
 
     @Test func theFoldersOldCopiesLeaveEmptyGoToo() throws {

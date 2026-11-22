@@ -19,6 +19,9 @@ public enum PictureExport {
         public let pixelsPerPoint: Double?
         /// Whether `image` differs from the picture that was given.
         public let isChanged: Bool
+        /// Whether every change asked for was made: false when the picture could not be drawn, so a copy of it would go
+        /// without them (a watermark, 1×, sRGB, a border) and is not to be written.
+        public let isComplete: Bool
     }
 
     public struct Encoded: Sendable {
@@ -52,13 +55,13 @@ public enum PictureExport {
         let hdr = output.format == .heic && !output.convertsToSRGB && hdr?.width == image.width && hdr?.height == image.height ? hdr : nil
         let watermark = output.watermark
         guard resizes || converts || borders || watermark != nil else {
-            return Prepared(image: image, hdr: hdr, pixelsPerPoint: scale, isChanged: false)
+            return Prepared(image: image, hdr: hdr, pixelsPerPoint: scale, isChanged: false, isComplete: true)
         }
         guard let drawn = draw(image, width: width, height: height, toSRGB: output.convertsToSRGB, border: borders, watermark: watermark) else {
-            return Prepared(image: image, hdr: hdr, pixelsPerPoint: pixelsPerPoint, isChanged: false)
+            return Prepared(image: image, hdr: hdr, pixelsPerPoint: pixelsPerPoint, isChanged: false, isComplete: false)
         }
         let drawnHDR = hdr.flatMap { resizes || borders || watermark != nil ? drawHDR($0, width: width, height: height, border: borders, watermark: watermark) : $0 }
-        return Prepared(image: drawn, hdr: drawnHDR, pixelsPerPoint: scale, isChanged: true)
+        return Prepared(image: drawn, hdr: drawnHDR, pixelsPerPoint: scale, isChanged: true, isComplete: true)
     }
 
     /// One pass: `image` at its new size in sRGB (or the color space it has), with the border over its outer ring.
@@ -148,6 +151,7 @@ public enum PictureExport {
     /// makes of it as the base; should that fail, the SDR picture alone is written. A picture with transparency
     /// goes to JPEG on white.
     public static func encode(_ prepared: Prepared, output: ScreenshotOutput) throws -> Encoded {
+        guard prepared.isComplete else { throw ImageExporter.ExportError.cannotEncode }
         if let hdr = prepared.hdr, output.format == .heic,
            let data = try? write(hdr, properties: properties(for: prepared, output: output, gainMap: true), output: output) {
             return Encoded(data: data, format: .heic)
@@ -190,7 +194,7 @@ public enum PictureExport {
     @concurrent
     public static func clipboardPicture(_ image: CGImage, pixelsPerPoint: Double?, output: ScreenshotOutput) async -> (image: CGImage, png: Data)? {
         let prepared = prepare(image, pixelsPerPoint: pixelsPerPoint, output: output.with(format: .png))
-        guard let png = try? await ImageExporter.encode(prepared.image, as: .png) else { return nil }
+        guard prepared.isComplete, let png = try? await ImageExporter.encode(prepared.image, as: .png) else { return nil }
         return (prepared.image, png)
     }
 

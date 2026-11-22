@@ -20,6 +20,7 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool)
     func overlayViewDidReleaseSpace(_ view: OverlayView)
     /// The whole display, chosen with the All-In-One bar.
+    func overlayViewDidRequestDisplayCapture(_ view: OverlayView)
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags)
@@ -59,6 +60,9 @@ protocol OverlayViewDelegate: AnyObject {
 }
 
 extension OverlayViewDelegate {
+    func overlayViewDidRequestDisplayCapture(_ view: OverlayView) {
+        overlayView(view, didSelect: view.display.frame, modifiers: [])
+    }
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
         if let first = targets.first {
             overlayView(view, didSelectWindow: first, modifiers: modifiers)
@@ -145,6 +149,7 @@ final class OverlayView: NSView {
     private var increasedContrast = false
 
     private let backdrop = CALayer()
+    private let transientContent = CALayer()
     private let room = CAShapeLayer()
     private let outline = CAShapeLayer()
     private let border = CAShapeLayer()
@@ -228,6 +233,7 @@ final class OverlayView: NSView {
         allInOne: Bool = false, snapsToText: Bool = false
     ) {
         endCanvasCursorOwnership()
+        clearTransientContent()
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
@@ -336,6 +342,33 @@ final class OverlayView: NSView {
         }
     }
 
+    func showTransientContent(from snapshots: [TransientCaptureSnapshot]) {
+        clearTransientContent()
+        transientContent.isHidden = mode != .area
+        for snapshot in snapshots {
+            for region in snapshot.regions {
+                guard let patch = snapshot.frame.cropped(to: region.intersection(display.frame)) else { continue }
+                let image = CALayer()
+                image.contents = patch.image
+                image.contentsScale = display.backingScale
+                image.contentsGravity = .resize
+                image.frame = local(patch.frame)
+                transientContent.addSublayer(image)
+            }
+        }
+    }
+
+    var debugTransientPatchCount: Int { transientContent.sublayers?.count ?? 0 }
+    var debugTransientPatchFrames: [CGRect] { transientContent.sublayers?.map(\.frame) ?? [] }
+    var debugTransientContentIsBelowDimmingAndSelection: Bool {
+        guard let layers = layer?.sublayers,
+              let transientIndex = layers.firstIndex(where: { $0 === transientContent }),
+              let dimmingIndex = layers.firstIndex(where: { $0 === room }),
+              let selectionIndex = layers.firstIndex(where: { $0 === outline }) else { return false }
+        return transientIndex < dimmingIndex && transientIndex < selectionIndex
+    }
+    var debugTransientContentIsHidden: Bool { transientContent.isHidden }
+
     /// Turns this display's overlay into Measure where it stands (All-In-One's M): the frame it holds stays, and holds
     /// still even if the screen showed live, since the ruler reads that frame; the bar goes, as Measure has none, and the
     /// ruler takes the pointer at `globalPointer`.
@@ -353,6 +386,7 @@ final class OverlayView: NSView {
 
     /// Switches between dragging a region and clicking a window, keeping the pointer where it is.
     func switchMode(to mode: Mode, windows: [WindowTarget]) {
+        transientContent.isHidden = mode != .area
         self.mode = mode
         self.windows = windows
         hoveredWindow = nil
@@ -371,7 +405,9 @@ final class OverlayView: NSView {
     /// interface in-place annotation put over it.
     func clear() {
         endCanvasCursorOwnership()
+        clearTransientContent()
         capturedFrame = nil
+        selectedWindows = []
         highlightedWindow = nil
         measure?.clear()
         isAnnotating = false
@@ -969,6 +1005,10 @@ final class OverlayView: NSView {
             }
             delegate?.overlayView(self, didNudge: CGVector(dx: direction.dx * step, dy: direction.dy * step))
         case 36, 76: // Return, and Enter on the keypad
+            if mode == .area, isAllInOne, purpose == .screenshot, !isDraggingSelection, !selectedWindows.isEmpty {
+                delegate?.overlayView(self, didSelectWindows: selectedWindows, modifiers: event.modifierFlags.subtracting(.shift))
+                return
+            }
             if mode == .window {
                 var targets = selectedWindows
                 if targets.isEmpty, let hoveredWindow { targets = [hoveredWindow] }
@@ -1118,6 +1158,23 @@ final class OverlayView: NSView {
         withoutAnimation { updateSelectionLayers() }
     }
 
+    /// Keeps the windows selected by All-In-One's area-mode Shift-clicks visible on every display.
+    func setSelectedWindows(_ windows: [WindowTarget]) {
+        guard selectedWindows != windows else { return }
+        selectedWindows = windows
+        withoutAnimation { updateSelectionLayers() }
+    }
+
+    static func roundedWindowPaths(_ rects: [CGRect]) -> [CGPath] {
+        rects.filter { !$0.isNull && !$0.isEmpty }.map { CGPath.continuousRoundedRect($0, radius: 12) }
+    }
+
+    static func roundedWindowPath(_ rects: [CGRect]) -> CGPath {
+        let path = CGMutablePath()
+        for windowPath in roundedWindowPaths(rects) { path.addPath(windowPath) }
+        return path
+    }
+
     /// Shows the screen as it is now instead of as it was frozen, for a recording set up from a frozen All-In-One.
     func showLive() {
         withoutAnimation { backdrop.contents = nil }
@@ -1143,7 +1200,7 @@ final class OverlayView: NSView {
                 delegate?.overlayView(self, didSwitchTo: .window)
             }
         case .fullscreen:
-            delegate?.overlayView(self, didSelect: display.frame, modifiers: [])
+            delegate?.overlayViewDidRequestDisplayCapture(self)
         case .measure:
             delegate?.overlayViewDidRequestMeasure(self)
         case .cancel:
@@ -1163,6 +1220,9 @@ final class OverlayView: NSView {
 
         room.frame = bounds
         room.fillRule = .evenOdd
+
+        transientContent.frame = bounds
+        transientContent.masksToBounds = true
 
         for line in [outline, crosshairOutline] {
             line.lineWidth = Theme.Overlay.borderWidth + 2
@@ -1215,7 +1275,7 @@ final class OverlayView: NSView {
         // Over what a frame set up for its next step draws on this view (its views lie over this view's own layers),
         // and over the lens raised there.
         keyList.layer.zPosition = 2
-        for sublayer in [backdrop, room, outline, border, snapEdges, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer, keyList.layer] {
+        for sublayer in [backdrop, transientContent, room, outline, border, snapEdges, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer, keyList.layer] {
             root.addSublayer(sublayer)
         }
         withoutAnimation {
@@ -1333,7 +1393,21 @@ final class OverlayView: NSView {
         let element = mode == .window ? pickedElement : nil
         // All-In-One's window under the pointer stands for the selection until a drag makes one.
         let highlighted = mode == .area && selection.isTooSmall ? highlightedWindow : nil
-        let target = mode == .window ? (element?.frame ?? windowBounds)?.intersection(display.frame) : highlighted?.area ?? selection.rect
+        // A drag that passes the click threshold is an area selection, so its rectangular frame supersedes the
+        // retained Shift-selected window outlines. Before then, keep those outlines and the live hover preview.
+        var areaWindows: [WindowTarget] = mode == .area && selection.isTooSmall ? selectedWindows : []
+        var roundedWindows: [CGRect] = areaWindows.compactMap { window in
+            let part = window.frame.intersection(display.frame)
+            return !part.isNull && !part.isEmpty ? part : nil
+        }
+        if let highlighted, !selectedWindows.contains(highlighted.window) {
+            areaWindows.append(highlighted.window)
+            roundedWindows.append(highlighted.area)
+        }
+        let selectedBounds = roundedWindows.dropFirst().reduce(roundedWindows.first) { $0?.union($1) }
+        let target = mode == .window
+            ? (element?.frame ?? windowBounds)?.intersection(display.frame)
+            : (selection.isTooSmall ? selectedBounds : selection.rect)
         guard let globalRect = target, !globalRect.isNull, !globalRect.isEmpty else {
             room.path = roomPath
             outline.path = nil
@@ -1344,9 +1418,12 @@ final class OverlayView: NSView {
             return
         }
         let rect = local(globalRect)
-        roomPath.addRect(rect)
+        let windowRects = roundedWindows.map(local)
+        let windowPath = Self.roundedWindowPath(windowRects)
+        let windowMaskPath = SelectionChromeView.unionPath(Self.roundedWindowPaths(windowRects))
+        roomPath.addPath(windowMaskPath ?? (windowPath.isEmpty ? CGPath(rect: rect, transform: nil) : windowPath))
         room.path = roomPath
-        let edge = CGPath(rect: rect, transform: nil)
+        let edge = windowPath.isEmpty ? CGPath(rect: rect, transform: nil) : windowPath
         let inset = Self.textSelectionEdge(increasedContrast: increasedContrast) / 2
         let drawn = purpose == .text ? rect.integral.insetBy(dx: inset, dy: inset) : rect
         border.path = purpose == .text ? CGPath(rect: drawn, transform: nil) : edge
@@ -1371,15 +1448,24 @@ final class OverlayView: NSView {
             } else {
                 text = "\(width) × \(height)"
             }
-        } else if let highlighted {
-            let size = AreaFrame.pixelReading(highlighted.area.size, pixelsPerPoint: display.pixelsPerPoint)
-            text = highlighted.window.ownerName.isEmpty ? size : "\(highlighted.window.ownerName)  ·  \(size)"
+        } else if mode == .area, selection.isTooSmall, !roundedWindows.isEmpty {
+            let scale = display.pixelsPerPoint
+            let width = Int((globalRect.width * scale).rounded())
+            let height = Int((globalRect.height * scale).rounded())
+            if areaWindows.count > 1 {
+                text = String(localized: "\(areaWindows.count) windows  ·  \(width) × \(height)", bundle: .module)
+            } else if let win = areaWindows.first {
+                let size = AreaFrame.pixelReading(globalRect.size, pixelsPerPoint: scale)
+                text = win.ownerName.isEmpty ? size : "\(win.ownerName)  ·  \(size)"
+            } else {
+                text = AreaFrame.pixelReading(globalRect.size, pixelsPerPoint: scale)
+            }
         } else {
             let size = selection.pixelSize
             text = "\(size.width) × \(size.height)"
         }
         sizePill.text = text
-        sizePill.layer.isHidden = purpose == .text || (mode == .area && !showsReading && highlighted == nil)
+        sizePill.layer.isHidden = purpose == .text || (mode == .area && !showsReading && roundedWindows.isEmpty)
         // Text mode has no readings; a hovered window is named, without its size.
         setAccessibilityValue(purpose == .text ? (mode == .window ? hoveredWindow?.ownerName : nil) : text)
         // Centered under the selection; tucked inside when there is no room below, and lifted above the
@@ -1599,6 +1685,10 @@ final class OverlayView: NSView {
 
     private func local(_ rect: CGRect) -> CGRect {
         rect.offsetBy(dx: -display.frame.minX, dy: -display.frame.minY)
+    }
+
+    private func clearTransientContent() {
+        transientContent.sublayers?.forEach { $0.removeFromSuperlayer() }
     }
 
     private func global(_ point: CGPoint) -> CGPoint {

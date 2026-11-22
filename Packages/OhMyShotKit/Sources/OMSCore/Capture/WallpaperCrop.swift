@@ -5,23 +5,25 @@ import Foundation
 /// as the finished picture (the capture with its room all round), cut to the display.
 public enum WallpaperCrop {
     /// In the desktop picture's pixels from the display's top-left corner. `picture` is where the capture lies on
-    /// screen in global points (the window with its shadow: `pictureFrame`), `picturePixels` the capture's size,
-    /// `padding` the background's room as a fraction of the capture's measure (the side of a square of its area).
-    /// Nil when nothing of it is on the display.
+    /// screen in global points (the window with its shadow: `pictureFrame`), `picturePixels` the capture's size at
+    /// `imageScale` (defaulting to `display.pixelsPerPoint`), `padding` the background's room as a fraction of the
+    /// capture's measure (the side of a square of its area). Nil when nothing of it is on the display.
     public static func region(
-        around picture: CGRect, picturePixels: CGSize, padding: CGFloat, on display: DisplayInfo
+        around picture: CGRect, picturePixels: CGSize, pixelsPerPoint imageScale: CGFloat? = nil, padding: CGFloat, on display: DisplayInfo
     ) -> CGRect? {
-        let scale = display.pixelsPerPoint
+        let captureScale = imageScale ?? display.pixelsPerPoint
+        let displayScale = display.pixelsPerPoint
+        guard captureScale > 0, displayScale > 0 else { return nil }
         let measure = (max(picturePixels.width, 1) * max(picturePixels.height, 1)).squareRoot()
         let room = padding * measure
-        let size = CGSize(width: (picturePixels.width + 2 * room) / scale, height: (picturePixels.height + 2 * room) / scale)
+        let size = CGSize(width: (picturePixels.width + 2 * room) / captureScale, height: (picturePixels.height + 2 * room) / captureScale)
         let around = CGRect(x: picture.midX - size.width / 2, y: picture.midY - size.height / 2, width: size.width, height: size.height)
         let kept = around.intersection(display.frame)
         guard !kept.isNull, kept.width >= 1, kept.height >= 1 else { return nil }
         // Global points, y up, to the picture's pixels, y down.
         return CGRect(
-            x: (kept.minX - display.frame.minX) * scale, y: (display.frame.maxY - kept.maxY) * scale,
-            width: kept.width * scale, height: kept.height * scale
+            x: (kept.minX - display.frame.minX) * displayScale, y: (display.frame.maxY - kept.maxY) * displayScale,
+            width: kept.width * displayScale, height: kept.height * displayScale
         ).integral
     }
 

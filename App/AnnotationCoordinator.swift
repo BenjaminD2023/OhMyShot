@@ -28,8 +28,8 @@ final class AnnotationCoordinator {
     /// its scale (nil when unknown). Returns where it went.
     var saveAs: ((URL, HistoryItem?, Double?) async -> URL?)?
     /// The file to hand to another app when an editor's picture is dragged out, from the picture's file and its scale
-    /// (nil when unknown).
-    var fileToHandOver: ((URL, Double?) -> URL)?
+    /// (nil when unknown); nil when it could not be made, and then nothing goes.
+    var fileToHandOver: ((URL, Double?) -> URL?)?
     /// Puts an editor's picture on the clipboard and reports success: the picture, its PNG, its name, and its scale (nil when unknown).
     var copyPicture: ((CGImage, Data, String, Double?) async -> Bool)?
     /// Pins an editor's picture as it looks now: the picture, its pixels per point, and the capture it is (nil for a project's).
@@ -44,6 +44,12 @@ final class AnnotationCoordinator {
 
     init(history: HistoryStore) {
         self.history = history
+        // What an earlier run left of projects' pictures: every project opened from now on has a newer folder. Not while
+        // another copy still runs (a relaunch that went ahead while it waited on an editor's sheet): its open editors'
+        // pictures are there, and what it leaves goes at the next launch.
+        guard !Relauncher.otherInstancesAreRunning else { return }
+        let start = Date.now
+        Task.detached(priority: .background) { ProjectPicture.removeLeftovers(before: start) }
     }
 
     /// Opens `entry` in the editor, or brings its editor forward. `scale` is pixels per point of the
@@ -82,7 +88,7 @@ final class AnnotationCoordinator {
                 if editors[id] == nil { onEditing?(id, false) }
             }
             guard let loaded = await AnnotationCaptureSource.load(entry, from: history) else {
-                Log.capture.error("Could not read \(entry.fileName, privacy: .public) to annotate it")
+                Log.capture.error("Could not read \(entry.fileName, privacy: .private) to annotate it")
                 NSApp.activate()
                 NSAlert(error: CocoaError(.fileReadCorruptFile)).runModal()
                 return
@@ -123,7 +129,7 @@ final class AnnotationCoordinator {
                     return await self.saveCopy?(entry, file)
                 },
                 coordinator: self, name: (entry.fileName as NSString).deletingPathExtension, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint },
-                entry: { [weak self] in self?.history.item(id: id) }, uploadID: id
+                entry: { [weak self] in self?.history.item(id: id) }, uploadID: { id }
             ),
             presentation: presentation
         )
@@ -136,15 +142,68 @@ final class AnnotationCoordinator {
         editor.show()
     }
 
+    /// Opens a capture History couldn't take in the editor all the same, so what was drawn on it is not lost with it:
+    /// `image` as it was taken, `document` its marks and background, its pixels per point, the name it was to have,
+    /// `record`, History's record of it as it was taken when History took that much, and `add`, which tries again to add
+    /// it to History as it was taken and returns its record. The editor holds the only copy of the marks. They stay unkept
+    /// until History has them, which every keep tries again (Copy, Save, a drag, closing, and the Retry of closing's
+    /// alert), adding the capture first when History has no record of it. Until then nothing that needs the capture's file
+    /// goes, and closing or quitting asks first, as for edits that can't be kept.
+    func annotate(notKept image: CGImage, document: AnnotationDocument?, scale: CGFloat, title: String, record: HistoryItem?, add: @escaping () throws -> HistoryItem) {
+        // The capture's id from the start when History has its record, so Keep captures doesn't remove it from under the
+        // editor; without one a key of its own, so quitting asks about this editor too, until History has the capture.
+        var id = record?.id ?? UUID()
+        var inHistory = record != nil
+        if inHistory { onEditing?(id, true) }
+        let editor = AnnotationEditorWindowController(
+            image: image, scale: scale, document: document, title: title, fileURL: nil,
+            actions: Self.editorActions(
+                keep: { [weak self] document, png, picture in
+                    guard let self else { return nil }
+                    if !inHistory {
+                        do {
+                            let entry = try add()
+                            editors[entry.id] = editors.removeValue(forKey: id)
+                            id = entry.id
+                            inHistory = true
+                            onEditing?(id, true)
+                            Log.capture.notice("Added \(entry.fileName, privacy: .private) to the history from its editor")
+                        } catch {
+                            Log.capture.error("Adding a capture to the history from its editor failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+                            return nil
+                        }
+                    }
+                    return keep(id, document: document, png: png, image: picture)
+                },
+                save: { [weak self] file in
+                    guard let self, let entry = history.item(id: id) else { return nil }
+                    return await saveCopy?(entry, file)
+                },
+                coordinator: self, name: title, scale: { [weak self] in self?.history.item(id: id)?.pixelsPerPoint ?? Double(scale) },
+                entry: { [weak self] in self?.history.item(id: id) }, uploadID: { id }
+            )
+        )
+        editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
+            self?.editors[id] = nil
+            if inHistory { self?.onEditing?(id, false) }
+            MemoryRelief.endEventWait()
+        }
+        editors[id] = editor
+        editor.show()
+    }
+
     /// The editor's actions: keeping and saving as given, and dragging out, copying, pinning, and uploading as a card
     /// does them. `uploadID` names the editor's uploads: the capture's own, or one a project's editor keeps.
     private static func editorActions(
         keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?,
-        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?, entry: @escaping () -> HistoryItem?, uploadID: UUID
+        coordinator: AnnotationCoordinator, name: String, scale: @escaping () -> Double?, entry: @escaping () -> HistoryItem?, uploadID: @escaping () -> UUID
     ) -> AnnotationEditorWindowController.Actions {
         var actions = AnnotationEditorWindowController.Actions(keep: keep, save: save)
         actions.saveAs = { [weak coordinator] file in await coordinator?.saveAs?(file, entry(), scale()) }
-        actions.fileToHandOver = { [weak coordinator] file in coordinator?.fileToHandOver?(file, scale()) ?? file }
+        actions.fileToHandOver = { [weak coordinator] file in
+            guard let fileToHandOver = coordinator?.fileToHandOver else { return file }
+            return fileToHandOver(file, scale())
+        }
         actions.copy = { [weak coordinator] image, png, pictureScale in
             if let copy = coordinator?.copyPicture {
                 // The picture copied is rendered now, before it is kept: its own scale, not the last kept one, which
@@ -154,10 +213,12 @@ final class AnnotationCoordinator {
                 return PasteboardWriter.write(png: png, image: image)
             }
         }
-        actions.pin = { [weak coordinator] image, pixelsPerPoint in coordinator?.pinPicture?(image, pixelsPerPoint, entry()) }
+        // A picture whose edits couldn't be kept is the pin's own: the capture's file, which its Save and a drag would take,
+        // doesn't show them, a redaction among them.
+        actions.pin = { [weak coordinator] image, pixelsPerPoint, kept in coordinator?.pinPicture?(image, pixelsPerPoint, kept ? entry() : nil) }
         actions.uploadMenu = { [weak coordinator] in coordinator?.uploadMenu?() ?? .hidden }
-        actions.upload = { [weak coordinator] file, destination in coordinator?.uploadFile?(uploadID, file, destination, scale()) }
-        actions.isUploading = { [weak coordinator] in coordinator?.isUploading?(uploadID) ?? false }
+        actions.upload = { [weak coordinator] file, destination in coordinator?.uploadFile?(uploadID(), file, destination, scale()) }
+        actions.isUploading = { [weak coordinator] in coordinator?.isUploading?(uploadID()) ?? false }
         return actions
     }
 
@@ -176,7 +237,8 @@ final class AnnotationCoordinator {
 
     /// Opens a project file in the editor, or brings its editor forward. Edits are kept in the project
     /// when the window closes and whenever the picture leaves it, as a capture's are kept in the history;
-    /// the picture itself is kept beside the app's caches, for dragging out and saving copies.
+    /// the picture itself is kept in the app's caches, in a folder of this editor's own (`ProjectPicture`), for
+    /// dragging out and saving copies.
     func openProject(at url: URL) {
         let file = url.standardizedFileURL
         if let editor = projectEditors[file] {
@@ -188,13 +250,18 @@ final class AnnotationCoordinator {
             do {
                 opened = try await Self.loadProject(file)
             } catch {
-                Log.capture.error("Could not open the project \(file.lastPathComponent, privacy: .public): \(error.localizedDescription, privacy: .public)")
+                Log.capture.error("Could not open the project \(file.lastPathComponent, privacy: .private): \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
                 NSApp.activate()
                 NSAlert(error: error).runModal()
                 return
             }
-            guard let self else { return }
+            guard let self else {
+                ProjectPicture.remove(opened.picture, after: .zero)
+                return
+            }
             if let editor = projectEditors[file] {
+                // Opened twice at once: the editor already open is the one, and nothing has this picture.
+                ProjectPicture.remove(opened.picture, after: .zero)
                 editor.show()
                 return
             }
@@ -203,6 +270,8 @@ final class AnnotationCoordinator {
             let picture = opened.picture
             // Image Size changes the document's scale, so each keep records it for the outcomes that follow.
             var projectScale = Double(opened.project.document.scale)
+            // A project is in no history, so its uploads go under an identity of their own.
+            let uploadID = UUID()
             let editor = AnnotationEditorWindowController(
                 image: capture,
                 scale: opened.project.document.scale,
@@ -214,21 +283,21 @@ final class AnnotationCoordinator {
                         do {
                             let preview = try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG)
                                 .keep(at: file, preview: png, previewURL: picture)
-                            Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
+                            Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .private): \(document.items.count, privacy: .public) mark(s)")
                             projectScale = Double(document.scale)
                             return preview
                         } catch {
-                            Log.capture.error("Keeping the project failed: \(error.localizedDescription, privacy: .public)")
+                            Log.capture.error("Keeping the project failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
                             return nil
                         }
                     },
                     save: { [weak self] picture in await self?.saveFile?(picture, projectScale) },
-                    // A project is in no history, so its uploads go under an identity of their own.
-                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }, uploadID: UUID()
+                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }, uploadID: { uploadID }
                 )
             )
             editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
                 self?.projectEditors[file] = nil
+                ProjectPicture.remove(picture)
                 MemoryRelief.endEventWait()
             }
             projectEditors[file] = editor
@@ -242,11 +311,7 @@ final class AnnotationCoordinator {
     @concurrent
     private static func loadProject(_ file: URL) async throws -> (project: AnnotationProject, picture: URL) {
         let project = try AnnotationProject.read(from: file)
-        let picture = AnnotationProject.previewURL(for: file, in: AppFolders.caches.appending(path: "Projects", directoryHint: .isDirectory))
-        try FileManager.default.createDirectory(at: picture.deletingLastPathComponent(), withIntermediateDirectories: true)
-        guard let image = await AnnotationRenderer.render(project.document, base: project.capture) else { throw CocoaError(.fileReadCorruptFile) }
-        try await ImageExporter.encode(image, as: .png).write(to: picture, options: .atomic)
-        return (project, picture)
+        return (project, try await ProjectPicture.make(for: project, from: file))
     }
 
     #if DEBUG
@@ -277,10 +342,10 @@ final class AnnotationCoordinator {
             let file = history.fileURL(for: updated)
             let data = (try? Data(contentsOf: file)) ?? png
             onChange?(updated, data)
-            Log.capture.notice("Kept the marks on \(entry.fileName, privacy: .public): \(document.items.count, privacy: .public) mark(s)")
+            Log.capture.notice("Kept the marks on \(entry.fileName, privacy: .private): \(document.items.count, privacy: .public) mark(s)")
             return file
         } catch {
-            Log.capture.error("Keeping the marks failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Keeping the marks failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             return nil
         }
     }

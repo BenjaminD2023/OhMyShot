@@ -1,8 +1,8 @@
 import CoreGraphics
 import Foundation
 
-/// A capture shown as a Quick Access card: its file in the history, a thumbnail, and whether the user
-/// has saved a copy yet.
+/// A capture shown as a Quick Access card: its file in the history, a thumbnail, whether the user has
+/// saved a copy yet, and which copy is the card's own.
 public struct QuickAccessItem: Identifiable, Sendable {
     /// The history item's identifier, so a restored card is the same capture.
     public let id: UUID
@@ -16,8 +16,12 @@ public struct QuickAccessItem: Identifiable, Sendable {
     public let createdAt: Date
     /// A recording's length.
     public let duration: TimeInterval?
-    /// Where the user saved a copy, once they have.
+    /// Where the user saved a copy last, from the card, the editor, or Capture History, once they have: the card shows it
+    /// saved, its Save shows this copy in Finder, and neither Save All nor closing by itself saves another.
     public var savedURL: URL?
+    /// The copy the card saved itself, or the one saved as the capture was taken (Settings' Save after capture), which its
+    /// Move to Trash takes with the capture. A copy saved from the editor or Capture History is never the card's own.
+    public var ownSavedURL: URL?
 
     /// The longest side of a card's thumbnail, in pixels.
     public static let thumbnailPixels = 560

@@ -2,8 +2,9 @@ import Accelerate
 import CoreGraphics
 import Foundation
 
-/// Blurs, pixelates, or erases part of a capture for a redaction. Only the capture is processed, never
-/// other marks, and the result is the same every time for the same mark, so the screen and the export agree.
+/// Blurs, pixelates, or erases part of a capture for a redaction. Only the capture and the redactions drawn before
+/// it are read, never other marks, and the result is the same every time for the same mark, so the screen and the
+/// export agree.
 nonisolated enum Redactor {
     typealias Filter = (Redaction.Method, CGRect, CGImage, CGFloat, UUID) -> CGImage?
 
@@ -25,9 +26,18 @@ nonisolated enum Redactor {
         }
     }
 
-    enum Coverage {
+    enum Coverage: Equatable {
         case filtered(CGImage, CGRect)
         case opaque(CGRect)
+
+        /// The same cover: one picture made for the same place, never two pictures compared pixel by pixel.
+        static func == (lhs: Self, rhs: Self) -> Bool {
+            switch (lhs, rhs) {
+            case let (.filtered(left, leftRect), .filtered(right, rightRect)): left === right && leftRect == rightRect
+            case let (.opaque(left), .opaque(right)): left == right
+            default: false
+            }
+        }
     }
 
     /// What to draw over the clipped rect in document pixels. A failed filter yields an opaque
@@ -35,16 +45,45 @@ nonisolated enum Redactor {
     /// The source retains its document bounds even if the combined image could not be made. `covered` is
     /// where the document's redactions lie, in document pixels (`AnnotationDocument.redactedRects`): an
     /// erasure reads none of it. `canvas` is what the picture keeps (a crop, or Annotate Area's selection): an
-    /// erasure fills and reads only inside it, so it comes out the same once the picture is cut to it.
+    /// erasure fills and reads only inside it, so it comes out the same once the picture is cut to it. `beneath` are the
+    /// redactions drawn before it, in drawing order, with what each draws: a blur or pixelation reads the picture as they
+    /// leave it, so one over a solid redaction blurs the solid, never what the solid hides.
     static func coverage(
         for redaction: Redaction, id: UUID, source: Source, scale: CGFloat, covered: [CGRect] = [], canvas: CGRect? = nil,
-        filter: Filter = apply
+        beneath: [(item: Annotation, coverage: Coverage?)] = [], filter: Filter = apply
     ) -> Coverage? {
         guard redaction.method != .solid else { return nil }
         var rect = redaction.rect.standardized.integral.intersection(source.bounds)
         let kept = canvas?.standardized.integral
         if redaction.method == .erase, let kept { rect = rect.intersection(kept) }
         guard !rect.isNull, rect.width >= 1, rect.height >= 1 else { return nil }
+        var source = source
+        if redaction.method != .erase, let image = source.image {
+            // What it reads (its area, and for a blur as far around it as its passes spread), with the redactions beneath
+            // it drawn on as they are drawn on the picture. An erasure needs none of this: it reads nothing any redaction
+            // lies over.
+            let reach = redaction.method == .blur ? blurPasses(over: rect, scale: scale).reach : 0
+            let area = rect.insetBy(dx: -reach, dy: -reach).intersection(source.bounds).integral
+            let under = beneath.filter { $0.item.bounds(scale: scale).intersects(area) }
+            if !under.isEmpty {
+                let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+                let context = AnnotationRenderer.bitmapContext(for: area.size, space: space)
+                if let context {
+                    // y down, with the area's corner at the origin.
+                    context.translateBy(x: 0, y: area.height)
+                    context.scaleBy(x: 1, y: -1)
+                    context.translateBy(x: -area.minX, y: -area.minY)
+                    if let part = image.cropping(to: area.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY)) {
+                        AnnotationRenderer.drawImage(part, in: area, context: context)
+                    }
+                    for (item, coverage) in under {
+                        AnnotationRenderer.draw(item, in: context, scale: scale, coverage: coverage, ground: .light)
+                    }
+                }
+                // A picture that can't be made covers it opaquely, never the picture as it was.
+                source = Source(bounds: area, image: context?.makeImage())
+            }
+        }
         // In the source's own pixels.
         let local = rect.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY)
         guard let image = source.image else { return .opaque(rect) }
@@ -242,14 +281,19 @@ nonisolated enum Redactor {
         max(6 * scale, min(rect.width, rect.height) / 2 - 6 * scale)
     }
 
-    /// Three box passes approximate a Gaussian. The short side estimates the height of a covered line;
-    /// large selections get a proportionally wider blur on a smaller working bitmap.
-    private static func blurred(_ rect: CGRect, of base: CGImage, scale: CGFloat) -> CGImage? {
+    /// A blur over `rect`: how much smaller its working bitmap is, the side of each box pass on it, and how far past
+    /// `rect` the passes read the picture. Three box passes approximate a Gaussian. The short side estimates the height
+    /// of a covered line; large selections get a proportionally wider blur on a smaller working bitmap.
+    private static func blurPasses(over rect: CGRect, scale: CGFloat) -> (stride: Int, box: Int, reach: CGFloat) {
         let sigma = lineRadius(for: rect, scale: scale)
         let stride = max(1, Int(sigma / 12))
         let box = Int(sigma * 2 / CGFloat(stride)) | 1
+        return (stride, box, CGFloat((box / 2) * 3 * stride))
+    }
+
+    private static func blurred(_ rect: CGRect, of base: CGImage, scale: CGFloat) -> CGImage? {
+        let (stride, box, padding) = blurPasses(over: rect, scale: scale)
         let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
-        let padding = CGFloat((box / 2) * 3 * stride)
         let source = rect.insetBy(dx: -padding, dy: -padding).intersection(bounds).integral
         guard var buffer = Bitmap(base, crop: source, downsampleBy: stride) else { return nil }
         var scratch = Bitmap(width: buffer.width, height: buffer.height, colorSpace: buffer.colorSpace)

@@ -16,11 +16,11 @@ struct AllInOneSetupTests {
     private static let area = CGRect(x: 100, y: 200, width: 300, height: 150)
 
     /// What `actions` chose, in order, and whether one cancelled.
-    private func run(_ actions: [String], offersUpload: Bool = true) -> (chose: [(AllInOneChoice, CGRect)], cancelled: Bool, view: AllInOneSetupView) {
+    private func run(_ actions: [String], offersUpload: Bool = true) -> (chose: [(AllInOneChoice, CGRect, Bool)], cancelled: Bool, view: AllInOneSetupView) {
         let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: offersUpload)
-        var chose: [(AllInOneChoice, CGRect)] = []
+        var chose: [(AllInOneChoice, CGRect, Bool)] = []
         var cancelled = false
-        view.onChoose = { chose.append(($0, $1)) }
+        view.onChoose = { chose.append(($0, $1, $2)) }
         view.onCancel = { cancelled = true }
         for action in actions { _ = view.debugAct(action) }
         return (chose, cancelled, view)
@@ -30,6 +30,60 @@ struct AllInOneSetupTests {
         let result = run(["return"])
         #expect(result.chose.map(\.0) == [.screenshot(nil)])
         #expect(result.chose.first?.1 == Self.area)
+    }
+
+    @Test func selectedWindowsKeepRoundedSetupChrome() {
+        let front = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let back = CGRect(x: 180, y: 260, width: 220, height: 140)
+        let view = AllInOneSetupView(
+            display: Self.display, area: front.union(back), offersUpload: true, windowFrames: [front, back]
+        )
+        view.layoutSubtreeIfNeeded()
+        let path = view.chrome.selectionPath
+        #expect(path != nil)
+        let expected = AreaFrame.local(front, on: Self.display).union(AreaFrame.local(back, on: Self.display))
+        #expect(path?.boundingBox == expected)
+        let localFront = AreaFrame.local(front, on: Self.display)
+        #expect(path?.contains(CGPoint(x: localFront.minX, y: localFront.minY)) == false)
+        #expect(path?.contains(CGPoint(x: localFront.midX, y: localFront.minY)) == true)
+        #expect(view.chrome.showsHandles == false)
+    }
+
+    @Test func boundaryNudgeThatLeavesTheAreaUnchangedKeepsWindowChrome() {
+        let area = CGRect(x: Self.display.frame.minX, y: Self.area.minY, width: 300, height: 150)
+        let view = AllInOneSetupView(display: Self.display, area: area, offersUpload: true, windowFrames: [area])
+        #expect(view.chrome.selectionPath != nil)
+        _ = view.debugAct("left")
+        #expect(view.area.minX == Self.display.frame.minX)
+        #expect(view.chrome.selectionPath != nil)
+    }
+
+    @Test func overlappingRoundedWindowsUseAUnionCutout() throws {
+        let front = CGPath.continuousRoundedRect(CGRect(x: 100, y: 100, width: 200, height: 150), radius: 12)
+        let back = CGPath.continuousRoundedRect(CGRect(x: 180, y: 140, width: 180, height: 130), radius: 12)
+        let union = try #require(SelectionChromeView.unionPath([front, back]))
+        #expect(union.contains(CGPoint(x: 190, y: 150)))
+        #expect(union.contains(CGPoint(x: 120, y: 120)))
+        #expect(union.contains(CGPoint(x: 340, y: 250)))
+        #expect(!union.contains(CGPoint(x: 90, y: 90)))
+        let disjoint = CGPath.continuousRoundedRect(CGRect(x: 400, y: 400, width: 80, height: 60), radius: 12)
+        let all = try #require(SelectionChromeView.unionPath([front, disjoint]))
+        #expect(all.contains(CGPoint(x: 120, y: 120)))
+        #expect(all.contains(CGPoint(x: 420, y: 420)))
+        #expect(!all.contains(CGPoint(x: 300, y: 300)))
+        let single = try #require(SelectionChromeView.unionPath([front]))
+        #expect(single.contains(CGPoint(x: 120, y: 120)))
+        #expect(!single.contains(CGPoint(x: 90, y: 90)))
+        #expect(SelectionChromeView.unionPath([]) == nil)
+    }
+
+    @Test func editingSelectedWindowsTurnsTheirOutlineIntoAnAreaFrame() {
+        let front = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let view = AllInOneSetupView(display: Self.display, area: front, offersUpload: true, windowFrames: [front])
+        #expect(view.chrome.selectionPath != nil)
+        _ = view.debugAct("right")
+        #expect(view.chrome.selectionPath == nil)
+        #expect(view.chrome.showsHandles)
     }
 
     @Test func commandCAndCommandSCopyAndSave() {
@@ -52,6 +106,8 @@ struct AllInOneSetupTests {
         let result = run(["f"])
         #expect(result.chose.map(\.0) == [.screenshot(nil)])
         #expect(result.chose.first?.1 == Self.display.frame)
+        #expect(result.chose.first?.2 == true)
+        #expect(run(["return"]).chose.first?.2 == false)
     }
 
     @Test func withoutADestinationUploadIsNotOffered() {
@@ -85,6 +141,37 @@ struct AllInOneSetupTests {
         #expect(free.ratio == nil && free.barSummary.hasSuffix("any"))
     }
 
+    @Test func aRatioMatchingTheAreaRefreshesTheChipWithoutLosingWindowChrome() {
+        let area = CGRect(x: 100, y: 200, width: 300, height: 200)
+        let view = AllInOneSetupView(display: Self.display, area: area, offersUpload: true, windowFrames: [area])
+        #expect(view.barSummary == "600 × 400 any")
+        #expect(view.chrome.selectionPath != nil)
+
+        _ = view.debugAct("ratio=3:2")
+
+        #expect(view.area == area)
+        #expect(view.barSummary == "600 × 400 3:2")
+        #expect(view.chrome.selectionPath != nil)
+    }
+
+    @Test func offDisplayWindowFramesAreIgnoredInRoundedSetupChrome() {
+        let onDisplay = CGRect(x: 100, y: 200, width: 300, height: 150)
+        let offDisplay = CGRect(x: 900, y: 200, width: 300, height: 150)
+        let view = AllInOneSetupView(
+            display: Self.display, area: onDisplay, offersUpload: true, windowFrames: [onDisplay, offDisplay]
+        )
+        view.layoutSubtreeIfNeeded()
+        #expect(view.chrome.selectionPath?.boundingBox == AreaFrame.local(onDisplay, on: Self.display))
+        #expect(view.chrome.showsHandles == false)
+
+        let onlyOffDisplay = AllInOneSetupView(
+            display: Self.display, area: onDisplay, offersUpload: true, windowFrames: [offDisplay]
+        )
+        onlyOffDisplay.layoutSubtreeIfNeeded()
+        #expect(onlyOffDisplay.chrome.selectionPath == nil)
+        #expect(onlyOffDisplay.chrome.showsHandles == true)
+    }
+
     /// Larger than the display, a typed size is cut to it, and a shape kept stays kept.
     @Test func aTypedSizePastTheDisplayStaysOnItInShape() {
         let view = run(["ratio=1:1", "width=4000"]).view
@@ -96,7 +183,7 @@ struct AllInOneSetupTests {
     @Test func commandCWhileTypingIsTheFields() throws {
         let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: true)
         var chose: [AllInOneChoice] = []
-        view.onChoose = { choice, _ in chose.append(choice) }
+        view.onChoose = { choice, _, _ in chose.append(choice) }
         let window = NSWindow(contentRect: Self.display.frame, styleMask: [.borderless], backing: .buffered, defer: true)
         window.contentView = view
         view.layoutSubtreeIfNeeded()
@@ -123,7 +210,7 @@ struct AllInOneSetupTests {
     @Test func returnInAFieldSetsTheTypedSizeAndTheNextOneCaptures() throws {
         let (view, window, _) = try typing("800")
         var taken: CGRect?
-        view.onChoose = { _, area in taken = area }
+        view.onChoose = { _, area, _ in taken = area }
         _ = view.debugAct("return")
         #expect(taken == nil)
         #expect(view.area.width == 400)
@@ -280,7 +367,7 @@ struct AreaSizeControlTests {
         let passedOn = PassedOn()
         view.nextResponder = passedOn
         var chose: [(AllInOneChoice, CGRect)] = []
-        view.onChoose = { chose.append(($0, $1)) }
+        view.onChoose = { choice, area, _ in chose.append((choice, area)) }
         return (view, { chose }, passedOn)
     }
 

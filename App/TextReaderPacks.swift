@@ -81,7 +81,7 @@ final class TextReaderPacks {
                 let removed = try await TextReaderTool.tidy(helper: helper)
                 Log.modelPacks.notice("Tidied the text reader's Core ML cache: \(removed, privacy: .public) entries removed")
             } catch {
-                Log.modelPacks.error("Tidying the text reader's Core ML cache failed: \(String(describing: error), privacy: .public)")
+                Log.modelPacks.error("Tidying the text reader's Core ML cache failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             }
         }
     }
@@ -98,7 +98,7 @@ final class TextReaderPacks {
                     try await TextReaderTool.warm(formula: folder, helper: helper)
                     Log.modelPacks.notice("Warmed \(pack.id, privacy: .public) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
                 } catch {
-                    Log.modelPacks.error("Warming \(pack.id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                    Log.modelPacks.error("Warming \(pack.id, privacy: .public) failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
                 }
             }
             return
@@ -110,7 +110,7 @@ final class TextReaderPacks {
                 try await TextReaderTool.warm(pack: folder, helper: helper)
                 Log.modelPacks.notice("Warmed \(pack.id, privacy: .public) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
             } catch {
-                Log.modelPacks.error("Warming \(pack.id, privacy: .public) failed: \(String(describing: error), privacy: .public)")
+                Log.modelPacks.error("Warming \(pack.id, privacy: .public) failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             }
             self?.secondReadingWarmed?()
         }

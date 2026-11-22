@@ -8,7 +8,8 @@ import Testing
 @MainActor
 struct HistorySelectionTests {
     private func model(
-        count: Int, editing: Set<String> = [], trashed: @escaping (HistoryItem) throws -> Void = { _ in }
+        count: Int, editing: Set<String> = [], trashed: @escaping (HistoryItem) throws -> Void = { _ in },
+        handOver: ((HistoryItem) -> URL?)? = nil, handOverAll: (([HistoryItem]) async -> [URL]?)? = nil
     ) throws -> (HistoryModel, [HistoryItem]) {
         let suite = "OMSUITests-\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -18,6 +19,8 @@ struct HistorySelectionTests {
             recognizeText: { _ in }, pin: { _ in }, moveToTrash: trashed
         )
         actions.isBeingEdited = { editing.contains($0.fileName) }
+        actions.fileToHandOver = handOver
+        actions.filesToHandOver = handOverAll
         let model = HistoryModel(store: store, settings: SettingsStore(defaults: defaults), actions: actions, expiredCount: { _ in 0 })
         let items = (0..<count).map { HistoryItem(kind: .screenshot, pixelWidth: 10, pixelHeight: 10, appName: nil, fileName: "\($0).png") }
         model.items = items
@@ -120,5 +123,66 @@ struct HistorySelectionTests {
         model.trashSelection()
         #expect(model.trashRequest == nil)
         #expect(trashed == [items[0].id])
+    }
+
+    /// A drag from a selected card, or its Share…, takes every selected capture in the grid's order, each as the copy
+    /// Settings ask for; a card outside the selection goes alone and leaves the selection as it is.
+    @Test func aSelectedCardHandsOverTheWholeSelection() throws {
+        var asked: [String] = []
+        let (model, items) = try model(count: 4, handOver: { item in
+            asked.append(item.fileName)
+            return URL(filePath: "/converted/\(item.fileName)")
+        })
+        model.click(items[3].id, modifiers: [])
+        model.click(items[0].id, modifiers: .command)
+        model.click(items[2].id, modifiers: .command)
+        let files = model.filesToHandOver(from: items[2].id)
+        #expect(files.map(\.id) == [items[0].id, items[2].id, items[3].id])
+        #expect(files.map(\.url.path) == ["/converted/0.png", "/converted/2.png", "/converted/3.png"])
+
+        asked = []
+        #expect(model.filesToHandOver(from: items[1].id).map(\.url.path) == ["/converted/1.png"])
+        #expect(asked == ["1.png"])
+        #expect(model.selection == [items[0].id, items[2].id, items[3].id])
+    }
+
+    /// One copy that can't be made sends none of the selection, rather than the rest without it, and is asked for no
+    /// further, so the reason is said once.
+    @Test func oneCopyThatCannotBeMadeSendsNoneOfTheSelection() throws {
+        var asked: [String] = []
+        let (model, items) = try model(count: 3, handOver: { item in
+            asked.append(item.fileName)
+            return item.fileName == "1.png" ? nil : URL(filePath: "/converted/\(item.fileName)")
+        })
+        model.selectAll()
+        #expect(model.filesToHandOver(from: items[2].id).isEmpty)
+        #expect(asked == ["0.png", "1.png"])
+    }
+
+    /// Share… takes what a drag would, its copies made together off the main actor rather than one by one on it; none
+    /// when one of them can't be made.
+    @Test func shareMakesTheSelectionsCopiesTogetherOffTheWindow() async throws {
+        var oneByOne = 0
+        var together: [[String]] = []
+        var fails = false
+        let (model, items) = try model(
+            count: 3,
+            handOver: { item in
+                oneByOne += 1
+                return URL(filePath: "/converted/\(item.fileName)")
+            },
+            handOverAll: { items in
+                together.append(items.map(\.fileName))
+                return fails ? nil : items.map { URL(filePath: "/converted/\($0.fileName)") }
+            }
+        )
+        model.click(items[2].id, modifiers: [])
+        model.click(items[0].id, modifiers: .command)
+        #expect(await model.filesToShare(from: items[2].id).map(\.path) == ["/converted/0.png", "/converted/2.png"])
+        #expect(await model.filesToShare(from: items[1].id).map(\.path) == ["/converted/1.png"])
+        #expect(together == [["0.png", "2.png"], ["1.png"]])
+        #expect(oneByOne == 0)
+        fails = true
+        #expect(await model.filesToShare(from: items[0].id).isEmpty)
     }
 }

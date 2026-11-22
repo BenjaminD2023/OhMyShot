@@ -21,6 +21,17 @@ struct ScreenCapturerTests {
         #expect(AreaFrame.local(rect, on: primary) == CGRect(x: 100, y: 50, width: 100, height: 50))
     }
 
+    @Test func onlyTheRequestedWindowOwnedByThisProcessCanBeExplicitlyIncluded() {
+        #expect(ScreenCapturer.isScopedOwnWindow(requestedID: 17, actualID: 17, ownerProcessID: 42, currentProcessID: 42))
+        #expect(!ScreenCapturer.isScopedOwnWindow(requestedID: 17, actualID: 18, ownerProcessID: 42, currentProcessID: 42))
+        #expect(!ScreenCapturer.isScopedOwnWindow(requestedID: 17, actualID: 17, ownerProcessID: 43, currentProcessID: 42))
+        #expect(!ScreenCapturer.isScopedOwnWindow(requestedID: nil, actualID: 17, ownerProcessID: 42, currentProcessID: 42))
+    }
+
+    @Test func failedExplicitLauncherLookupFallsBackToNoOwnWindowException() {
+        #expect(ScreenCapturer.scopedOwnWindows(nil, requestedID: 17, currentProcessID: 42).isEmpty)
+    }
+
     @Test func regionOnADisplayLeftOfAndAboveTheOrigin() {
         let builtIn = Self.display(CGRect(x: -2056, y: 111, width: 2056, height: 1329))
         let rect = CGRect(x: -2000, y: 200, width: 300, height: 100)
@@ -136,6 +147,19 @@ struct ScreenCapturerTests {
         // The blue window's top-right corner, which it reaches only at its size in points.
         let corner = try Self.pixel(of: composited.image, x: 250, y: 10)
         #expect(corner.blue > 200 && corner.red < 50 && corner.alpha > 200)
+    }
+
+    @Test func liveWindowFrameUsesFreshSCWindowFrameFlippedToAppKitSpace() {
+        let primary = Self.display(CGRect(x: 0, y: 0, width: 1440, height: 900))
+        let layout = DisplayLayout(displays: [primary])
+        let stale = CGRect(x: 100, y: 200, width: 400, height: 300)
+        // Fresh SCWindow resized in CG coordinates (y down from primary top): top=100, height=400 -> AppKit y=400..800.
+        let freshCG = CGRect(x: 120, y: 100, width: 600, height: 400)
+        #expect(
+            ScreenCapturer.liveWindowFrame(scWindowFrame: freshCG, fallback: stale, layout: layout)
+                == CGRect(x: 120, y: 400, width: 600, height: 400)
+        )
+        #expect(ScreenCapturer.liveWindowFrame(scWindowFrame: .zero, fallback: stale, layout: layout) == stale)
     }
 
     private static func solid(width: Int, height: Int, red: CGFloat, blue: CGFloat) throws -> CGImage {

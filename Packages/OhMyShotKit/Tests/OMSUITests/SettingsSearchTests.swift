@@ -75,6 +75,7 @@ struct SettingsSearchTests {
         ("watermark", .screenshots, "Pictures"),
         ("record keys", .recording, "Studio"),
         ("barcode", .capture, "Selecting"),
+        ("no background", .capture, "Windows"),
     ] as [(String, SettingsTab, String?)])
     func whatPeopleTypeReachesTheRowTheyMean(query: String, tab: SettingsTab, row: String?) {
         #expect(SettingsTab.found(query).first?.tab == tab, "\(query) opens \(String(describing: SettingsTab.found(query).first?.tab))")

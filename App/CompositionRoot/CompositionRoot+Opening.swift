@@ -27,7 +27,7 @@ extension CompositionRoot {
             } else if ImageLoader.canLoad(url) {
                 Task { await annotateImage(at: url) }
             } else {
-                Log.capture.notice("Passed over \(url.lastPathComponent, privacy: .public): not a picture, a movie, or a project")
+                Log.capture.notice("Passed over \(url.lastPathComponent, privacy: .private): not a picture, a movie, or a project")
                 passedOver.append(url)
             }
         }
@@ -42,7 +42,7 @@ extension CompositionRoot {
             historyWindow?.reload()
             recordings.open(entry)
         } catch {
-            Log.capture.error("Could not add \(url.lastPathComponent, privacy: .public) to the history to edit it: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Could not add \(url.lastPathComponent, privacy: .private) to the history to edit it: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             tellCannotOpen([url])
         }
     }
@@ -66,7 +66,7 @@ extension CompositionRoot {
         do {
             pictures = try inbox.pictures(inBatch: handoff.batch)
         } catch {
-            Log.automation.error("Share hand-over refused: \(String(describing: error), privacy: .public)")
+            Log.automation.error("Share hand-over refused: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             return NSSound.beep()
         }
         // A pin is shown at the size a picture with no resolution of its own had on screen; the editor takes it at one pixel
@@ -76,7 +76,7 @@ extension CompositionRoot {
             var opened = 0
             for url in pictures {
                 guard let picture = await Self.loadImage(url, fallbackScale: handoff.action == .pin ? pinScale : 1) else {
-                    Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) shared to \(handoff.action.rawValue, privacy: .public) it")
+                    Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) shared to \(handoff.action.rawValue, privacy: .public) it")
                     continue
                 }
                 switch handoff.action {
@@ -108,7 +108,7 @@ extension CompositionRoot {
 
     private func annotateImage(at url: URL) async {
         guard let loaded = await Self.loadImage(url) else {
-            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .public) to annotate it")
+            Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to annotate it")
             return tellCannotOpen([url])
         }
         await annotate(loaded, name: url.deletingPathExtension().lastPathComponent)
@@ -140,7 +140,7 @@ extension CompositionRoot {
             readTextSoon()
             annotations.annotate(entry, scale: scale)
         } catch {
-            Log.capture.error("Adding \(fileName, privacy: .public) to the history failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Adding \(fileName, privacy: .private) to the history failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
         }
     }

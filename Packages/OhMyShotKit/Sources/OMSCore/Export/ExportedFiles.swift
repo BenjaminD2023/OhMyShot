@@ -1,5 +1,6 @@
 import CoreGraphics
 import Foundation
+import ImageIO
 
 /// The files screenshots are handed over as where nothing is saved: dragged out of a card or History, uploaded,
 /// returned to a Shortcut. A capture in the history is a PNG as it was taken; when Settings ask for another
@@ -20,23 +21,44 @@ public enum ExportedFiles {
     }
 
     /// The file to hand over for the capture at `source`: the capture itself when Settings leave it as it is (or
-    /// it is no picture), else its converted copy, made now unless one made since the capture last changed is there.
+    /// it is no picture), else its converted copy of the capture as it is now, made now unless it is there.
+    ///
+    /// Each copy is kept in a folder for the revision of the capture it was read from (`revision(of:)`), and is
+    /// written there only when the capture was the same after it was read as before: a copy that took long, and was
+    /// read before the capture last changed (marks kept, a redaction), is never handed over for the picture as it is
+    /// now, nor can it replace the copy of it, however late it ends.
     /// - Parameters:
     ///   - pixelsPerPoint: the capture's scale, which 1× needs.
     ///   - name: the file's name without its extension; the capture's own by default.
     public static func file(
         for source: URL, pixelsPerPoint: Double?, output: ScreenshotOutput, name: String? = nil, in folder: URL = standardFolder
     ) throws -> URL {
+        try file(for: source, pixelsPerPoint: pixelsPerPoint, output: output, name: name, in: folder, afterReading: {})
+    }
+
+    /// `file(for:…)`, with `afterReading` run once the capture is read and converted, before it is looked at again: a
+    /// test holds a conversion there while the capture changes.
+    static func file(
+        for source: URL, pixelsPerPoint: Double?, output: ScreenshotOutput, name: String?, in folder: URL, afterReading: () -> Void
+    ) throws -> URL {
         guard !output.isUnchanged, isPicture(source) else { return source }
         let directory = folder
             .appending(path: "\(output.cacheKey)-\(pixelsPerPoint.map { String($0) } ?? "unknown")", directoryHint: .isDirectory)
             .appending(path: Self.tag(of: source), directoryHint: .isDirectory)
-        let destination = directory.appending(path: "\(name ?? source.deletingPathExtension().lastPathComponent).\(output.format.fileExtension)")
-        if let made = modificationDate(of: destination), let changed = modificationDate(of: source), made >= changed { return destination }
-        let encoded = try PictureExport.encode(fileAt: source, pixelsPerPoint: pixelsPerPoint, output: output)
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
-        try encoded.data.write(to: destination, options: .atomic)
-        return destination
+        let fileName = "\(name ?? source.deletingPathExtension().lastPathComponent).\(output.format.fileExtension)"
+        // A capture that changed while it was read is read again, a few times at most.
+        for _ in 0..<3 {
+            let revision = try revision(of: source)
+            let destination = directory.appending(path: revision, directoryHint: .isDirectory).appending(path: fileName)
+            if reused(destination) { return destination }
+            let encoded = try PictureExport.encode(fileAt: source, pixelsPerPoint: pixelsPerPoint, output: output)
+            afterReading()
+            guard try self.revision(of: source) == revision else { continue }
+            try FileManager.default.createDirectory(at: destination.deletingLastPathComponent(), withIntermediateDirectories: true)
+            try encoded.data.write(to: destination, options: .atomic)
+            return destination
+        }
+        throw CocoaError(.fileReadUnknown)
     }
 
     /// The same off the main actor, for a capture too large to convert between two frames.
@@ -45,6 +67,46 @@ public enum ExportedFiles {
         for source: URL, pixelsPerPoint: Double?, output: ScreenshotOutput, name: String? = nil, in folder: URL = standardFolder
     ) async throws -> URL {
         try file(for: source, pixelsPerPoint: pixelsPerPoint, output: output, name: name, in: folder)
+    }
+
+    // MARK: Handing over
+
+    /// The file to hand over for the capture at `source`, as `file(for:…)` makes it, or why the copy Settings ask for
+    /// could not be made. The capture itself goes only when nothing is asked of it, never in place of a copy that failed:
+    /// one asked for with a watermark, in another format, at 1×, in sRGB, or with a border must not leave without them.
+    public static func handOver(
+        _ source: URL, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder
+    ) -> Result<URL, ExportFailure> {
+        Result { try file(for: source, pixelsPerPoint: pixelsPerPoint, output: output, in: folder) }.mapError { .converting($0) }
+    }
+
+    /// Several captures' files at once (Capture History's Copy of a selection), each as `handOver` makes it, or the
+    /// first failure: none of them goes when one could not be made.
+    @concurrent
+    public static func handOver(
+        _ captures: [(url: URL, pixelsPerPoint: Double?)], output: ScreenshotOutput, in folder: URL = standardFolder
+    ) async -> Result<[URL], ExportFailure> {
+        var files: [URL] = []
+        for capture in captures {
+            switch handOver(capture.url, pixelsPerPoint: capture.pixelsPerPoint, output: output, in: folder) {
+            case .success(let file): files.append(file)
+            case .failure(let failure): return .failure(failure)
+            }
+        }
+        return .success(files)
+    }
+
+    /// The file an upload sends for a capture whose bytes were read when it was asked for (see `file(forPicture:…)`), or
+    /// why it could not be made: bytes that are no picture, or a copy that could not be written.
+    @concurrent
+    public static func handOver(
+        pictureData data: Data, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder
+    ) async -> Result<URL, ExportFailure> {
+        guard let image = CGImageSourceCreateWithData(data as CFData, nil).flatMap({ CGImageSourceCreateImageAtIndex($0, 0, nil) }) else {
+            return .failure(.converting(ImageExporter.ExportError.cannotRead))
+        }
+        return Result { try file(forPicture: image, named: name, pixelsPerPoint: pixelsPerPoint, output: output, in: folder) }
+            .mapError { .converting($0) }
     }
 
     /// A picture in memory made into a file named `name`, for an upload, which may be retried long after the capture's
@@ -62,11 +124,27 @@ public enum ExportedFiles {
         return destination
     }
 
-    @concurrent
-    public static func fileOffMain(
-        forPicture image: CGImage, hdr: CGImage? = nil, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder
-    ) async throws -> URL {
-        try file(forPicture: image, hdr: hdr, named: name, pixelsPerPoint: pixelsPerPoint, output: output, in: folder)
+    /// The file a capture's pin hands over when its capture's file no longer holds its picture (the capture gone from the
+    /// history, or changed since it was pinned): the pin's own picture, as `picture` draws it to leave the app, written as
+    /// `output` says and named `name`. A pin's picture never changes, so its copy is kept in a folder of the pin's own for
+    /// each way of writing it, and a second drag hands over the same file at once; `picture` is drawn only when there is
+    /// none, and throws when it can't be, so nothing is written in its place.
+    public static func file(
+        forPin id: UUID, named name: String, pixelsPerPoint: Double?, output: ScreenshotOutput, in folder: URL = standardFolder,
+        picture: () throws -> CGImage
+    ) throws -> URL {
+        let directory = folder
+            .appending(path: "\(output.cacheKey)-pin", directoryHint: .isDirectory)
+            .appending(path: id.uuidString, directoryHint: .isDirectory)
+        let kept = (try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)))?
+            .first { ($0 as NSString).pathExtension == output.format.fileExtension }
+            .map { directory.appending(path: $0) }
+        if let kept, reused(kept) { return kept }
+        let encoded = try PictureExport.encode(try picture(), pixelsPerPoint: pixelsPerPoint, output: output)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let destination = directory.appending(path: "\(name).\(encoded.fileExtension)")
+        try encoded.data.write(to: destination, options: .atomic)
+        return destination
     }
 
     /// How many of the clipboard's files are kept: the last few copies, which an app slow to paste, or a clipboard
@@ -132,9 +210,24 @@ public enum ExportedFiles {
         }
     }
 
-    private static func modificationDate(of url: URL) -> Date? {
-        // Not through the URL, which remembers the date it was first asked for.
-        (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false)))?[.modificationDate] as? Date
+    /// Hands a copy made before over again while it is there, made as new to `removeOld` once half its `lifetime` is gone:
+    /// a drag or an upload begun now has days before the sweep may take it, and a copy dragged again and again is left
+    /// as it was in between. False when it is gone, and must be made again.
+    private static func reused(_ copy: URL) -> Bool {
+        let path = copy.path(percentEncoded: false)
+        guard let written = (try? FileManager.default.attributesOfItem(atPath: path))?[.modificationDate] as? Date else { return false }
+        guard Date.now.timeIntervalSince(written) > lifetime / 2 else { return true }
+        return (try? FileManager.default.setAttributes([.modificationDate: Date.now], ofItemAtPath: path)) != nil
+    }
+
+    /// Which version of a file this is: its file number, which a file written over atomically (as the history writes)
+    /// changes, its size, and when it was last written. Not through the URL, which remembers what it was first asked.
+    private static func revision(of url: URL) throws -> String {
+        let attributes = try FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))
+        let number = (attributes[.systemFileNumber] as? NSNumber)?.uint64Value ?? 0
+        let size = (attributes[.size] as? NSNumber)?.uint64Value ?? 0
+        let written = (attributes[.modificationDate] as? Date)?.timeIntervalSinceReferenceDate.bitPattern ?? 0
+        return [number, size, written].map { String($0, radix: 16) }.joined(separator: "-")
     }
 
     /// A short name for a source file's place, so two captures with one name do not share a copy (FNV-1a).

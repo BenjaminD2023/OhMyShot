@@ -30,9 +30,13 @@ public struct HistoryActions {
     /// Moves the capture's file to the Trash; its record, marks, and text leave the history with it.
     public var moveToTrash: (HistoryItem) throws -> Void
     public var isBeingEdited: (HistoryItem) -> Bool = { _ in false }
-    /// The file to hand to another app when a capture is dragged out: a copy in the format Settings choose, or nil for
-    /// the capture's own file.
-    public var fileToHandOver: (HistoryItem) -> URL? = { _ in nil }
+    /// The file to hand to another app when a capture is dragged out or shared: the capture's own, or a copy in the format
+    /// Settings choose; nil when that copy could not be made, which the app says, and then nothing goes. Left out, the
+    /// capture's own file goes.
+    public var fileToHandOver: ((HistoryItem) -> URL?)?
+    /// Several captures' files to hand over at once, made off the main actor: each as `fileToHandOver` makes it, and none
+    /// when one of them could not be made, which the app says. Left out, they are made one by one by `fileToHandOver`.
+    public var filesToHandOver: (([HistoryItem]) async -> [URL]?)?
     /// Uploading, for a person who set up a destination. Left as it is, the window offers none of it.
     public var sharing = Sharing()
 

@@ -191,7 +191,7 @@ public final class HistoryTextReader {
         do {
             try process.run()
         } catch {
-            Log.history.error("The text reader didn't start: \(error.localizedDescription, privacy: .public)")
+            Log.history.error("The text reader didn't start: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             return runAgainIfAsked()
         }
         let run = Run(
@@ -237,11 +237,11 @@ public final class HistoryTextReader {
                 try store.setText(text, of: item, readFrom: stamp, reading: run.reading)
                 onRead?(item.id)
             } catch {
-                Log.history.error("Keeping the text of \(item.fileName, privacy: .public) failed: \(error.localizedDescription, privacy: .public)")
+                Log.history.error("Keeping the text of \(item.fileName, privacy: .private) failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             }
         } else {
             attempts[item.id, default: 0] += 1
-            Log.history.error("The text reader couldn't read \(item.fileName, privacy: .public) (try \(self.attempts[item.id] ?? 0, privacy: .public)): \(result.error ?? "", privacy: .public)")
+            Log.history.error("The text reader couldn't read \(item.fileName, privacy: .private) (try \(self.attempts[item.id] ?? 0, privacy: .public)): \(result.error ?? "", privacy: .private)")
         }
     }
 
@@ -254,7 +254,7 @@ public final class HistoryTextReader {
         // ones after it were never tried, and are sent again at the next reading.
         if !run.stopped, let had = run.order.first(where: { run.sent[$0] != nil }), let item = run.sent[had]?.item {
             attempts[item.id, default: 0] += 1
-            Log.history.error("The text reader stopped with status \(status, privacy: .public) on \(item.fileName, privacy: .public), \(run.sent.count, privacy: .public) capture(s) unread")
+            Log.history.error("The text reader stopped with status \(status, privacy: .public) on \(item.fileName, privacy: .private), \(run.sent.count, privacy: .public) capture(s) unread")
         }
         reading = 0
         runAgainIfAsked()

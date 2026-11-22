@@ -28,6 +28,15 @@ public final class ScreenCapturer {
         WindowCatalog.choices(from: try await content.fresh().windows, layout: layout)
     }
 
+    func hasOwnWindow(withID id: CGWindowID) async throws -> Bool {
+        try await content.windows(withIDs: [id]).contains {
+            Self.isScopedOwnWindow(
+                requestedID: id, actualID: $0.windowID,
+                ownerProcessID: $0.owningApplication?.processID, currentProcessID: getpid()
+            )
+        }
+    }
+
     /// A bounded preview of just the selected window, never every window and never a new stream.
     /// The chooser has already refreshed the catalog; switching apps reuses it.
     func windowPreview(_ target: WindowTarget) async throws -> CGImage {
@@ -50,14 +59,19 @@ public final class ScreenCapturer {
     }
 
     /// Captures a whole display at its framebuffer resolution. `includingOwnWindows` is for rendering
-    /// the overlay itself in scripted checks; real captures always leave this app out.
+    /// the overlay itself in scripted checks; real captures always leave this app out except for the exact,
+    /// owner-verified `includingOwnWindowID` supplied by an area screenshot.
     public func captureDisplay(
         _ display: DisplayInfo,
         dynamicRange: DynamicRange = .sdr,
         showsCursor: Bool = false,
-        includingOwnWindows: Bool = false
+        includingOwnWindows: Bool = false,
+        includingOwnWindowID: CGWindowID? = nil
     ) async throws -> CapturedFrame {
-        try await capture(display: display, region: nil, dynamicRange: dynamicRange, showsCursor: showsCursor, includingOwnWindows: includingOwnWindows)
+        try await capture(
+            display: display, region: nil, dynamicRange: dynamicRange, showsCursor: showsCursor,
+            includingOwnWindows: includingOwnWindows, includingOwnWindowID: includingOwnWindowID
+        )
     }
 
     /// Captures part of one display. `rect` is in AppKit's global space and must lie on `display`.
@@ -67,7 +81,10 @@ public final class ScreenCapturer {
         dynamicRange: DynamicRange = .sdr,
         showsCursor: Bool = false
     ) async throws -> CapturedFrame {
-        try await capture(display: display, region: rect, dynamicRange: dynamicRange, showsCursor: showsCursor, includingOwnWindows: false)
+        try await capture(
+            display: display, region: rect, dynamicRange: dynamicRange, showsCursor: showsCursor,
+            includingOwnWindows: false, includingOwnWindowID: nil
+        )
     }
 
     /// The extended-range copy of a capture is asked for only when it is wanted and the display can show more than
@@ -80,11 +97,16 @@ public final class ScreenCapturer {
     /// display's scale. An area on one display is a plain region capture, with its extended-range copy when
     /// `wantsHDR` and the display has one to give. With `showsCursor` the pointer is in the picture where it is, on
     /// whichever display's part it falls.
-    public func captureArea(_ rect: CGRect, in layout: DisplayLayout, wantsHDR: Bool = false, showsCursor: Bool = false) async throws -> CapturedFrame {
+    public func captureArea(
+        _ rect: CGRect, in layout: DisplayLayout, wantsHDR: Bool = false, showsCursor: Bool = false
+    ) async throws -> CapturedFrame {
         let displays = layout.displays.filter { !$0.frame.intersection(rect).isEmpty }
         guard let first = displays.first else { throw CaptureError.emptyResult }
         guard displays.count > 1 else {
-            return try await captureRegion(rect, on: first, dynamicRange: Self.dynamicRange(wantsHDR: wantsHDR, on: first), showsCursor: showsCursor)
+            return try await captureRegion(
+                rect, on: first, dynamicRange: Self.dynamicRange(wantsHDR: wantsHDR, on: first),
+                showsCursor: showsCursor
+            )
         }
         var parts: [CapturedFrame] = []
         for display in displays {
@@ -112,8 +134,32 @@ public final class ScreenCapturer {
         // shadow's margin. Setting the window's own size would shrink a shadowed capture to fit.
         let output = try await SCScreenshotManager.captureScreenshot(contentFilter: filter, configuration: configuration)
         guard let image = output.sdrImage else { throw CaptureError.emptyResult }
-        let displayID = target.display(in: layout)?.id ?? 0
-        return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: target.frame)
+        let liveFrame = Self.liveWindowFrame(scWindowFrame: window.frame, fallback: target.frame, layout: layout)
+        let liveTarget = WindowTarget(id: target.id, frame: liveFrame, ownerName: target.ownerName, title: target.title, pid: target.pid)
+        let displayID = liveTarget.display(in: layout)?.id ?? 0
+        return CapturedFrame(image: image, hdrImage: nil, displayID: displayID, frame: liveFrame)
+    }
+
+    /// Resolves a live global frame from an `SCWindow` frame (CG top-left coordinates), falling back to `fallback` if empty.
+    nonisolated static func liveWindowFrame(scWindowFrame: CGRect, fallback: CGRect, layout: DisplayLayout) -> CGRect {
+        scWindowFrame.isEmpty ? fallback : layout.flipped(scWindowFrame)
+    }
+
+    nonisolated static func isScopedOwnWindow(
+        requestedID: CGWindowID?, actualID: CGWindowID, ownerProcessID: pid_t?, currentProcessID: pid_t
+    ) -> Bool {
+        requestedID == actualID && ownerProcessID == currentProcessID
+    }
+
+    nonisolated static func scopedOwnWindows(
+        _ windows: [SCWindow]?, requestedID: CGWindowID, currentProcessID: pid_t
+    ) -> [SCWindow] {
+        (windows ?? []).filter {
+            isScopedOwnWindow(
+                requestedID: requestedID, actualID: $0.windowID,
+                ownerProcessID: $0.owningApplication?.processID, currentProcessID: currentProcessID
+            )
+        }
     }
 
     /// Captures several windows on their own and composites them in back-to-front order onto a transparent canvas
@@ -133,7 +179,7 @@ public final class ScreenCapturer {
         for target in sorted {
             let captured = try await captureWindow(target, shadow: shadow, layout: layout, showsCursor: showsCursor)
             let pixelsPerPoint = layout.display(id: captured.displayID)?.pixelsPerPoint ?? layout.primary?.pixelsPerPoint ?? 2
-            parts.append((captured.image, target.frame, pixelsPerPoint))
+            parts.append((captured.image, captured.frame, pixelsPerPoint))
             // The canvas takes the sharpest window's scale, and its display.
             if pixelsPerPoint >= scale {
                 scale = pixelsPerPoint
@@ -323,12 +369,22 @@ public final class ScreenCapturer {
         region: CGRect?,
         dynamicRange: DynamicRange,
         showsCursor: Bool,
-        includingOwnWindows: Bool
+        includingOwnWindows: Bool,
+        includingOwnWindowID: CGWindowID?
     ) async throws -> CapturedFrame {
         let scDisplay = try await content.display(id: display.id)
         let excluded = includingOwnWindows ? [] : try await content.ownApplication().map { [$0] } ?? []
         let included = includingOwnWindows ? [] : includedWindowIDs?() ?? []
-        let excepted = included.isEmpty ? [] : try await content.windows(withIDs: included)
+        let explicit: [SCWindow] = if !includingOwnWindows, let includingOwnWindowID {
+            Self.scopedOwnWindows(
+                try? await content.windows(withIDs: [includingOwnWindowID]),
+                requestedID: includingOwnWindowID, currentProcessID: getpid()
+            )
+        } else {
+            []
+        }
+        let exceptedIDs = Set(included).union(explicit.map(\.windowID))
+        let excepted = exceptedIDs.isEmpty ? [] : try await content.windows(withIDs: exceptedIDs)
         let filter = SCContentFilter(display: scDisplay, excludingApplications: excluded, exceptingWindows: excepted)
 
         let captured = region.map { $0.intersection(display.frame) } ?? display.frame

@@ -23,11 +23,20 @@ public enum Relauncher {
         NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
             Task { @MainActor in
                 if let error {
-                    Log.app.error("Relaunch failed: \(error.localizedDescription, privacy: .public)")
+                    Log.app.error("Relaunch failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
                 }
                 completion(error == nil)
             }
         }
+    }
+
+    /// Whether another copy of this app is running: one still quitting, or one a relaunch went ahead without after waiting
+    /// `afterOtherInstancesExit`'s time (an editor's sheet can hold it open).
+    public static var otherInstancesAreRunning: Bool {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        return NSRunningApplication
+            .runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
+            .contains { $0.processIdentifier != ownPID && !$0.isTerminated }
     }
 
     /// Runs `body` once no other copy of this app is running, immediately if there is none.
@@ -65,10 +74,7 @@ private final class InstanceWaiter {
     }
 
     var othersAreRunning: Bool {
-        let ownPID = ProcessInfo.processInfo.processIdentifier
-        return NSRunningApplication
-            .runningApplications(withBundleIdentifier: Bundle.main.bundleIdentifier ?? "")
-            .contains { $0.processIdentifier != ownPID && !$0.isTerminated }
+        Relauncher.otherInstancesAreRunning
     }
 
     /// Runs the body once; later calls do nothing.
