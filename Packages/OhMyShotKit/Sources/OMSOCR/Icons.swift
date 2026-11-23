@@ -82,17 +82,19 @@ enum Icons {
         return Trimmed(text: text[start..<end], span: span)
     }
 
-    /// What Vision makes of an icon: one character, or two or three symbols with one beyond ASCII ("〈\>").
+    /// What Vision makes of an icon: one character, or two or three symbols with one beyond ASCII ("〈\>"), the
+    /// full-width twin of an ASCII mark not counted: the Chinese model reads "//" before a comment as "/／".
     /// Not a word, however short: "let" before "options:" in monospaced code is a keyword, and the cell
     /// of space after it looks just like an icon's gap; nor "//" before a comment, nor "答：" before an
     /// answer.
     private static func isIconReading(_ text: Substring) -> Bool {
         let characters = text.filter { !$0.isWhitespace }
-        // An ellipsis ends a truncated label; it is never an icon.
-        if characters.allSatisfy({ $0 == "…" || $0 == "." }) { return false }
+        // An ellipsis ends a truncated label, full-width too; it is never an icon.
+        if characters.allSatisfy({ "….．".contains($0) }) { return false }
         if characters.count == 1 { return true }
         guard (2...3).contains(characters.count) else { return false }
-        return characters.allSatisfy { !$0.isLetter && !$0.isNumber && !Script.isCJK($0) } && characters.contains { !$0.isASCII }
+        return characters.allSatisfy { !$0.isLetter && !$0.isNumber && !Script.isCJK($0) }
+            && characters.contains { !(Punctuation.halfWidth[$0] ?? $0).isASCII }
     }
 
     /// Marks that end the word before them: a gap after one is the mark's own blank half (a full-width

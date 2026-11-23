@@ -98,7 +98,7 @@ public struct VisionPipeline: OCREngine {
                     return band
                 }
                 // Bands run across the whole width: no line is cut across them (`joinedAcrossColumns`).
-                return assembled(LineNumbers.removed(from: merged), started: started)
+                return assembled(LineNumbers.removed(from: merged).lines, started: started)
             } catch is PictureText.Bands.Ended {
                 // Decoded, the picture is read as far as ImageIO makes it out.
             }
@@ -122,8 +122,8 @@ public struct VisionPipeline: OCREngine {
         let merged = try await readPieces(pieces, size: size) { image.cropping(to: $0) }
         let joined = try await joinedAcrossColumns(merged, pieces: pieces, in: image)
         let completed = try await completedAtCuts(joined, pieces: pieces, in: image)
-        // A gutter of line numbers is found only with three numbers in view: a piece with fewer left its own.
-        return LineNumbers.removed(from: completed)
+        // A gutter of line numbers is found only with two numbers or more in view: a piece with fewer left its own.
+        return LineNumbers.removed(from: completed) { InkProfile(image: image, box: $0) }.lines
     }
 
     /// The lines of `pieces` of a picture of `size`, each read as a picture of its own (`part` gives it; none when it
@@ -259,8 +259,8 @@ public struct VisionPipeline: OCREngine {
 
         lines = try await fillGaps(in: image, lines: lines, rectangles: rectangles, fallbacks: fallbacks, page: latin)
         lap("gaps")
-        lines = LineNumbers.removed(from: lines)
-        lines = try await rereadCodeWithLatinModel(in: image, lines: lines)
+        let gutter = LineNumbers.removed(from: lines) { InkProfile(image: image, box: $0) }
+        lines = try await rereadCodeWithLatinModel(in: image, lines: gutter.lines, rightOf: gutter.end)
         lap("code")
         if !readByLatinModel {
             lines = try await readLatinLines(lines, page: latin, in: image)
@@ -690,8 +690,9 @@ public struct VisionPipeline: OCREngine {
 
     /// In code with CJK comments, the CJK model reads the code itself poorly (`url` as `ur1`, full-width
     /// brackets, braces as 子) and the Latin model cannot see past the comments. So each run of code lines
-    /// between CJK lines is read again on its own with the Latin model, the runs side by side.
-    private func rereadCodeWithLatinModel(in image: CGImage, lines: [OCRLine]) async throws -> [OCRLine] {
+    /// between CJK lines is read again on its own with the Latin model, the runs side by side, right of the gutter
+    /// whose line numbers went (`LineNumbers`), which would otherwise be read back in.
+    private func rereadCodeWithLatinModel(in image: CGImage, lines: [OCRLine], rightOf gutter: CGFloat?) async throws -> [OCRLine] {
         let ordered = ReadingOrder.sorted(lines)
         guard TextAssembler.isCodeListing(ordered), ordered.contains(where: { Script.containsCJK($0.text) }) else { return lines }
         let size = CGSize(width: image.width, height: image.height)
@@ -711,11 +712,12 @@ public struct VisionPipeline: OCREngine {
             // The block's rows with some margin, but never reaching the CJK lines above or below.
             let union = block.dropFirst().reduce(block[0].box) { $0.union($1.box) }
             let rowHeight = block.map(\.box.height).min() ?? 0
-            let ceiling = cjkLines.filter { $0.box.maxY <= union.minY }.map(\.box.maxY).max() ?? 0
-            let floor = cjkLines.filter { $0.box.minY >= union.maxY }.map(\.box.minY).min() ?? size.height
+            let ceiling = cjkLines.filter { $0.box.midY <= union.minY }.map(\.box.maxY).max() ?? 0
+            let floor = cjkLines.filter { $0.box.midY >= union.maxY }.map(\.box.minY).min() ?? size.height
             let top = max(ceiling, union.minY - rowHeight * 0.4)
             let bottom = min(floor, union.maxY + rowHeight * 0.4)
-            let region = CGRect(x: union.minX - rowHeight, y: top, width: union.width + rowHeight * 2, height: bottom - top)
+            let left = max(union.minX - rowHeight, gutter ?? 0)
+            let region = CGRect(x: left, y: top, width: union.maxX + rowHeight - left, height: bottom - top)
                 .intersection(CGRect(origin: .zero, size: size))
             if region.isNull || region.height <= 0 {
                 kept += block

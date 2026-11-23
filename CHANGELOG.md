@@ -41,6 +41,9 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ### Fixed
 
+- Text copied from a picture of code leaves out the editor's line numbers beside a narrow gutter too, as Xcode, Vim with `number`, and compact themes draw it, where a number and its line were read as one ("12 let x = 1") and the whole listing kept its numbers and lost its indentation. A snippet of two lines loses its numbers as well, and code with Chinese or Japanese comments no longer reads them back in.
+- A Chinese comment in a picture of code keeps its `//`. It was taken for an icon before the comment and left out.
+
 - Marking up in place, plugging in, taking away, or rearranging a display no longer throws the marks away. While the display holding the selection stays as it was, the annotation goes on; when that display goes or changes, the marked selection opens in the editor, kept in Capture History with its marks editable, as Open in Editor does.
 - Marks drawn in place, and a capture on its way to the editor, are no longer lost when Capture History can't take the capture (on a full disk, say). It opens in the editor all the same, with its marks, and the reading by the pointer says it couldn't be added to History. Copy, Pin to Screen, and Save a Copy as Project… work there, every keep tries History again, and closing the window asks before the marks go.
 - Pin to Screen in the editor, when the marks can't be kept in the capture (on a full disk, say), no longer pins a picture whose Save and drag hand over the capture's file without them, a redaction included. The pin is a picture of its own, and Save and a drag take what it shows.
