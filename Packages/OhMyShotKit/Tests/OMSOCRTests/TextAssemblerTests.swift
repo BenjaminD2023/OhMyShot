@@ -42,6 +42,8 @@ struct TextAssemblerTests {
     @Test func codePunctuationGoesBackToASCIIButNotInsideChineseComments() {
         #expect(TextAssembler.asCode("guard let source = make（url，nil） else ｛") == "guard let source = make(url,nil) else {")
         #expect(TextAssembler.asCode("// 计算，然后返回") == "// 计算，然后返回")
+        // A full-width period is no misread one: in a literal it is what the code matches.
+        #expect(TextAssembler.asCode("text = text.replace(\"．\", \".\")") == "text = text.replace(\"．\", \".\")")
     }
 
     @Test func indentationIsRebuiltAndSnappedToFour() {

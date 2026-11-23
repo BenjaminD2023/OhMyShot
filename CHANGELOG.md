@@ -9,6 +9,11 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Fixed
+
+- Text copied from a picture of code leaves out the editor's line numbers beside a narrow gutter too, as Xcode, Vim with `number`, and compact themes draw it, where a number and its line were read as one ("12 let x = 1") and the whole listing kept its numbers and lost its indentation. A snippet of two lines loses its numbers as well, and code with Chinese or Japanese comments no longer reads them back in.
+- A Chinese comment in a picture of code keeps its `//`. It was taken for an icon before the comment and left out.
+
 ## [0.4.0] - 2026-11-22
 
 ### More ways to edit in Studio

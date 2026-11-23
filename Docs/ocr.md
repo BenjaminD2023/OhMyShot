@@ -105,10 +105,13 @@ overlapping pieces first and each piece goes through all of this: see Large sele
    the whole page but the English model would read cropped, and any English gap fill at all when the
    Latin page pass itself fails. A region's new lines replace the old ones only if they hold more
    characters.
-4. **Line numbers**: a column of at least three lines of digits alone, aligned, left of every other line
-   and counting up (a misread number allowed, and short readings inside the column, which are misread
-   numbers too), is an editor's gutter and goes, but only when what remains is code: a numbered list or
-   `cat -n` output keeps its numbers.
+4. **Line numbers**: a column of numbers, aligned, left of every other line and counting up (three or more
+   with a misread number allowed, or two that follow each other), is an editor's gutter and goes, but only
+   when what remains is code: a numbered list or `cat -n` output keeps its numbers. A number is a line of
+   digits alone, or the digits a line starts with before a space: beside a narrow gutter Vision reads
+   "12 let x = 1" as one line. Short readings inside the column are misread numbers too, and a line that
+   starts inside it keeps only its code ("13}", "З import"), placed at the first ink past the number (›
+   Narrow gutters).
 5. **Code with CJK comments**: each run of code lines between CJK lines is read again on its own with
    the Latin model, the runs queued through the same slot, the region kept clear of the CJK lines so its detector does
    not fail. (Taking a run from the page reading when it read every line was tried: it never applied on
@@ -387,8 +390,8 @@ code, Latin lines, lone brackets), with accurate requests using the same single 
    left column's right edge, the other the right column's left edge) and each is cut out of the image whole, all of
    them stacked in one strip as for Latin lines (`LineStrip`), read in one request, and put in the pieces' place if
    the reading is about as long as the pieces together less their overlap.
-3. **Line numbers** are removed once more from the merged lines (a piece with fewer than three numbers in view
-   leaves its own), and `ReadingOrder` and `TextAssembler` then run once, over the whole image's lines.
+3. **Line numbers** are removed once more from the merged lines (a piece with too few numbers in view leaves
+   its own), and `ReadingOrder` and `TextAssembler` then run once, over the whole image's lines.
 
 `analyze` (the panel) reads its lines this way. Its document request and barcode request stay on the whole image: a
 table or a code taller than the overlap would be cut in two. Measured over the 18 captures below (counts only),
@@ -2079,3 +2082,54 @@ spaces between columns, which one space does not give back; and the real regions
 (`real-linuxdo-sidebar` 0.74, `real-linuxdo-thread` 0.86, the two VS Code regions and `real-x-tweet` 0.88,
 `real-x-sidebar` 0.89). OMSOCRTests: 341 tests in 45 suites pass, `BandedReadingTests` among them (on main, 318 with
 the dense screen's two expectations failing).
+
+## Narrow gutters (2026-11-23)
+
+Line numbers came through in text copied from code where the gutter sits close to the code. VS Code's gutter is about
+three characters from the code and Vision reads its numbers as lines of their own, which L1 removed. Xcode's is under
+two, Vim's `number` leaves one, and there Vision reads a number and its line as one ("1 import { useState } …"),
+misreads one with what follows ("13}" for 13 and a closing brace, "З import" for 3), or drops one. A single such line
+starts left of the gutter's edge, so the whole gutter stayed, and the listing lost its indentation with it. A snippet of
+two lines kept its numbers too: a gutter took three.
+
+Now a line's leading digits before a space count as a number of the column (their box told from the line's
+characters), two numbers that follow each other make a gutter, and a line that starts inside the column keeps only
+what is past its number (`LineNumbers`). The code is placed at the first ink past the number, where L1 has the
+picture: Vision's one space stands for the indentation too. Code with Chinese or Japanese comments is read again with
+the Latin model (L1 step 5), in regions that reached a row's height left of the code, into a narrow gutter, and read
+its numbers back in; those regions now keep right of the gutter. Their top and bottom also keep clear of a comment
+line whose box overlaps the code's rows (Vim's tight rows), which was read again as a scrap of Latin letters ("ЛttEt").
+
+The comment mark went too, on a line of its own: the Chinese model reads "// 点击后加一" as "/／ 点击后加一", and two
+symbols with one beyond ASCII, set apart by a gap, are what an icon reads as (L1 step 1), so the "//" was cut with its
+box. A full-width twin of an ASCII mark no longer counts as beyond ASCII there (`Icons.isIconReading`); the icon
+regions, real and drawn, read as before. That took `vscode-ts` from 1.1% to 0.0%.
+
+A gutter is the leftmost column of numbers: a number further right on a row the column numbers too is the code's own
+("3 * price," in a list) and no longer outvotes it, while one on a row of its own still keeps the column from being a
+gutter (numbers that start code at two indents). A number read with a closing brace counts ("100}"), so the one wider
+number of a right-aligned gutter no longer starts left of it; a short row read inside the column keeps its "}" or "};";
+and a reading of digits and letters like them (O, I, З, S …) as long as the number on its row, or above or below it,
+goes with them ("2O import" for 20, "I00" between 99 and 101; "let" between them stays). Two numbers make a gutter only
+beside code that shows its punctuation (a bracket, ";", "=", or a line of YAML, ASCII or full-width), as two numbered lines
+of prose can read as code by their first words ("1 for more information: see …"). The code is read again right of the
+widest number, not the middle one. A misread number on the first or last row, with no
+number past it, still keeps the gutter: cutting a short word there would take the `a` from `a = [` above
+`1 + foo(),`.
+
+Measured with `ocr-bench --engine l1` on an M3 Max with macOS 27.3, main against this change, with 15 editor views
+drawn at 2× outside the corpus (VS Code, Xcode, Vim, GitHub, JetBrains, and Sublime gutters, light and dark; Swift,
+TypeScript with a Chinese comment, Python, Go, a two-line snippet, Markdown):
+
+| | Content CER | Raw CER | Line order |
+| --- | --- | --- | --- |
+| The 15 editor views | 3.46% → 0.98% | 5.14% → 0.93% | 0.920 → 0.987 |
+| Xcode, Vim, a tight theme, the two-line snippet (5 of them) | 5.2–15.4% → 0.0–4.6% | 8.3–29.3% → 0.0–5.1% | 0.56–1.00 → 1.00 |
+| The 34 drawn cases, the 12 real regions, the 12 shrunk copies | unchanged but one | unchanged but one | unchanged but one |
+
+The one is `real-vscode-code`, a little better (content 1.3% → 1.1%, line order 0.88 → 0.90). No editor view is worse
+than on main; `xcode-go-tight` is a character worse than with the middle number's edge (`i++` read as `it+`), and
+`xcode-light` and `vim-ts` a character better, where the second reading starts a pixel or two further right. Time is
+about the same: p50 313 → 299 ms on the corpus and the real regions, 350 → 358 ms on the editor views, where the code
+with a Chinese comment is now read again whole. Not handled: a diff's two columns of numbers side by side, and Markdown
+or other prose beside a gutter, which is no code listing, so its numbers stay.
