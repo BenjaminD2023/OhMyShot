@@ -8,6 +8,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Changed
+
+- **Usage Data says more about how OhMyShot is used, and still nothing about you.** Each day's report now counts the features you use and whether you started them from a shortcut, the menu bar, or automation, and what came of them: uploads finished or failed, saves and copies that failed, and captures stopped for want of Screen Recording permission. It also gives the macOS minor version, chip, number of displays, app language, a few capture settings, roughly how long OhMyShot has been installed, and on how many of the past 28 days it was used. It still goes under a random ID that changes every UTC day and leaves out captures, recognized text, and file names; Settings › General › Usage Data turns it off.
+
 ### Added
 
 - Studio can blur the room behind the person on camera or cut the person out, as a Background setting for the camera: Original, Blur, or Cutout. The person is found on this Mac, frame by frame, in every layout. Cut out, they sit right on the recording in picture in picture and on the movie's background side by side or filling the movie. Both show in the preview and the exported movie alike.

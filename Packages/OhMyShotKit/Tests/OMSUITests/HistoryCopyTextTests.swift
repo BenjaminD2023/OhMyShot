@@ -19,7 +19,7 @@ struct HistoryCopyTextTests {
             read.append(item.id)
             return .superseded
         }
-        let model = HistoryModel(store: store, settings: SettingsStore(defaults: defaults), actions: actions, expiredCount: { _ in 0 })
+        let model = HistoryModel(store: store, settings: SettingsStore(defaults: defaults), actions: actions)
         let screenshot = HistoryItem(kind: .screenshot, pixelWidth: 10, pixelHeight: 10, appName: nil, fileName: "0.png")
         let recording = HistoryItem(kind: .recording, pixelWidth: 10, pixelHeight: 10, appName: nil, fileName: "1.mov")
         model.items = [screenshot, recording]

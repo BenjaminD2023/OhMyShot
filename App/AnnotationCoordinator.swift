@@ -18,6 +18,7 @@ final class AnnotationCoordinator {
     var saveFile: ((URL, Double) async -> URL?)?
     /// A capture's picture changed: its record, and the picture's encoded data.
     var onChange: ((HistoryItem, Data) -> Void)?
+    var onAdded: ((HistoryItem) -> Void)?
     /// The editor is loading or holding a capture (true), or has released it (false).
     var onEditing: ((UUID, Bool) -> Void)?
     /// A capture's editor is on screen and owns the capture, so its Quick Access card can close.
@@ -105,7 +106,10 @@ final class AnnotationCoordinator {
             }
             do {
                 let item = try await loaded.itemForEditing(entry, in: history)
-                if item.id != id { onEditing?(item.id, true) }
+                if item.id != id {
+                    onEditing?(item.id, true)
+                    onAdded?(item)
+                }
                 showEditor(for: item, source: loaded, scale: scale, presentation: opening[id] ?? presentation)
                 onOpen?(id)
             } catch {

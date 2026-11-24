@@ -54,10 +54,8 @@ public struct SettingsDependencies {
     public let relaunch: () -> Void
     public let openHistory: () -> Void
     public let showOnboarding: () -> Void
-    /// How many captures a retention would delete now, so Settings can ask before shortening it.
-    public let expiredCount: (HistoryRetention) -> Int
-    /// How many of those are favorites, so turning History off says they go too.
-    public let expiredFavoriteCount: (HistoryRetention) -> Int
+    /// How many captures a retention would delete now, including how many favorites.
+    public let retentionPreview: RetentionPreview
     public let backgrounds: Backgrounds
     /// The places captures can be uploaded to, which only the Sharing tab shows.
     public let destinations: UploadDestinationStore
@@ -165,8 +163,7 @@ public struct SettingsDependencies {
         relaunch: @escaping () -> Void,
         openHistory: @escaping () -> Void,
         showOnboarding: @escaping () -> Void = {},
-        expiredCount: @escaping (HistoryRetention) -> Int,
-        expiredFavoriteCount: @escaping (HistoryRetention) -> Int = { _ in 0 },
+        retentionPreview: @escaping RetentionPreview,
         destinations: UploadDestinationStore,
         uploadRecords: UploadRecordStore,
         recordActions: UploadRecordActions = .none,
@@ -182,8 +179,7 @@ public struct SettingsDependencies {
         self.relaunch = relaunch
         self.openHistory = openHistory
         self.showOnboarding = showOnboarding
-        self.expiredCount = expiredCount
-        self.expiredFavoriteCount = expiredFavoriteCount
+        self.retentionPreview = retentionPreview
         self.backgrounds = backgrounds
         self.destinations = destinations
         self.uploadRecords = uploadRecords
@@ -202,10 +198,13 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     public var onClose: (() -> Void)?
 
     private let navigator: SettingsNavigator
+    private let retention: RetentionSelection
     private var windowLease: ActiveResources.Lease?
 
     public init(dependencies: SettingsDependencies) {
         let navigator = SettingsNavigator()
+        let retention = RetentionSelection(settings: dependencies.settings, preview: dependencies.retentionPreview)
+        self.retention = retention
         // Sharing draws Recent uploads only once an upload has finished.
         navigator.hiddenRows = { [records = dependencies.uploadRecords] in
             records.records.isEmpty ? [String(localized: "Recent uploads", bundle: .module)] : []
@@ -213,7 +212,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         var panes: [SettingsTab: NSViewController] = [:]
         let root = SettingsRootView(navigator: navigator) { tab in
             if let pane = panes[tab] { return pane }
-            let pane = Self.makeContent(for: tab, dependencies: dependencies, target: navigator.target)
+            let pane = Self.makeContent(for: tab, dependencies: dependencies, retention: retention, target: navigator.target)
             panes[tab] = pane
             return pane
         }
@@ -251,7 +250,10 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
             window.setContentSize(clamped)
         }
 
-        navigator.onChange = { [weak window] _ in Self.leaveNothingFocused(in: window) }
+        navigator.onChange = { [weak window] tab in
+            if tab != .general { retention.cancel() }
+            Self.leaveNothingFocused(in: window)
+        }
     }
 
     @available(*, unavailable)
@@ -302,6 +304,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     #endif
 
     public func windowWillClose(_ notification: Notification) {
+        retention.cancel()
         AppActivation.windowWillClose(window)
         windowLease?.end()
         windowLease = nil
@@ -319,7 +322,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         }
     }
 
-    private static func makeContent(for tab: SettingsTab, dependencies: SettingsDependencies, target: SettingsSearchTarget) -> NSViewController {
+    private static func makeContent(
+        for tab: SettingsTab, dependencies: SettingsDependencies, retention: RetentionSelection, target: SettingsSearchTarget
+    ) -> NSViewController {
         // Where the sidebar's search sends the pane.
         func host(_ view: some View) -> NSViewController { Self.host(view.environment(target)) }
         return switch tab {
@@ -328,8 +333,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 settings: dependencies.settings,
                 openHistory: dependencies.openHistory,
                 showOnboarding: dependencies.showOnboarding,
-                expiredCount: dependencies.expiredCount,
-                expiredFavoriteCount: dependencies.expiredFavoriteCount,
+                retention: retention,
                 updates: dependencies.updates
             ))
         case .capture:

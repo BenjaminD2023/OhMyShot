@@ -9276,6 +9276,46 @@
         }
       }
     },
+    "Counts of the features you start each UTC day, how you start them, and what comes of them go to OhMyShot with a few settings, the app and macOS versions, the chip, how many displays, the app’s language, roughly how long OhMyShot has been installed, and how many of the past 28 days it was used, under a random ID that changes each UTC day. Captured content, recognized text, and file names stay out of these reports. Turning this off clears reports waiting to send." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Counts of the features you start each UTC day, how you start them, and what comes of them go to OhMyShot with a few settings, the app and macOS versions, the chip, how many displays, the app’s language, roughly how long OhMyShot has been installed, and how many of the past 28 days it was used, under a random ID that changes each UTC day. Captured content, recognized text, and file names stay out of these reports. Turning this off clears reports waiting to send."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cada día UTC se envía a OhMyShot cuántas veces se usó cada función, cómo se inició y con qué resultado, junto con algunos ajustes, las versiones de la app y de macOS, el chip, el número de pantallas, el idioma de la app, cuánto tiempo lleva instalada aproximadamente y cuántos de los últimos 28 días se usó, con un ID aleatorio que cambia cada día UTC. Los informes excluyen el contenido capturado, el texto reconocido y los nombres de archivo. Al desactivar esta opción se borran los informes pendientes de envío."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Chaque jour UTC, OhMyShot reçoit le nombre d’utilisations de chaque fonction, la façon dont elle a été lancée et son résultat, avec quelques réglages, les versions de l’app et de macOS, la puce, le nombre d’écrans, la langue de l’app, depuis combien de temps environ elle est installée et le nombre de jours d’utilisation sur les 28 derniers, sous un identifiant aléatoire qui change chaque jour UTC. Les rapports excluent le contenu capturé, le texte reconnu et les noms de fichiers. Désactiver cette option efface les rapports en attente d’envoi."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "UTC の日付ごとに、各機能を使った回数、その起動方法と結果を、いくつかの設定、アプリと macOS のバージョン、チップ、ディスプレイの数、アプリの言語、おおよそのインストール期間、過去 28 日間に使った日数とともに、日ごとに変わるランダム ID を付けて OhMyShot に送信します。キャプチャした内容、認識したテキスト、ファイル名はレポートに含まれません。オフにすると送信待ちのレポートが消去されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 会收到每个 UTC 日各功能的使用次数、启动方式和结果，以及几项设置、应用和 macOS 版本、芯片、显示器数量、应用语言、大致安装时长和过去 28 天中的使用天数，并附带每个 UTC 日更换的随机 ID。报告不包含捕捉内容、识别出的文字或文件名。关闭此选项会清除待发送的报告。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "OhMyShot 會收到每個 UTC 日各功能的使用次數、啟動方式和結果，以及幾項設定、App 和 macOS 版本、晶片、顯示器數量、App 語言、大致安裝時長和過去 28 天中的使用天數，並附上每個 UTC 日更換的隨機 ID。報告不包含擷取內容、辨識出的文字或檔案名稱。關閉此選項會清除等待傳送的報告。"
+          }
+        }
+      }
+    },
     "Custom HTTP…" : {
       "localizations" : {
         "es" : {
@@ -9306,46 +9346,6 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自訂 HTTP…"
-          }
-        }
-      }
-    },
-    "Daily counts of screenshots, recordings, and text recognitions go to OhMyShot with the app version, macOS major version, and a random ID that changes each UTC day. Captured content and recognized text stay out of these reports. Turning this off clears reports waiting to send." : {
-      "localizations" : {
-        "en" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Daily counts of screenshots, recordings, and text recognitions go to OhMyShot with the app version, macOS major version, and a random ID that changes each UTC day. Captured content and recognized text stay out of these reports. Turning this off clears reports waiting to send."
-          }
-        },
-        "es" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "Se envía a OhMyShot el recuento diario de capturas de pantalla, grabaciones y reconocimientos de texto, junto con la versión de la app, la versión principal de macOS y un ID aleatorio que cambia cada día UTC. Los informes excluyen el contenido capturado y el texto reconocido. Al desactivar esta opción se borran los informes pendientes de envío."
-          }
-        },
-        "fr" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OhMyShot reçoit les nombres quotidiens de captures d’écran, d’enregistrements et de reconnaissances de texte, la version de l’app, la version majeure de macOS et un identifiant aléatoire qui change chaque jour UTC. Les rapports excluent le contenu capturé et le texte reconnu. Désactiver cette option efface les rapports en attente d’envoi."
-          }
-        },
-        "ja" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "スクリーンショット、画面収録、テキスト認識の日ごとの回数を、アプリのバージョン、macOS のメジャーバージョン、UTC の日付ごとに変わるランダム ID とともに OhMyShot に送信します。キャプチャした内容や認識したテキストはレポートに含まれません。オフにすると送信待ちのレポートが消去されます。"
-          }
-        },
-        "zh-Hans" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OhMyShot 会收到每日的截图、录屏和文字识别次数，以及应用版本、macOS 主版本和每天按 UTC 日期更换的随机 ID。报告不包含捕捉内容或识别出的文字。关闭此选项会清除待发送的报告。"
-          }
-        },
-        "zh-Hant" : {
-          "stringUnit" : {
-            "state" : "translated",
-            "value" : "OhMyShot 會收到每日的螢幕截圖、錄影和文字辨識次數，以及 App 版本、macOS 主要版本和每天依 UTC 日期更換的隨機 ID。報告不包含擷取內容或辨識出的文字。關閉此選項會清除等待傳送的報告。"
           }
         }
       }

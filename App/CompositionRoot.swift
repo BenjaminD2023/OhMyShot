@@ -17,7 +17,7 @@ final class CompositionRoot {
     // Read legacy installation markers before start() installs this launch's default shortcuts.
     private let onboardingProgress = OnboardingProgress()
     let settings = SettingsStore()
-    private let usageTelemetry = UsageTelemetry.production()
+    private(set) lazy var usageTelemetry = UsageTelemetry.production(settings: settings)
     let permissions = PermissionCenter()
     let displays = DisplayTopology()
     let history = HistoryStore.standard()
@@ -186,7 +186,11 @@ final class CompositionRoot {
     private(set) lazy var shortcuts = ShortcutActions(
         permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: files, packs: readerPacks,
         pins: pins, displays: displays, holds: retention.shortcutHolds,
-        showOnboarding: { [weak self] in self?.showOnboarding() },
+        showOnboarding: { [weak self] in
+            self?.usageTelemetry?.record(.permissionBlocked)
+            self?.showOnboarding()
+        },
+        used: { [weak self] feature in self?.usageTelemetry?.recordFeature(feature, from: .automation) },
         run: { [weak self] command, kept, done in
             guard let self else { done?(nil); return }
             perform(command, kept: kept, done: done)
@@ -243,7 +247,7 @@ final class CompositionRoot {
 
         hotkeys.installDefaultShortcutsIfNeeded()
         hotkeys.activate { [weak self] shortcut in
-            self?.handle(shortcut)
+            self?.handle(shortcut, from: .hotkey)
         }
 
         let settings = settings
@@ -289,8 +293,13 @@ final class CompositionRoot {
         updates.showReleaseNotesAfterUpdate()
         // Also runs once now, which is the launch-time cleanup.
         observations.append(Task { [weak self] in
-            for await _ in Observations({ settings.historyRetention }) {
+            var previous: HistoryRetention?
+            for await retention in Observations({ settings.historyRetention }) {
                 self?.retention.removeExpired()
+                if previous == .never, retention != .never {
+                    self?.textReader.readSoon(rescanning: true)
+                }
+                previous = retention
             }
         })
         // The converted copies made for dragging out and uploading, from days ago.
@@ -313,7 +322,8 @@ final class CompositionRoot {
             self?.didCapture(item)
         }
         // Card or not, a screenshot or a recording kept counts toward the community invitation.
-        captures.onKept = { [weak self] _ in
+        captures.onKept = { [weak self] entry in
+            self?.readTextSoon(entry)
             self?.usageTelemetry?.record(.screenshot)
             self?.communityInvite.captureKept()
         }
@@ -417,6 +427,7 @@ final class CompositionRoot {
         annotations.onChange = { [weak self] entry, data in
             self?.pictureChanged(entry, data: data, savedCopyIsStale: true)
         }
+        annotations.onAdded = { [weak self] in self?.readTextSoon($0) }
         // Hold the card while loading; dismiss it once the editor owns its capture.
         annotations.onEditing = { [weak self] id, editing in
             guard let self else { return }
@@ -741,8 +752,7 @@ final class CompositionRoot {
             relaunch: { Relauncher.relaunch() },
             openHistory: { [weak self] in self?.showHistory() },
             showOnboarding: { [weak self] in self?.replayOnboarding() },
-            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
-            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 },
+            retentionPreview: { [weak self] in await self?.retention.preview(for: $0) },
             destinations: uploads.destinations,
             uploadRecords: uploads.records,
             recordActions: SettingsDependencies.UploadRecordActions(

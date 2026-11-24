@@ -8,13 +8,11 @@ struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
     let openHistory: () -> Void
     var showOnboarding: () -> Void = {}
-    let expiredCount: (HistoryRetention) -> Int
-    var expiredFavoriteCount: (HistoryRetention) -> Int = { _ in 0 }
+    let retention: RetentionSelection
     var updates: SettingsDependencies.Updates? = nil
     @State private var launchAtLogin = false
     @State private var loadedLaunchAtLogin = false
     @State private var loginItemError: String?
-    @State private var retentionRequest: RetentionChangeRequest?
     @State private var language = AppLanguage.chosen ?? ""
     @State private var confirmsReset = false
 
@@ -121,9 +119,7 @@ struct GeneralSettingsView: View {
 
             SettingsRow(String(localized: "Keep captures", bundle: .module)) {
                 HStack(spacing: 8) {
-                    Picker(selection: retentionSelection(
-                        settings: settings, expiredCount: expiredCount, expiredFavoriteCount: expiredFavoriteCount, request: $retentionRequest
-                    )) {
+                    Picker(selection: retention.binding) {
                         ForEach(HistoryRetention.allCases, id: \.self) { retention in
                             Text(retention.title).tag(retention)
                         }
@@ -143,7 +139,7 @@ struct GeneralSettingsView: View {
             SettingsRow(String(localized: "Usage Data", bundle: .module), help: [
                 HelpTopic(
                     String(localized: "Send optional usage data", bundle: .module),
-                    Text("Daily counts of screenshots, recordings, and text recognitions go to OhMyShot with the app version, macOS major version, and a random ID that changes each UTC day. Captured content and recognized text stay out of these reports. Turning this off clears reports waiting to send.", bundle: .module)
+                    Text("Counts of the features you start each UTC day, how you start them, and what comes of them go to OhMyShot with a few settings, the app and macOS versions, the chip, how many displays, the app’s language, roughly how long OhMyShot has been installed, and how many of the past 28 days it was used, under a random ID that changes each UTC day. Captured content, recognized text, and file names stay out of these reports. Turning this off clears reports waiting to send.", bundle: .module)
                 )
             ]) {
                 Toggle(isOn: $settings.sendsUsageData) {
@@ -166,9 +162,7 @@ struct GeneralSettingsView: View {
                 }
             }
         }
-        .confirmingRetentionChange($retentionRequest) { retention in
-            settings.historyRetention = retention
-        }
+        .confirmingRetentionChange(retention)
         .confirmationDialog(
             Text("Reset all settings to their defaults?", bundle: .module),
             isPresented: $confirmsReset,

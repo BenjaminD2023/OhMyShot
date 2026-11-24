@@ -8,6 +8,8 @@ import OSLog
 /// read: Vision keeps what a recognition used for as long as its process lives (Docs/perf.md, M2), so reading
 /// in the app would leave it at 70 MB or more for good. One run reads every screenshot waiting, one after
 /// another, and exits; one asked for while another runs follows it.
+/// The first reading and a changed model revision check the whole history. Between them, only captures added,
+/// edited, or left unread by a previous run are checked.
 ///
 /// With a model pack installed (`pack`), the reader reads it beside Vision where a capture holds Chinese or Japanese
 /// (L2 beside L1, Docs/ocr.md › L2 beside L1), and the captures read before it was there that hold either are read
@@ -29,6 +31,9 @@ public final class HistoryTextReader {
     @ObservationIgnored private(set) var starting = false
     @ObservationIgnored private var stopped = false
     @ObservationIgnored private var runsAgain: QualityOfService?
+    @ObservationIgnored private var pending: [UUID: HistoryItem] = [:]
+    @ObservationIgnored private var needsScan = true
+    @ObservationIgnored private var scannedReading: String?
     /// How often each screenshot was sent and not read this time the app runs: the reader answered with an error (a
     /// reading that timed out while Vision compiled its models, say), or stopped while it had the screenshot. Tried
     /// again at the next reading until `attempts` reach `maxAttempts`, so a picture that stops the reader every time
@@ -77,10 +82,18 @@ public final class HistoryTextReader {
         self.pack = pack
     }
 
+    public func enqueue(_ item: HistoryItem, immediately: Bool) {
+        guard item.kind == .screenshot, helper != nil, !stopped else { return }
+        pending[item.id] = item
+        attempts[item.id] = nil
+        if immediately { readNow() } else { readSoon() }
+    }
+
     /// Reads, in a few seconds and at background priority, every screenshot waiting: after a capture. Not in
     /// Low Power Mode; the History window reads them when it opens.
-    public func readSoon() {
-        guard helper != nil, !ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
+    public func readSoon(rescanning: Bool = false) {
+        if rescanning { needsScan = true }
+        guard helper != nil, !stopped, !ProcessInfo.processInfo.isLowPowerModeEnabled else { return }
         soon?.cancel()
         soonLease = soonLease ?? ActiveResources.shared.acquire(.timer)
         soon = Task { [weak self] in
@@ -131,13 +144,22 @@ public final class HistoryTextReader {
             return
         }
         guard let helper, !stopped else { return }
-        starting = true
         let store = store, failed = Set(attempts.filter { $0.value >= Self.maxAttempts }.keys), pack = pack()
+        let scan = needsScan || scannedReading != pack?.reading
+        let due = pending.filter { !failed.contains($0.key) }
+        guard scan || !due.isEmpty else { return }
+        for id in due.keys { pending[id] = nil }
+        starting = true
+        needsScan = false
+        scannedReading = pack?.reading
         Task {
-            // Off the main actor: a record and a text file for every capture in the history.
-            let waiting = await Self.waiting(in: store, except: failed, pack: pack)
+            let waiting = try? await Self.waiting(in: store, candidates: scan ? nil : Array(due.values), except: failed, pack: pack)
             starting = false
             guard !stopped else { return }
+            guard let waiting else {
+                needsScan = true
+                return runAgainIfAsked()
+            }
             start(helper, reading: waiting, with: pack, priority: priority)
         }
     }
@@ -145,12 +167,18 @@ public final class HistoryTextReader {
     /// The screenshots waiting to be read, with their files as they are now, and the reader's input for them.
     @concurrent
     private static func waiting(
-        in store: HistoryStore, except failed: Set<UUID>, pack: TextReaderPack?
-    ) async -> (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], order: [String], jobs: Data) {
+        in store: HistoryStore, candidates: [HistoryItem]?, except failed: Set<UUID>, pack: TextReaderPack?
+    ) async throws -> (sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)], order: [String], jobs: Data) {
         var sent: [String: (item: HistoryItem, stamp: HistoryText.Stamp)] = [:]
         var order: [String] = []
         var jobs = Data()
-        for item in store.needingText(store.items(), reading: pack?.reading) where !failed.contains(item.id) {
+        let items: [HistoryItem]
+        if let candidates {
+            items = candidates.filter { store.item(fileName: $0.fileName)?.id == $0.id }.sorted { $0.createdAt > $1.createdAt }
+        } else {
+            items = try store.readItems().filter { !failed.contains($0.id) }
+        }
+        for item in store.needingText(items, reading: pack?.reading) {
             let job = TextReaderWire.Job(
                 id: item.id.uuidString, path: store.fileURL(for: item).path(percentEncoded: false), pack: pack?.folder.path(percentEncoded: false)
             )
@@ -171,10 +199,7 @@ public final class HistoryTextReader {
         guard !sent.isEmpty else { return runAgainIfAsked() }
         // Asked again at a higher priority while the screenshots were being found: this run is that one.
         var priority = requested
-        if let again = runsAgain, again.rawValue >= requested.rawValue {
-            priority = again
-            runsAgain = nil
-        }
+        if let again = runsAgain, again.rawValue > requested.rawValue { priority = again }
 
         let process = Process()
         process.executableURL = helper
@@ -191,6 +216,7 @@ public final class HistoryTextReader {
         do {
             try process.run()
         } catch {
+            for (item, _) in sent.values { putBack(item) }
             Log.history.error("The text reader didn't start: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             return runAgainIfAsked()
         }
@@ -229,17 +255,25 @@ public final class HistoryTextReader {
               let (item, stamp) = run.sent.removeValue(forKey: result.id)
         else { return }
         reading = run.sent.count
+        guard store.item(fileName: item.fileName)?.id == item.id, let current = store.stamp(of: item) else {
+            attempts[item.id] = nil
+            return
+        }
+        guard current == stamp else {
+            putBack(item)
+            return
+        }
         if let text = result.text {
             attempts[item.id] = nil
-            // Unless the capture left the history while it was read.
-            guard store.stamp(of: item) != nil else { return }
             do {
                 try store.setText(text, of: item, readFrom: stamp, reading: run.reading)
                 onRead?(item.id)
             } catch {
+                putBack(item)
                 Log.history.error("Keeping the text of \(item.fileName, privacy: .private) failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             }
         } else {
+            putBack(item)
             attempts[item.id, default: 0] += 1
             Log.history.error("The text reader couldn't read \(item.fileName, privacy: .private) (try \(self.attempts[item.id] ?? 0, privacy: .public)): \(result.error ?? "", privacy: .private)")
         }
@@ -256,8 +290,13 @@ public final class HistoryTextReader {
             attempts[item.id, default: 0] += 1
             Log.history.error("The text reader stopped with status \(status, privacy: .public) on \(item.fileName, privacy: .private), \(run.sent.count, privacy: .public) capture(s) unread")
         }
+        for (item, _) in run.sent.values { putBack(item) }
         reading = 0
         runAgainIfAsked()
+    }
+
+    private func putBack(_ item: HistoryItem) {
+        if pending[item.id] == nil { pending[item.id] = item }
     }
 
     private func runAgainIfAsked() {

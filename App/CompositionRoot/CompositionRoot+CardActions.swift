@@ -26,7 +26,6 @@ extension CompositionRoot {
             retention.releaseIfUnheld(item.id)
         }
         retention.removeExpired()
-        readTextSoon()
     }
 
     /// Settings' Upload after a capture: to the default destination, when there is one.
@@ -72,6 +71,11 @@ extension CompositionRoot {
     /// of those things: let it go now unless a card (or, after a failure, the card that comes back with Retry),
     /// or the editor, still holds it.
     func uploadEnded(_ id: UUID, _ outcome: UploadCoordinator.Outcome) {
+        switch outcome {
+        case .finished: usageTelemetry?.record(.upload)
+        case .failed: usageTelemetry?.record(.uploadFailure)
+        case .cancelled: break
+        }
         if outcome == .failed, showsQuickAccess(forCaptureWith: id) { return }
         retention.releaseIfUnheld(id)
     }
@@ -80,8 +84,16 @@ extension CompositionRoot {
     /// `captureID` has one on screen, which holds it from closing by itself, else in the reading by the pointer (from the
     /// editor, a pin, History, or after a capture with Quick Access off). Either way VoiceOver hears it.
     func showSaveFailure(_ failure: ExportFailure, onCardOf captureID: UUID?) {
+        usageTelemetry?.record(.exportFailure)
         if let captureID, quickAccess.showFailure(failure, for: captureID) { return }
         failureNotice.show(failure.summary, near: NSEvent.mouseLocation)
+    }
+
+    /// A card's Save or Save As outcome, its failure counted in usage data as `showSaveFailure` counts the others; the card
+    /// says why itself.
+    private func countingFailure(_ outcome: SaveOutcome) -> SaveOutcome {
+        if outcome.failure != nil { usageTelemetry?.record(.exportFailure) }
+        return outcome
     }
 
     /// Where a copy saved from a window went, nil when it was not saved; a failure is said by the pointer first.
@@ -108,13 +120,9 @@ extension CompositionRoot {
 
     /// Has the text read in captures new to the history or with a new picture: now while the History window
     /// is open, else in a moment; not with history off, where they leave the history with their card.
-    func readTextSoon() {
+    func readTextSoon(_ entry: HistoryItem) {
         guard settings.historyRetention != .never else { return }
-        if historyWindow != nil {
-            textReader.readNow()
-        } else {
-            textReader.readSoon()
-        }
+        textReader.enqueue(entry, immediately: historyWindow != nil)
     }
 
     /// A capture's picture changed in the editor, or was turned, flipped, or scaled on its card: its card and
@@ -137,7 +145,7 @@ extension CompositionRoot {
             }
             await thumbnail?.value
             historyWindow?.reload(changed: [entry.id])
-            readTextSoon()
+            readTextSoon(entry)
         }
     }
 
@@ -146,8 +154,14 @@ extension CompositionRoot {
     func makeQuickAccessActions() -> QuickAccessController.Actions {
         var actions = QuickAccessController.Actions(
             copy: { [weak self] item in await self?.files.copyToClipboard(fileAt: item.fileURL) ?? false },
-            save: { [weak self] item, asks in await self?.files.saveCapture(fileAt: item.fileURL, asks: asks) ?? .cancelled },
-            saveAs: { [weak self] item in await self?.files.saveCaptureAs(fileAt: item.fileURL) ?? .cancelled },
+            save: { [weak self] item, asks in
+                guard let self else { return .cancelled }
+                return countingFailure(await files.saveCapture(fileAt: item.fileURL, asks: asks))
+            },
+            saveAs: { [weak self] item in
+                guard let self else { return .cancelled }
+                return countingFailure(await files.saveCaptureAs(fileAt: item.fileURL))
+            },
             open: { item in NSWorkspace.shared.open(item.fileURL) },
             annotate: { [weak self] item in
                 guard let self, let entry = history.item(id: item.id) else { return }
@@ -336,8 +350,7 @@ extension CompositionRoot {
         historyActions.sharing.deleteFromStorage = { [weak self] entry in self?.uploads.deleteFromStorage(captureID: entry.id) }
         let controller = HistoryWindowController(
             store: history, settings: settings, actions: historyActions, textReader: textReader,
-            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
-            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 }
+            retentionPreview: { [weak self] in await self?.retention.preview(for: $0) }
         )
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in self?.historyWindow = nil }
         return controller

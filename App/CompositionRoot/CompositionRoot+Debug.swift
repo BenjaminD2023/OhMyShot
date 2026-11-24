@@ -157,7 +157,7 @@ extension CompositionRoot {
             },
             perform: { [weak self] in self?.perform($0) },
             uploadAfterCapture: { [weak self] in self?.uploadAfterCapture($0) },
-            pressShortcut: { [weak self] in self?.handle($0) },
+            pressShortcut: { [weak self] in self?.handle($0, from: .hotkey) },
             latestCaptureID: { [weak self] in self?.history.items().first?.id },
             replay: { [weak self] in self?.replayStorage },
             shortcutFormula: { [weak self] data in try await self?.shortcuts.formula(inImage: data) },
@@ -199,7 +199,7 @@ extension CompositionRoot {
                 else { return Log.app.notice("debug.history-add failed") }
                 Log.app.notice("debug.history-add \(entry.fileName, privacy: .public)")
                 historyWindow?.reload()
-                readTextSoon()
+                readTextSoon(entry)
             },
             removeTests: { [weak self] in
                 guard let self else { return }

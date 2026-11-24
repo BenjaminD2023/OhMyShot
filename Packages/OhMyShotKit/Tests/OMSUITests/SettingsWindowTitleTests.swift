@@ -19,7 +19,7 @@ struct SettingsWindowTitleTests {
             urlScheme: "ohmyshot-tests",
             relaunch: {},
             openHistory: {},
-            expiredCount: { _ in 0 },
+            retentionPreview: { _ in RetentionPreviewCounts(count: 0, favorites: 0) },
             destinations: UploadDestinationStore(defaults: defaults, secrets: InMemorySecretStore()),
             uploadRecords: UploadRecordStore(fileURL: nil)
         ))

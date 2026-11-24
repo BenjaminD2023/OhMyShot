@@ -87,9 +87,7 @@ struct HistoryView: View {
         )) {} message: {
             Text(verbatim: model.trashFailure ?? "")
         }
-        .confirmingRetentionChange($model.retentionRequest) { retention in
-            model.settings.historyRetention = retention
-        }
+        .confirmingRetentionChange(model.retention)
     }
 
     private var grid: some View {
@@ -198,7 +196,7 @@ struct HistoryView: View {
         }
         ToolbarItem(placement: .primaryAction) {
             Menu {
-                Picker(selection: retention) {
+                Picker(selection: model.retention.binding) {
                     ForEach(HistoryRetention.allCases, id: \.self) { retention in
                         Text(retention.title).tag(retention)
                     }
@@ -227,12 +225,6 @@ struct HistoryView: View {
                 : Text("Move the captures shown to the Trash", bundle: .module))
             .disabled(model.visibleItems.isEmpty)
         }
-    }
-
-    private var retention: Binding<HistoryRetention> {
-        retentionSelection(
-            settings: model.settings, expiredCount: model.expiredCount, expiredFavoriteCount: model.expiredFavoriteCount, request: $model.retentionRequest
-        )
     }
 
     private var retentionLabel: String {

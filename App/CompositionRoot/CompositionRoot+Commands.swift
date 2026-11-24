@@ -13,12 +13,13 @@ import UniformTypeIdentifiers
 
 /// What the global shortcuts and the URL API's commands run.
 extension CompositionRoot {
-    func handle(_ shortcut: CaptureShortcut) {
+    func handle(_ shortcut: CaptureShortcut, from source: UsageTelemetry.Source) {
         let keepsLauncherOpen = StatusItemController.shouldKeepLauncherOpen(for: shortcut)
         let launcherWindowID = keepsLauncherOpen ? statusItem?.launcherWindowID : nil
         if !keepsLauncherOpen { statusItem?.dismissLauncher() }
         Log.signposter.emitEvent("hotkey")
         Log.hotkeys.notice("hotkey.\(shortcut.rawValue, privacy: .public)")
+        recordUse(of: shortcut.rawValue, from: source)
         if shortcut == .captureArea, beginOnboardingCaptureIfReady() {
             if keepsLauncherOpen { statusItem?.dismissLauncher() }
             return
@@ -59,6 +60,7 @@ extension CompositionRoot {
         permissions.refresh([.screenRecording])
         guard permissions.status(of: .screenRecording) == .granted else {
             if keepsLauncherOpen { statusItem?.dismissLauncher() }
+            usageTelemetry?.record(.permissionBlocked)
             showOnboarding()
             return
         }
@@ -124,6 +126,18 @@ extension CompositionRoot {
         }
     }
 
+    /// Counts a feature's use in usage data, unless running it now only stops what it started: a recording or its
+    /// countdown, a Self-Timer countdown, or a scrolling capture.
+    private func recordUse(of feature: String, from source: UsageTelemetry.Source) {
+        let stops = switch feature {
+        case "recordScreen": recordings.isRecording || recordings.isCountingDown
+        case "selfTimer": captures.isSelfTimerRunning
+        case "scrollingCapture": scrolling.isCapturing
+        default: false
+        }
+        if !stops { usageTelemetry?.recordFeature(feature, from: source) }
+    }
+
     /// Runs a URL API command from an approved caller, as CleanShot X runs it under the same name and parameters, and a
     /// shortcut's. `done` is told the record of a capture command's capture once it is kept, or nil when none is: it was
     /// cancelled or failed, or never began (no Screen Recording, an area on no display, an upload with nowhere to go). Any
@@ -138,10 +152,14 @@ extension CompositionRoot {
             followUpTakesDone = true
             return followUp
         }
+        recordUse(of: command.usageName, from: .automation)
         if command.readsScreen {
             quickAccess.dismissFirstCaptureHint()
             permissions.refresh([.screenRecording])
-            if permissions.status(of: .screenRecording) != .granted { return showOnboarding() }
+            if permissions.status(of: .screenRecording) != .granted {
+                usageTelemetry?.record(.permissionBlocked)
+                return showOnboarding()
+            }
         }
         switch command {
         case .allInOne(let region):
@@ -282,7 +300,7 @@ extension CompositionRoot {
         do {
             let entry = try await history.add(copyOf: url)
             historyWindow?.reload()
-            if entry.kind == .screenshot { readTextSoon() }
+            if entry.kind == .screenshot { readTextSoon(entry) }
             guard let item = await quickAccessItem(for: entry) else {
                 history.delete(entry)
                 throw CocoaError(.fileReadCorruptFile)
@@ -291,6 +309,42 @@ extension CompositionRoot {
         } catch {
             Log.automation.error("Could not add \(url.lastPathComponent, privacy: .private) to Quick Access: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
             NSSound.beep()
+        }
+    }
+}
+
+extension AutomationCommand {
+    /// Its feature's name in usage data: that of the keyboard shortcut doing the same, else the command's own.
+    var usageName: String {
+        switch self {
+        case .allInOne: "allInOne"
+        case .captureArea(_, let action):
+            switch action {
+            case nil: "captureArea"
+            case .copy?: "captureAreaAndCopy"
+            case .save?: "captureAreaAndSave"
+            case .annotate?: "captureAreaAndAnnotate"
+            case .upload?: "captureAreaAndUpload"
+            case .pin?: "pinArea"
+            }
+        case .capturePreviousArea: "capturePreviousArea"
+        case .captureFullscreen(let action): action == .upload ? "captureFullscreenAndUpload" : "captureFullscreen"
+        case .captureWindow: "captureWindow"
+        case .selfTimer: "selfTimer"
+        case .scrollingCapture: "scrollingCapture"
+        case .pin: "pinImage"
+        case .recordScreen: "recordScreen"
+        case .captureText(_, _, let lineBreaks): lineBreaks == false ? "captureTextJoined" : "captureText"
+        case .captureFormula: "captureFormula"
+        case .openAnnotate: "openAnnotate"
+        case .openFromClipboard: "openFromClipboard"
+        case .pinFromClipboard: "pinFromClipboard"
+        case .togglePins: "togglePins"
+        case .toggleDesktopIcons, .hideDesktopIcons, .showDesktopIcons: "toggleDesktopIcons"
+        case .addQuickAccessOverlay: "addToQuickAccess"
+        case .openHistory: "openHistory"
+        case .restoreRecentlyClosed: "restoreRecentlyClosed"
+        case .openSettings: "openSettings"
         }
     }
 }

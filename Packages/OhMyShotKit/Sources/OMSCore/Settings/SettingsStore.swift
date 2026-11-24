@@ -2,6 +2,12 @@ import CoreFoundation
 import Foundation
 import Observation
 
+@MainActor
+package protocol HistoryRetentionProposal: AnyObject {
+    var counting: HistoryRetention? { get }
+    func cancel()
+}
+
 /// User preferences, persisted in the app's defaults domain. Debug and release builds have separate
 /// domains because their bundle identifiers differ.
 @MainActor
@@ -86,7 +92,18 @@ public final class SettingsStore {
 
     /// How long captures stay in the history.
     public var historyRetention: HistoryRetention {
-        didSet { defaults.set(historyRetention.rawValue, forKey: Key.historyRetention) }
+        didSet {
+            replaceRetentionProposal(with: nil)
+            defaults.set(historyRetention.rawValue, forKey: Key.historyRetention)
+        }
+    }
+
+    /// Settings and Capture History can both be open, but only one picker can have a live proposal.
+    package private(set) weak var retentionProposal: (any HistoryRetentionProposal)?
+
+    package func replaceRetentionProposal(with proposal: (any HistoryRetentionProposal)?) {
+        retentionProposal?.cancel()
+        retentionProposal = proposal
     }
 
     /// Where saved captures go. Defaults to the Desktop, like macOS's own screenshots.
