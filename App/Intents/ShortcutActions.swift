@@ -22,6 +22,9 @@ final class ShortcutActions {
     private let holds: ShortcutCaptureHolds
     /// Shows how to turn Screen Recording on.
     private let showOnboarding: () -> Void
+    /// Counts a feature in usage data by its usage-data name, for the actions that run no URL API command, which
+    /// counts itself, and for a command stopped here before it runs.
+    private let used: (String) -> Void
     /// Runs a URL API command, which needs no caller's approval here: the user made the shortcut. `kept` is told the
     /// capture's record as soon as a capture command's capture is kept, before anything can let it go; `done` once it is
     /// kept, or nil when none is.
@@ -32,7 +35,8 @@ final class ShortcutActions {
     init(
         permissions: PermissionCenter, uploads: UploadCoordinator, captures: CaptureCoordinator, textCapture: TextCaptureCoordinator,
         files: ScreenshotFiles, packs: TextReaderPacks, pins: PinController, displays: DisplayTopology, holds: ShortcutCaptureHolds,
-        showOnboarding: @escaping () -> Void, run: @escaping (AutomationCommand, ((HistoryItem) -> Void)?, ((HistoryItem?) -> Void)?) -> Void,
+        showOnboarding: @escaping () -> Void, used: @escaping (String) -> Void,
+        run: @escaping (AutomationCommand, ((HistoryItem) -> Void)?, ((HistoryItem?) -> Void)?) -> Void,
         openInEditor: @escaping (ImageLoader.Loaded, String) async -> Void
     ) {
         self.permissions = permissions
@@ -45,13 +49,16 @@ final class ShortcutActions {
         self.displays = displays
         self.holds = holds
         self.showOnboarding = showOnboarding
+        self.used = used
         self.run = run
         self.openInEditor = openInEditor
     }
 
-    /// A shortcut that reads the screen runs only with Screen Recording on; without it, onboarding shows how to turn it on.
-    private func requireScreenRecording() throws(ShortcutFailure) {
+    /// A shortcut that reads the screen runs only with Screen Recording on; without it, onboarding shows how to turn it on,
+    /// and the URL API command it would have run, which counts itself when it runs, is counted here.
+    private func requireScreenRecording(for command: AutomationCommand? = nil) throws(ShortcutFailure) {
         guard permissions.status(of: .screenRecording) == .granted else {
+            if let command { used(command.usageName) }
             showOnboarding()
             throw .needsScreenRecording
         }
@@ -62,8 +69,11 @@ final class ShortcutActions {
     /// held from the moment it is kept until its picture is read, as with Keep Captures at Never and no card nothing else
     /// holds it, and let go then, however reading it went.
     func capture(_ command: AutomationCommand) async throws -> (data: Data, name: String, type: UTType)? {
-        try requireScreenRecording()
-        if command.captureAction == .upload, !uploads.canUpload { throw ShortcutFailure.noUploadDestination }
+        try requireScreenRecording(for: command)
+        if command.captureAction == .upload, !uploads.canUpload {
+            used(command.usageName)
+            throw ShortcutFailure.noUploadDestination
+        }
         // A pinned capture is left as Capture Area and Pin leaves it, for the pin's Save and drag.
         return try await holds.holding(lettingGo: command.captureAction != .pin) { hold -> (data: Data, name: String, type: UTType)? in
             guard let entry = await kept(command, holding: hold) else { return nil }
@@ -82,6 +92,7 @@ final class ShortcutActions {
 
     /// A shortcut's Capture Text: the text copied, or nil when none was.
     func captureText(keepsLineBreaks: Bool) async throws(ShortcutFailure) -> String? {
+        used(keepsLineBreaks ? "captureText" : "captureTextJoined")
         try requireScreenRecording()
         captures.cancelSelfTimer()
         return await withCheckedContinuation { continuation in
@@ -92,6 +103,7 @@ final class ShortcutActions {
 
     /// The text in a picture a shortcut hands over, read as Capture Text reads it; nothing is copied or shown.
     func text(inImage data: Data, keepsLineBreaks: Bool) async throws -> String? {
+        used(keepsLineBreaks ? "captureText" : "captureTextJoined")
         // A picture, without decoding it here.
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
             throw ShortcutFailure.unreadableImage
@@ -110,6 +122,7 @@ final class ShortcutActions {
 
     /// A shortcut's Capture Formula: the LaTeX copied, or nil when no formula was.
     func captureFormula() async throws(ShortcutFailure) -> String? {
+        used("captureFormula")
         try requireScreenRecording()
         guard packs.formula != nil else { throw .needsFormulaPack }
         captures.cancelSelfTimer()
@@ -122,6 +135,7 @@ final class ShortcutActions {
     /// The LaTeX of the formula in a picture a shortcut hands over, read as Capture Formula reads it; nothing is
     /// copied or shown. Nil when the pack read no whole formula.
     func formula(inImage data: Data) async throws -> String? {
+        used("captureFormula")
         guard let helper = packs.helper, let pack = packs.formula else { throw ShortcutFailure.needsFormulaPack }
         guard let source = CGImageSourceCreateWithData(data as CFData, nil), CGImageSourceCreateImageAtIndex(source, 0, nil) != nil else {
             throw ShortcutFailure.unreadableImage
@@ -141,6 +155,7 @@ final class ShortcutActions {
 
     /// Pins a picture a shortcut hands over.
     func pin(_ data: Data) throws(ShortcutFailure) {
+        used("pinImage")
         let scale = displays.layout.displayUnderPointer?.pixelsPerPoint ?? 2
         guard let loaded = ImageLoader.load(data: data, fallbackScale: scale) else { throw .unreadableImage }
         pins.pin(loaded.image, scale: loaded.scale, origin: .clipboard)
@@ -148,13 +163,14 @@ final class ShortcutActions {
 
     /// Opens a picture a shortcut hands over in the editor, added to the history first.
     func annotate(_ data: Data, name: String) async throws(ShortcutFailure) {
+        used("openAnnotate")
         guard let loaded = ImageLoader.load(data: data) else { throw .unreadableImage }
         await openInEditor(loaded, name)
     }
 
     /// Runs a URL API command for a shortcut.
     func perform(_ command: AutomationCommand) throws(ShortcutFailure) {
-        if command.readsScreen { try requireScreenRecording() }
+        if command.readsScreen { try requireScreenRecording(for: command) }
         run(command, nil, nil)
     }
 

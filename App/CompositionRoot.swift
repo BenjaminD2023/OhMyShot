@@ -17,7 +17,7 @@ final class CompositionRoot {
     // Read legacy installation markers before start() installs this launch's default shortcuts.
     private let onboardingProgress = OnboardingProgress()
     let settings = SettingsStore()
-    private let usageTelemetry = UsageTelemetry.production()
+    private(set) lazy var usageTelemetry = UsageTelemetry.production(settings: settings)
     let permissions = PermissionCenter()
     let displays = DisplayTopology()
     let history = HistoryStore.standard()
@@ -186,7 +186,11 @@ final class CompositionRoot {
     private(set) lazy var shortcuts = ShortcutActions(
         permissions: permissions, uploads: uploads, captures: captures, textCapture: textCapture, files: files, packs: readerPacks,
         pins: pins, displays: displays, holds: retention.shortcutHolds,
-        showOnboarding: { [weak self] in self?.showOnboarding() },
+        showOnboarding: { [weak self] in
+            self?.usageTelemetry?.record(.permissionBlocked)
+            self?.showOnboarding()
+        },
+        used: { [weak self] feature in self?.usageTelemetry?.recordFeature(feature, from: .automation) },
         run: { [weak self] command, kept, done in
             guard let self else { done?(nil); return }
             perform(command, kept: kept, done: done)
@@ -237,7 +241,7 @@ final class CompositionRoot {
 
         hotkeys.installDefaultShortcutsIfNeeded()
         hotkeys.activate { [weak self] shortcut in
-            self?.handle(shortcut)
+            self?.handle(shortcut, from: .hotkey)
         }
 
         let settings = settings

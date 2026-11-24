@@ -9,6 +9,10 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Changed
+
+- **Usage Data says more about how OhMyShot is used, and still nothing about you.** Each day's report now counts the features you use and whether you started them from a shortcut, the menu bar, or automation, and what came of them: uploads finished or failed, saves and copies that failed, and captures stopped for want of Screen Recording permission. It also gives the macOS minor version, chip, number of displays, app language, a few capture settings, roughly how long OhMyShot has been installed, and on how many of the past 28 days it was used. It still goes under a random ID that changes every UTC day and leaves out captures, recognized text, and file names; Settings › General › Usage Data turns it off.
+
 ### Fixed
 
 - Text copied from a picture of code leaves out the editor's line numbers beside a narrow gutter too, as Xcode, Vim with `number`, and compact themes draw it, where a number and its line were read as one ("12 let x = 1") and the whole listing kept its numbers and lost its indentation. A snippet of two lines loses its numbers as well, and code with Chinese or Japanese comments no longer reads them back in.

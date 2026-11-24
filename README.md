@@ -233,12 +233,25 @@ are made, signed, and notarized is in [Docs/release.md](Docs/release.md).
 
 ### Optional usage data
 
-Settings › General › Usage Data is on by default and can be turned off there at any time; Reset to Default Settings keeps that choice. While it is on, OhMyShot sends the UTC date,
-a random ID that changes each UTC day, the app version, macOS major version, and daily counts
-of successful screenshots, recordings, and text recognitions to `www.ohmyshot.org`. Reports
-exclude captures, recognized text, file and window names, and persistent device identifiers.
+Settings › General › Usage Data is on by default and can be turned off there at any time; Reset to Default Settings keeps that choice. While it is on, OhMyShot sends `www.ohmyshot.org`
+one report for each UTC day, updated as the day goes on, under a random ID that changes each UTC day. It says:
+
+- how many times each feature was used (named as its keyboard shortcut is, `captureArea`), and whether from a shortcut, the
+  menu bar, or automation (the URL API and Shortcuts);
+- what came of it: screenshots, recordings, and text recognitions kept, uploads finished or failed, saves and copies that
+  failed, and captures stopped for want of Screen Recording permission;
+- the app version, macOS version (`26.4`), chip (`M3 Pro`), number of displays, and the app's language;
+- whether Quick Access, copying, saving, and uploading after a capture are on, the screenshot format, and how long captures
+  are kept;
+- how long ago OhMyShot first ran, in spans (its first day, a week, a month, three months, a year), from the age of its
+  Application Support folder;
+- on how many of the 28 days before it something was used, counted on the Mac from the days it has seen while the setting
+  was on.
+
+Reports exclude captures, recognized text, file and window names, and persistent device identifiers. The website merges
+each report into daily totals, every detail counted on its own, and keeps the daily ID only to merge retries.
 When the app runs, it retries unsent counts from the last seven UTC days and drops older reports. Turning the setting off stops sending
-and clears the local report file. Debug builds leave the reporting service inactive.
+and clears the local report file, with the days it was used. Debug builds leave the reporting service inactive.
 
 ## Documentation
 

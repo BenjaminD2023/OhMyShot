@@ -122,7 +122,7 @@ struct GeneralSettingsView: View {
             SettingsRow(String(localized: "Usage Data", bundle: .module), help: [
                 HelpTopic(
                     String(localized: "Send optional usage data", bundle: .module),
-                    Text("Daily counts of screenshots, recordings, and text recognitions go to OhMyShot with the app version, macOS major version, and a random ID that changes each UTC day. Captured content and recognized text stay out of these reports. Turning this off clears reports waiting to send.", bundle: .module)
+                    Text("Counts of the features you start each UTC day, how you start them, and what comes of them go to OhMyShot with a few settings, the app and macOS versions, the chip, how many displays, the app’s language, roughly how long OhMyShot has been installed, and how many of the past 28 days it was used, under a random ID that changes each UTC day. Captured content, recognized text, and file names stay out of these reports. Turning this off clears reports waiting to send.", bundle: .module)
                 )
             ]) {
                 Toggle(isOn: $settings.sendsUsageData) {
