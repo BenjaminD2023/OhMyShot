@@ -137,7 +137,7 @@ extension CompositionRoot {
                 isTemplateNamed: name == nil ? true : nil, date: date
             )
             historyWindow?.reload()
-            readTextSoon()
+            readTextSoon(entry)
             annotations.annotate(entry, scale: scale)
         } catch {
             Log.capture.error("Adding \(fileName, privacy: .private) to the history failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")

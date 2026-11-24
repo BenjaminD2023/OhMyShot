@@ -68,7 +68,7 @@ final class HistoryModel {
     @ObservationIgnored private let textLoader: TextLoader
     /// The file shown in Quick Look, if any.
     var previewURL: URL?
-    var retentionRequest: RetentionChangeRequest?
+    let retention: RetentionSelection
 
     /// Thumbnails being made: the grid asks for every card it shows at once, which would take every core, and the
     /// cards scrolled away while they wait need none.
@@ -78,21 +78,18 @@ final class HistoryModel {
     @ObservationIgnored let store: HistoryStore
     @ObservationIgnored let settings: SettingsStore
     @ObservationIgnored let actions: HistoryActions
-    @ObservationIgnored let expiredCount: (HistoryRetention) -> Int
-    @ObservationIgnored let expiredFavoriteCount: (HistoryRetention) -> Int
     /// The history window, for the print panel to come down from.
     @ObservationIgnored weak var window: NSWindow?
 
     init(
-        store: HistoryStore, settings: SettingsStore, actions: HistoryActions, expiredCount: @escaping (HistoryRetention) -> Int,
-        expiredFavoriteCount: @escaping (HistoryRetention) -> Int = { _ in 0 }, textLoader: TextLoader? = nil, itemsLoader: ItemsLoader? = nil, searcher: Searcher? = nil,
+        store: HistoryStore, settings: SettingsStore, actions: HistoryActions, retentionPreview: @escaping RetentionPreview = { _ in nil },
+        textLoader: TextLoader? = nil, itemsLoader: ItemsLoader? = nil, searcher: Searcher? = nil,
         searchDelay: Duration = .milliseconds(100), thumbnailLoader: ThumbnailLoader? = nil
     ) {
         self.store = store
         self.settings = settings
         self.actions = actions
-        self.expiredCount = expiredCount
-        self.expiredFavoriteCount = expiredFavoriteCount
+        self.retention = RetentionSelection(settings: settings, preview: retentionPreview)
         self.textLoader = textLoader ?? { items, store in await Self.entries(of: items, in: store) }
         self.itemsLoader = itemsLoader ?? { store in await store.loadItems() }
         self.searcher = searcher ?? { query, generations, index in try await index.search(query, generations: generations) }
@@ -469,6 +466,7 @@ final class HistoryModel {
     /// The window has closed: release its pictures and search text, and cancel pending reads.
     func release() {
         isReleased = true
+        retention.cancel()
         for task in textLoads.values { task.cancel() }
         textLoads = [:]
         isIndexing = false

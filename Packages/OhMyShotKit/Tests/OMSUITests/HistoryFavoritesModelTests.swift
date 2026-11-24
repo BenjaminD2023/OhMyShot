@@ -17,7 +17,7 @@ struct HistoryFavoritesModelTests {
             restore: { _ in }, copy: { _ in }, save: { _ in }, open: { _ in }, annotate: { _ in }, reveal: { _ in },
             recognizeText: { _ in }, pin: { _ in }, moveToTrash: { _ in }
         )
-        let model = HistoryModel(store: store, settings: settings, actions: actions, expiredCount: { _ in 0 })
+        let model = HistoryModel(store: store, settings: settings, actions: actions)
         let items = try (0..<count).map { _ in
             try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
         }
@@ -57,18 +57,19 @@ struct HistoryFavoritesModelTests {
     }
 
     /// Turning History off deletes the favorites with the rest, and the confirmation it asks for knows how many.
-    @Test func turningHistoryOffCountsTheFavoritesItDeletes() throws {
-        let defaults = try #require(UserDefaults(suiteName: "OMSUITests-\(UUID().uuidString)"))
+    @Test func turningHistoryOffCountsTheFavoritesItDeletes() async throws {
+        let suite = "OMSUITests-\(UUID())"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
         let settings = SettingsStore(defaults: defaults)
         settings.historyRetention = .oneWeek
-        let asked = Asked()
-        let retention = retentionSelection(
-            settings: settings, expiredCount: { $0 == .never ? 5 : 0 }, expiredFavoriteCount: { $0 == .never ? 2 : 0 },
-            request: Binding(get: { asked.request }, set: { asked.request = $0 })
-        )
-        retention.wrappedValue = .never
-        #expect(asked.request?.count == 5)
-        #expect(asked.request?.favorites == 2)
+        let selection = RetentionSelection(settings: settings) { retention in
+            retention == .never ? RetentionPreviewCounts(count: 5, favorites: 2) : nil
+        }
+        selection.binding.wrappedValue = .never
+        await selection.scan?.value
+        #expect(selection.request?.count == 5)
+        #expect(selection.request?.favorites == 2)
         #expect(settings.historyRetention == .oneWeek)
     }
 
@@ -92,9 +93,4 @@ struct HistoryFavoritesModelTests {
         #expect(request.items.count == 3)
         #expect(request.favoriteCount == 2)
     }
-}
-
-@MainActor
-private final class Asked {
-    var request: RetentionChangeRequest?
 }

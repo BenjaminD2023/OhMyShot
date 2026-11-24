@@ -19,6 +19,7 @@ final class AnnotationCoordinator {
     var saveFile: ((URL, Double) async -> URL?)?
     /// A capture's picture changed: its record, and the picture's encoded data.
     var onChange: ((HistoryItem, Data) -> Void)?
+    var onAdded: ((HistoryItem) -> Void)?
     /// A capture's editor opened (true) or closed (false).
     var onEditing: ((UUID, Bool) -> Void)?
     /// Saves a copy of a capture's file to the export location; returns where it went.
@@ -89,7 +90,10 @@ final class AnnotationCoordinator {
             }
             do {
                 let item = try await loaded.itemForEditing(entry, in: history)
-                if item.id != id { onEditing?(item.id, true) }
+                if item.id != id {
+                    onEditing?(item.id, true)
+                    onAdded?(item)
+                }
                 showEditor(for: item, source: loaded, scale: scale)
             } catch {
                 NSAlert(error: error).runModal()

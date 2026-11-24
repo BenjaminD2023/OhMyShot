@@ -8,14 +8,12 @@ struct GeneralSettingsView: View {
     @Bindable var settings: SettingsStore
     let openHistory: () -> Void
     var showOnboarding: () -> Void = {}
-    let expiredCount: (HistoryRetention) -> Int
-    var expiredFavoriteCount: (HistoryRetention) -> Int = { _ in 0 }
+    let retention: RetentionSelection
     /// The updater's state, in builds that look for updates.
     let updates: UpdateStatus?
     @State private var launchAtLogin = false
     @State private var loadedLaunchAtLogin = false
     @State private var loginItemError: String?
-    @State private var retentionRequest: RetentionChangeRequest?
     @State private var language = AppLanguage.chosen ?? ""
     @State private var confirmsReset = false
 
@@ -104,9 +102,7 @@ struct GeneralSettingsView: View {
 
             SettingsRow(String(localized: "Keep captures", bundle: .module)) {
                 HStack(spacing: 8) {
-                    Picker(selection: retentionSelection(
-                        settings: settings, expiredCount: expiredCount, expiredFavoriteCount: expiredFavoriteCount, request: $retentionRequest
-                    )) {
+                    Picker(selection: retention.binding) {
                         ForEach(HistoryRetention.allCases, id: \.self) { retention in
                             Text(retention.title).tag(retention)
                         }
@@ -149,9 +145,7 @@ struct GeneralSettingsView: View {
                 }
             }
         }
-        .confirmingRetentionChange($retentionRequest) { retention in
-            settings.historyRetention = retention
-        }
+        .confirmingRetentionChange(retention)
         .confirmationDialog(
             Text("Reset all settings to their defaults?", bundle: .module),
             isPresented: $confirmsReset,

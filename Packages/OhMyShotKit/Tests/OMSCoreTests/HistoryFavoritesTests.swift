@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import OMSCore
 
@@ -67,6 +68,83 @@ struct HistoryFavoritesTests {
         defer { try? FileManager.default.removeItem(at: store.directory) }
         let favorite = try store.setFavorite(true, of: try add(store, age: 60, now: .now))
         #expect(store.expired(retention: .never).map(\.id) == [favorite.id])
+    }
+
+    @MainActor @Test func retentionPreviewCountsFromOneBackgroundListingPerChoice() async throws {
+        let directory = makeStore().directory
+        defer { try? FileManager.default.removeItem(at: directory) }
+        let mainThreadListings = Mutex<[Bool]>([])
+        let store = HistoryStore(directory: directory, listingDirectory: { path in
+            mainThreadListings.withLock { $0.append(Thread.isMainThread) }
+            return try FileManager.default.contentsOfDirectory(atPath: path)
+        }, writingRecords: { try $0.write(to: $1, options: .atomic) })
+        let now = Date(timeIntervalSinceReferenceDate: 800_000_000)
+        let held = try add(store, age: 90_000, now: now)
+        let heldFavorite = try store.setFavorite(true, of: try add(store, age: 90_000, now: now))
+        let keeping: Set = [held.id, heldFavorite.id]
+        _ = try add(store, age: 86_401, now: now)
+        _ = try add(store, age: 86_400, now: now)
+        _ = try add(store, age: 0, now: now)
+        try store.setFavorite(true, of: try add(store, age: 90_000, now: now))
+        let timed = await store.loadRetentionPreview(retention: .oneDay, keeping: { keeping }, now: now)
+        let off = await store.loadRetentionPreview(retention: .never, keeping: { keeping }, now: now)
+        #expect(timed == RetentionPreviewCounts(count: 1, favorites: 0))
+        #expect(off == RetentionPreviewCounts(count: 4, favorites: 1))
+        #expect(mainThreadListings.withLock { $0 } == [false, false])
+    }
+
+    @MainActor @Test func aReleasedHoldInvalidatesAnOtherwiseEmptyRetentionPreview() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let favorite = try store.setFavorite(true, of: try add(store, age: 0, now: .now))
+        var held: Set = [favorite.id]
+        let counts = await store.loadRetentionPreview(retention: .never, keeping: {
+            defer { held = [] }
+            return held
+        })
+        #expect(counts == nil)
+        let retried = await store.loadRetentionPreview(retention: .never)
+        #expect(retried == RetentionPreviewCounts(count: 1, favorites: 1))
+    }
+
+    @MainActor @Test(arguments: [true, false])
+    func aNewCaptureOrUnfavoriteInvalidatesAZeroBeforeItCanApply(addCapture: Bool) async throws {
+        let store = makeStore(), now = Date()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let favorite = try store.setFavorite(true, of: try add(store, age: 90_000, now: now))
+        var snapshots = 0
+        let counts = await store.loadRetentionPreview(retention: .oneDay, keeping: {
+            snapshots += 1
+            if snapshots == 2 {
+                do {
+                    if addCapture {
+                        _ = try add(store, age: 90_000, now: now)
+                    } else {
+                        try store.setFavorite(false, of: favorite)
+                    }
+                } catch { Issue.record(error) }
+            }
+            return []
+        }, now: now)
+        #expect(counts == nil)
+        let retried = await store.loadRetentionPreview(retention: .oneDay, now: now)
+        #expect(retried == RetentionPreviewCounts(count: 1, favorites: 0))
+    }
+
+    @MainActor @Test func anUnreadableOrCancelledListingIsNotAnEmptyRetentionPreview() async {
+        let directory = makeStore().directory
+        let fresh = await HistoryStore(directory: directory).loadRetentionPreview(retention: .never)
+        #expect(fresh == RetentionPreviewCounts(count: 0, favorites: 0))
+        let unreadable = HistoryStore(directory: directory, listingDirectory: { _ in throw CocoaError(.fileReadNoPermission) },
+                                      writingRecords: { try $0.write(to: $1) })
+        let failed = await unreadable.loadRetentionPreview(retention: .never)
+        #expect(failed == nil)
+        let cancelled = HistoryStore(directory: directory, listingDirectory: { _ in
+            withUnsafeCurrentTask { $0?.cancel() }
+            return []
+        }, writingRecords: { try $0.write(to: $1) })
+        let result = await Task { await cancelled.loadRetentionPreview(retention: .never) }.value
+        #expect(result == nil)
     }
 
     /// A record from before the capture was added to Favorites (as an open editor's is) doesn't take it out of them

@@ -2985,3 +2985,24 @@ off, still read in 15.5 ms. SnowAir's notes (a ZXing decoder) recommend reading 
 second pass, shrinking large pictures, and widening a tight selection by 8–15% for the quiet zone; with Vision none
 of the three pays, so the selection is read once, as it is. Nothing runs while idle: a look happens only when a
 selection settles, or a card is first hovered or chosen from the keyboard.
+
+## Capture History — one unread picture and a retention change (2026-11-24)
+
+On an M3 Max, macOS 27.3 (26C5035r), Debug, against a74f07cf. Both builds used disposable histories of the same
+sizes: every screenshot but the last already had current text. One warm-up was discarded; each number is the
+median of five runs. The reader was a shell stand-in returning one line per job, so its time includes finding
+work, starting the process, and saving the answer, not Vision recognition or the background debounce.
+
+| Captures | Index one screenshot: before → after | Preview turning History off: before → after |
+| ---: | ---: | ---: |
+| 300 | 43.58 → 7.03 ms | 35.42 → 15.93 ms |
+| 1,000 | 122.37 → 8.33 ms | 118.89 → 58.53 ms |
+| 5,000 | 596.89 → 7.87 ms | 611.68 → 311.66 ms |
+
+After its initial scan, the reader checks the new or edited screenshot and anything waiting to retry, rather
+than opening every record and text file. A different model revision or turning History back on still triggers a
+full check. The retention preview counts expired captures and their favorites in one pass off the main actor.
+The fixture marked every tenth capture as a favorite and held every hundredth. It supplied the held IDs through
+the same callback the app uses; both versions counted 4,950 captures, including 450 favorites, at 5,000.
+The preview column is elapsed time until the counts are ready, not time the window is blocked. The actual
+deletion pass and its rechecks for favorites and captures still in use are unchanged.

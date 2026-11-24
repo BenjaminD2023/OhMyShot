@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import OMSCore
 
@@ -399,5 +400,128 @@ struct HistoryTextReaderTests {
         await readAndSettle(reader)
         #expect(starts(startsFile) == 3)
         #expect(items.allSatisfy { store.text(of: $0) != nil })
+    }
+
+    @Test func afterTheFirstReadOnlyQueuedScreenshotsAreChecked() async throws {
+        let listings = Mutex(0)
+        let store = HistoryStore(directory: FileManager.default.temporaryDirectory.appending(path: "IncrementalOCR-\(UUID())"), listingDirectory: { path in
+            listings.withLock { $0 += 1 }
+            return try FileManager.default.contentsOfDirectory(atPath: path)
+        }, writingRecords: { try $0.write(to: $1, options: .atomic) })
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let original = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let (helper, startsFile) = try fakeReader(in: store.directory.appending(path: "bin"))
+        let reader = HistoryTextReader(store: store, helper: helper)
+        defer { reader.stop() }
+        var read: [UUID] = []
+        reader.onRead = { read.append($0) }
+        reader.readNow()
+        await settled(reader)
+        try FileManager.default.removeItem(at: store.textURL(for: original))
+
+        let new = try store.add(data: Data([2]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        reader.enqueue(new, immediately: false)
+        reader.enqueue(new, immediately: true)
+        await settled(reader)
+        #expect(read == [original.id, new.id])
+        #expect(store.text(of: original) == nil)
+        #expect(store.text(of: new) != nil)
+
+        let edited = try store.replacePicture(of: original, with: Data([3, 4]), pixelWidth: 2, pixelHeight: 1)
+        reader.enqueue(edited, immediately: true)
+        await settled(reader)
+        #expect(read == [original.id, new.id, original.id])
+        #expect(store.text(of: edited) != nil)
+
+        reader.enqueue(new, immediately: false)
+        store.delete(new)
+        let replacement = try store.add(data: Data([5]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        try #require(replacement.fileName == new.fileName)
+        reader.readNow()
+        await settled(reader)
+        #expect(store.text(of: replacement) == nil)
+        #expect(starts(startsFile) == 3)
+        #expect(listings.withLock { $0 } == 1)
+        reader.readSoon(rescanning: true)
+        reader.readNow()
+        await settled(reader)
+        #expect(read.last == replacement.id)
+        #expect(store.text(of: replacement) != nil)
+        #expect(listings.withLock { $0 } == 2)
+    }
+
+    @Test func anEditWhileReadingDiscardsTheOldAnswerAndReadsTheNewPicture() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let original = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let release = store.directory.appending(path: "answer-now")
+        let helper = store.directory.appending(path: "reader.sh")
+        try """
+        #!/bin/sh
+        while [ ! -f '\(release.path(percentEncoded: false))' ]; do sleep 0.01; done
+        exec /usr/bin/sed -n 's/.*"id":"\\([^"]*\\)".*/{"id":"\\1","text":"current"}/p'
+        """.write(to: helper, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: helper.path(percentEncoded: false))
+        let reader = HistoryTextReader(store: store, helper: helper)
+        defer { reader.stop() }
+        var read: [UUID] = []
+        reader.onRead = { read.append($0) }
+        reader.readNow()
+        let deadline = ContinuousClock.now + .seconds(5)
+        while reader.reading == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(5)) }
+        try #require(reader.reading == 1)
+        let edited = try store.replacePicture(of: original, with: Data([2, 3]), pixelWidth: 2, pixelHeight: 1)
+        reader.enqueue(edited, immediately: true)
+        try Data().write(to: release)
+        await settled(reader)
+        #expect(read == [original.id])
+        #expect(store.text(of: edited) == "current")
+    }
+
+    @Test func changingModelRevisionReconcilesTheWholeHistory() async throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let item = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let stamp = try #require(store.stamp(of: item))
+        try store.setText("打开设置", of: item, readFrom: stamp)
+        let (helper, startsFile) = try fakeReader(in: store.directory.appending(path: "bin"))
+        var pack: TextReaderPack?
+        let reader = HistoryTextReader(store: store, helper: helper) { pack }
+        defer { reader.stop() }
+        reader.readNow()
+        await settled(reader)
+        #expect(starts(startsFile) == 0)
+        for revision in ["one", "two"] {
+            pack = TextReaderPack(folder: store.directory, reading: revision)
+            reader.readNow()
+            await settled(reader)
+            #expect(store.text(of: item) == "read \(item.id.uuidString)")
+            try store.setText("打开设置", of: item, readFrom: stamp, reading: revision)
+            reader.readNow()
+            await settled(reader)
+        }
+        #expect(starts(startsFile) == 2)
+    }
+
+    @Test func aFailedFirstListingIsRetriedAtTheNextReading() async throws {
+        let listings = Mutex(0)
+        let store = HistoryStore(directory: FileManager.default.temporaryDirectory.appending(path: "OCRListingRetry-\(UUID())"), listingDirectory: { path in
+            let first = listings.withLock { $0 += 1; return $0 == 1 }
+            if first { throw CocoaError(.fileReadNoPermission) }
+            return try FileManager.default.contentsOfDirectory(atPath: path)
+        }, writingRecords: { try $0.write(to: $1, options: .atomic) })
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let existing = try store.add(data: Data([1]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        let (helper, _) = try fakeReader(in: store.directory.appending(path: "bin"))
+        let reader = HistoryTextReader(store: store, helper: helper)
+        defer { reader.stop() }
+        reader.readNow()
+        await settled(reader)
+        #expect(store.text(of: existing) == nil)
+        let new = try store.add(data: Data([2]), fileExtension: "png", kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil)
+        reader.enqueue(new, immediately: true)
+        await settled(reader)
+        #expect(store.text(of: existing) != nil && store.text(of: new) != nil)
+        #expect(listings.withLock { $0 } == 2)
     }
 }

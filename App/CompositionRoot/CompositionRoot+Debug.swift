@@ -199,7 +199,7 @@ extension CompositionRoot {
                 else { return Log.app.notice("debug.history-add failed") }
                 Log.app.notice("debug.history-add \(entry.fileName, privacy: .public)")
                 historyWindow?.reload()
-                readTextSoon()
+                readTextSoon(entry)
             },
             removeTests: { [weak self] in
                 guard let self else { return }

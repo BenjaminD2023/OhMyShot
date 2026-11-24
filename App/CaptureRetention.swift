@@ -92,14 +92,9 @@ final class CaptureRetention {
         }
     }
 
-    /// How many captures a retention would delete now; captures still on screen as cards are kept.
-    func expiredCount(for retention: HistoryRetention) -> Int {
-        history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).count
-    }
-
-    /// How many of those are favorites, which only turning History off deletes.
-    func expiredFavoriteCount(for retention: HistoryRetention) -> Int {
-        history.expired(retention: retention, keeping: heldCaptureIDs(for: retention)).filter(\.isFavorite).count
+    /// How many unheld captures would go, including how many favorites: one listing off the main actor.
+    func preview(for retention: HistoryRetention) async -> RetentionPreviewCounts? {
+        await history.loadRetentionPreview(retention: retention, keeping: { self.heldCaptureIDs(for: retention) })
     }
 
     /// Takes away the desktop pictures' pieces kept for window screenshots once nothing uses them: no capture's

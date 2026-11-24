@@ -1,29 +1,93 @@
 import Foundation
+import Observation
 import OMSCore
 import SwiftUI
 
+public typealias RetentionPreview = @MainActor (HistoryRetention) async -> RetentionPreviewCounts?
+
 /// A retention change that would delete captures, waiting for the user to confirm it.
 struct RetentionChangeRequest: Identifiable {
+    let id = UUID()
     let retention: HistoryRetention
     /// How many captures it would delete now.
     let count: Int
     /// How many of them are favorites, which only turning History off deletes.
     let favorites: Int
+}
 
-    var id: String { retention.rawValue }
+@MainActor
+@Observable
+final class RetentionSelection: HistoryRetentionProposal {
+    private let settings: SettingsStore
+    private let preview: RetentionPreview
+    private(set) var counting: HistoryRetention?
+    private(set) var request: RetentionChangeRequest?
+    @ObservationIgnored private(set) var scan: Task<Void, Never>?
+
+    init(settings: SettingsStore, preview: @escaping RetentionPreview) {
+        self.settings = settings
+        self.preview = preview
+    }
+
+    isolated deinit { scan?.cancel() }
+
+    var binding: Binding<HistoryRetention> {
+        Binding(get: { self.settings.retentionProposal?.counting ?? self.settings.historyRetention }, set: { self.select($0) })
+    }
+
+    func select(_ retention: HistoryRetention, previewOnly: Bool = false) {
+        guard previewOnly || retention != settings.historyRetention else {
+            settings.replaceRetentionProposal(with: nil)
+            return
+        }
+        settings.replaceRetentionProposal(with: self)
+        counting = retention
+        scan = Task { [weak self, preview] in
+            guard !Task.isCancelled else { return }
+            let counts = await preview(retention)
+            guard let self, !Task.isCancelled else { return }
+            scan = nil
+            counting = nil
+            guard let counts else { return }
+            if counts.count > 0 || previewOnly {
+                request = RetentionChangeRequest(retention: retention, count: counts.count, favorites: counts.favorites)
+            } else {
+                settings.historyRetention = retention
+            }
+        }
+    }
+
+    func confirm(_ change: RetentionChangeRequest) {
+        guard request?.id == change.id else { return }
+        settings.historyRetention = change.retention
+    }
+
+    func dismiss(_ change: RetentionChangeRequest) {
+        guard request?.id == change.id else { return }
+        cancel()
+    }
+
+    func cancel() {
+        scan?.cancel()
+        scan = nil
+        counting = nil
+        request = nil
+    }
 }
 
 extension View {
-    /// Asks before a new retention deletes captures. Changes that delete nothing never reach here; see
-    /// `retentionSelection`.
-    func confirmingRetentionChange(_ request: Binding<RetentionChangeRequest?>, apply: @escaping (HistoryRetention) -> Void) -> some View {
-        confirmationDialog(
-            Self.retentionTitle(request.wrappedValue),
-            isPresented: Binding(get: { request.wrappedValue != nil }, set: { if !$0 { request.wrappedValue = nil } }),
-            presenting: request.wrappedValue
+    /// Asks before a new retention deletes captures. Changes that delete nothing never reach here.
+    func confirmingRetentionChange(_ selection: RetentionSelection) -> some View {
+        let request = selection.request
+        return confirmationDialog(
+            Self.retentionTitle(request),
+            isPresented: Binding(get: { selection.request != nil }, set: { presented in
+                if !presented, let request { selection.dismiss(request) }
+            }),
+            presenting: request
         ) { change in
             Button(role: .destructive) {
-                apply(change.retention)
+                selection.confirm(change)
             } label: {
                 Text("Delete ^[\(change.count) Capture](inflect: true)", bundle: .module)
             }
@@ -43,28 +107,6 @@ extension View {
         return change.retention == .never
             ? Text("Turn off Capture History?", bundle: .module)
             : Text("Keep captures for \(change.retention.duration)?", bundle: .module)
-    }
-}
-
-/// A binding for a retention picker: a choice that deletes nothing applies at once; one that would
-/// delete captures becomes a request to confirm.
-@MainActor
-func retentionSelection(
-    settings: SettingsStore,
-    expiredCount: @escaping (HistoryRetention) -> Int,
-    expiredFavoriteCount: @escaping (HistoryRetention) -> Int,
-    request: Binding<RetentionChangeRequest?>
-) -> Binding<HistoryRetention> {
-    Binding {
-        settings.historyRetention
-    } set: { retention in
-        guard retention != settings.historyRetention else { return }
-        let count = expiredCount(retention)
-        if count > 0 {
-            request.wrappedValue = RetentionChangeRequest(retention: retention, count: count, favorites: expiredFavoriteCount(retention))
-        } else {
-            settings.historyRetention = retention
-        }
     }
 }
 

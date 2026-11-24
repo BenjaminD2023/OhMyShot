@@ -21,7 +21,7 @@ struct HistorySelectionTests {
         actions.isBeingEdited = { editing.contains($0.fileName) }
         actions.fileToHandOver = handOver
         actions.filesToHandOver = handOverAll
-        let model = HistoryModel(store: store, settings: SettingsStore(defaults: defaults), actions: actions, expiredCount: { _ in 0 })
+        let model = HistoryModel(store: store, settings: SettingsStore(defaults: defaults), actions: actions)
         let items = (0..<count).map { HistoryItem(kind: .screenshot, pixelWidth: 10, pixelHeight: 10, appName: nil, fileName: "\($0).png") }
         model.items = items
         return (model, items)

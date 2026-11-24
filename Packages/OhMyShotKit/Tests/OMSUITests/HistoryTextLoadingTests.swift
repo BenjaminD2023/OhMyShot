@@ -67,7 +67,7 @@ struct HistoryTextLoadingTests {
             recognizeText: { _ in }, pin: { _ in }, moveToTrash: { _ in }
         )
         let model = HistoryModel(
-            store: store, settings: SettingsStore(defaults: UserDefaults()), actions: actions, expiredCount: { _ in 0 },
+            store: store, settings: SettingsStore(defaults: UserDefaults()), actions: actions,
             textLoader: { items, store in await loader.load(items, store) }
         )
         let item = HistoryItem(kind: .screenshot, pixelWidth: 1, pixelHeight: 1, appName: nil, fileName: "capture.png")

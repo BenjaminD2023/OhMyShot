@@ -93,15 +93,14 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
     private var readingShown: Task<Void, Never>?
 
     /// - Parameters:
-    ///   - expiredCount: how many captures a retention would delete now, so the window can ask before
-    ///     shortening it.
-    ///   - expiredFavoriteCount: how many of those are favorites, so turning History off says they go too.
+    ///   - retentionPreview: how many captures a retention would delete now, including how many favorites,
+    ///     so the window can ask before shortening it.
     ///   - textReader: what reads the captures' text, so the window can say while it does.
     public init(
         store: HistoryStore, settings: SettingsStore, actions: HistoryActions, textReader: HistoryTextReader?,
-        expiredCount: @escaping (HistoryRetention) -> Int, expiredFavoriteCount: @escaping (HistoryRetention) -> Int
+        retentionPreview: @escaping RetentionPreview
     ) {
-        model = HistoryModel(store: store, settings: settings, actions: actions, expiredCount: expiredCount, expiredFavoriteCount: expiredFavoriteCount)
+        model = HistoryModel(store: store, settings: settings, actions: actions, retentionPreview: retentionPreview)
         self.textReader = textReader
         let window = NSWindow(
             contentRect: CGRect(x: 0, y: 0, width: 920, height: 640),
@@ -180,7 +179,11 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
     /// Raises the confirmation that choosing `retention` would, or dismisses it with nil, without
     /// changing anything: for scripted checks of the dialog.
     public func previewRetentionChange(to retention: HistoryRetention?) {
-        model.retentionRequest = retention.map { RetentionChangeRequest(retention: $0, count: model.expiredCount($0), favorites: model.expiredFavoriteCount($0)) }
+        if let retention {
+            model.retention.select(retention, previewOnly: true)
+        } else {
+            model.retention.cancel()
+        }
     }
 
     /// Searches for `query` as if it were typed into the search field.

@@ -26,6 +26,16 @@ public enum HistoryRetention: String, CaseIterable, Sendable {
     }
 }
 
+public struct RetentionPreviewCounts: Equatable, Sendable {
+    public let count: Int
+    public let favorites: Int
+
+    public init(count: Int, favorites: Int) {
+        self.count = count
+        self.favorites = favorites
+    }
+}
+
 /// One capture kept in the history.
 public struct HistoryItem: Codable, Identifiable, Equatable, Sendable {
     public enum Kind: String, Codable, Sendable {
@@ -111,13 +121,24 @@ public final class HistoryStore: Sendable {
     private let fileNames = Mutex<[UUID: String]>([:])
     /// Writes a record's bytes to its sidecar; a test makes it fail.
     private let writeRecordData: @Sendable (Data, URL) throws -> Void
+    private let listDirectory: @Sendable (String) throws -> [String]
+    private let recordWrites = Mutex((active: 0, revision: UInt64(0)))
+
+    private var stableRecordRevision: UInt64? {
+        recordWrites.withLock { $0.active == 0 ? $0.revision : nil }
+    }
 
     public convenience init(directory: URL) {
         self.init(directory: directory) { try $0.write(to: $1, options: .atomic) }
     }
 
-    init(directory: URL, writingRecords: @escaping @Sendable (Data, URL) throws -> Void) {
+    init(
+        directory: URL,
+        listingDirectory: @escaping @Sendable (String) throws -> [String] = { try FileManager.default.contentsOfDirectory(atPath: $0) },
+        writingRecords: @escaping @Sendable (Data, URL) throws -> Void
+    ) {
         self.directory = directory
+        self.listDirectory = listingDirectory
         self.writeRecordData = writingRecords
     }
 
@@ -480,26 +501,30 @@ public final class HistoryStore: Sendable {
 
     /// Every item, newest first.
     public func items() -> [HistoryItem] {
-        readItems(cancelled: { false })
+        (try? readItems(checkCancellation: {})) ?? []
     }
 
     /// Directory enumeration and sidecar decoding for an open history window. Work stays off its actor
     /// and cancellation stops before reading the next file; a cancelled listing is never a partial list.
     @concurrent public func loadItems() async -> [HistoryItem] {
-        readItems(cancelled: { Task.isCancelled })
+        (try? readItems()) ?? []
     }
 
-    private func readItems(cancelled: () -> Bool) -> [HistoryItem] {
-        guard !cancelled() else { return [] }
-        guard let names = try? FileManager.default.contentsOfDirectory(atPath: directory.path(percentEncoded: false)) else { return [] }
-        var items: [HistoryItem] = []
+    private func visitItems(checkCancellation: () throws -> Void, _ visit: (HistoryItem) -> Void) throws {
+        try checkCancellation()
+        let names = try listDirectory(directory.path(percentEncoded: false))
         for name in names where name.hasSuffix(".json") {
-            guard !cancelled() else { return [] }
+            try checkCancellation()
             guard let item = record(at: directory.appending(path: name)),
                   FileManager.default.fileExists(atPath: fileURL(for: item).path(percentEncoded: false)) else { continue }
-            items.append(item)
+            visit(item)
         }
-        guard !cancelled() else { return [] }
+        try checkCancellation()
+    }
+
+    func readItems(checkCancellation: () throws -> Void = Task.checkCancellation) throws -> [HistoryItem] {
+        var items: [HistoryItem] = []
+        try visitItems(checkCancellation: checkCancellation) { items.append($0) }
         fileNames.withLock { names in
             for item in items { names[item.id] = item.fileName }
         }
@@ -592,7 +617,35 @@ public final class HistoryStore: Sendable {
     /// main actor took 17 ms with 300 captures and 280 ms with 5,000 (Docs/perf.md). The caller deletes; what it lists
     /// may have changed by then (see `CaptureRetention.removeExpired`).
     @concurrent public func loadExpired(retention: HistoryRetention, keeping: Set<UUID> = [], now: Date = .now) async -> [HistoryItem] {
-        Self.expired(readItems(cancelled: { Task.isCancelled }), retention: retention, keeping: keeping, now: now)
+        Self.expired((try? readItems()) ?? [], retention: retention, keeping: keeping, now: now)
+    }
+
+    /// A zero applies without confirmation, so discard it if a hold was released or a record was written during the scan.
+    @MainActor public func loadRetentionPreview(
+        retention: HistoryRetention, keeping: @MainActor () -> Set<UUID> = { [] }, now: Date = .now
+    ) async -> RetentionPreviewCounts? {
+        let held = keeping(), revision = stableRecordRevision
+        guard let counts = await countExpired(retention: retention, keeping: held, now: now), !Task.isCancelled else { return nil }
+        if counts.count == 0 {
+            guard let revision, held.isSubset(of: keeping()), revision == stableRecordRevision else { return nil }
+        }
+        return counts
+    }
+
+    @concurrent private func countExpired(retention: HistoryRetention, keeping: Set<UUID>, now: Date) async -> RetentionPreviewCounts? {
+        var count = 0, favorites = 0
+        do {
+            try visitItems(checkCancellation: Task.checkCancellation) { item in
+                guard Self.isExpired(item, retention: retention, keeping: keeping, now: now) else { return }
+                count += 1
+                if item.isFavorite { favorites += 1 }
+            }
+        } catch let error as CocoaError where error.code == .fileReadNoSuchFile || error.code == .fileNoSuchFile {
+            return Task.isCancelled ? nil : RetentionPreviewCounts(count: 0, favorites: 0)
+        } catch {
+            return nil
+        }
+        return RetentionPreviewCounts(count: count, favorites: favorites)
     }
 
     /// Of `expired`, listed off the main actor for a check made at `checkedAt`, the captures to delete now: none that
@@ -610,11 +663,13 @@ public final class HistoryStore: Sendable {
     }
 
     private static func expired(_ items: [HistoryItem], retention: HistoryRetention, keeping: Set<UUID>, now: Date) -> [HistoryItem] {
-        items.filter { item in
-            guard !keeping.contains(item.id) else { return false }
-            guard let interval = retention.interval else { return true }
-            return !item.isFavorite && now.timeIntervalSince(item.createdAt) > interval
-        }
+        items.filter { isExpired($0, retention: retention, keeping: keeping, now: now) }
+    }
+
+    private static func isExpired(_ item: HistoryItem, retention: HistoryRetention, keeping: Set<UUID>, now: Date) -> Bool {
+        guard !keeping.contains(item.id) else { return false }
+        guard let interval = retention.interval else { return true }
+        return !item.isFavorite && now.timeIntervalSince(item.createdAt) > interval
     }
 
     /// Deletes the expired items. Returns how many were removed.
@@ -632,6 +687,8 @@ public final class HistoryStore: Sendable {
 
     /// Writes `item`'s record beside its file.
     private func writeRecord(_ item: HistoryItem) throws {
+        recordWrites.withLock { $0.active += 1; $0.revision &+= 1 }
+        defer { recordWrites.withLock { $0.active -= 1 } }
         try writeRecordData(JSONEncoder.records.encode(item), sidecarURL(forFileName: item.fileName))
         fileNames.withLock { $0[item.id] = item.fileName }
     }

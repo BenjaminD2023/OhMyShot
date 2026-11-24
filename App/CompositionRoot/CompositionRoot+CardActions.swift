@@ -26,7 +26,6 @@ extension CompositionRoot {
             retention.releaseIfUnheld(item.id)
         }
         retention.removeExpired()
-        readTextSoon()
     }
 
     /// Settings' Upload after a capture: to the default destination, when there is one.
@@ -108,13 +107,9 @@ extension CompositionRoot {
 
     /// Has the text read in captures new to the history or with a new picture: now while the History window
     /// is open, else in a moment; not with history off, where they leave the history with their card.
-    func readTextSoon() {
+    func readTextSoon(_ entry: HistoryItem) {
         guard settings.historyRetention != .never else { return }
-        if historyWindow != nil {
-            textReader.readNow()
-        } else {
-            textReader.readSoon()
-        }
+        textReader.enqueue(entry, immediately: historyWindow != nil)
     }
 
     /// A capture's picture changed in the editor, or was turned, flipped, or scaled on its card: its card and
@@ -137,7 +132,7 @@ extension CompositionRoot {
             }
             await thumbnail?.value
             historyWindow?.reload(changed: [entry.id])
-            readTextSoon()
+            readTextSoon(entry)
         }
     }
 
@@ -330,8 +325,7 @@ extension CompositionRoot {
         historyActions.sharing.deleteFromStorage = { [weak self] entry in self?.uploads.deleteFromStorage(captureID: entry.id) }
         let controller = HistoryWindowController(
             store: history, settings: settings, actions: historyActions, textReader: textReader,
-            expiredCount: { [weak self] in self?.retention.expiredCount(for: $0) ?? 0 },
-            expiredFavoriteCount: { [weak self] in self?.retention.expiredFavoriteCount(for: $0) ?? 0 }
+            retentionPreview: { [weak self] in await self?.retention.preview(for: $0) }
         )
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in self?.historyWindow = nil }
         return controller

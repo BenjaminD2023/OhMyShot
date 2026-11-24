@@ -282,7 +282,7 @@ extension CompositionRoot {
         do {
             let entry = try await history.add(copyOf: url)
             historyWindow?.reload()
-            if entry.kind == .screenshot { readTextSoon() }
+            if entry.kind == .screenshot { readTextSoon(entry) }
             guard let item = await quickAccessItem(for: entry) else {
                 history.delete(entry)
                 throw CocoaError(.fileReadCorruptFile)

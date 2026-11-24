@@ -29,7 +29,7 @@ struct HistoryAsyncBenchmarks {
             recognizeText: { _ in }, pin: { _ in }, moveToTrash: { _ in }
         )
         let model = HistoryModel(
-            store: store, settings: SettingsStore(defaults: UserDefaults()), actions: actions, expiredCount: { _ in 0 },
+            store: store, settings: SettingsStore(defaults: UserDefaults()), actions: actions,
             textLoader: { _, _ in frozen }, searchDelay: .zero
         )
         defer { model.release() }
