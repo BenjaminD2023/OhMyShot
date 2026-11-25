@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-25
+
+### Capture, enregistrement et montage Studio plus fluides
+
+- **Défilement dans 4 directions et retardateur souple.** Faites défiler vers le bas, le haut, la gauche ou la droite à vitesse réglable ; modifiez le délai du retardateur directement à l’écran (`D` ou `1`–`5`) et annulez le décompte avec `Échap` ou un clic.
+- **Contrôle du micro avant et pendant l’enregistrement.** Vérifiez le niveau du micro en direct avant d’enregistrer, coupez ou réactivez le micro en cours d’enregistrement, mettez en pause ou activez Dessiner sur l’écran depuis la barre des menus, et choisissez la cadence et la taille dans la fenêtre Créer un GIF.
+- **Forme d’onde, volume général, recadrage et paquets Studio.** Affichez la forme d’onde audio sur la timeline, réglez le volume général avec fondus d’entrée/sortie et micro-fondus aux coupes, recadrez la vidéo de façon non destructive, déplacez ou redimensionnez les sections de vitesse et de coupe, naviguez avec `J`/`K`/`L`, pincez pour zoomer sur la timeline et exportez ou importez des paquets autonomes `.omsstudio`.
+
+### Annotation, OCR et traduction enrichis
+
+- **Annotation et copie plus rapides.** Double-cliquez sur un outil pour le verrouiller, gardez Masquer en main entre plusieurs tracés, copiez-collez des marques entre éditeurs, prélevez des couleurs sur le rendu composite, choisissez Copier et fermer ou Copier sans fermer (`⌘C`), ajustez le rayon des coins et la force du masquage, et lancez Reconnaître le texte ou Imprimer depuis l’éditeur.
+- **Panneau OCR zoomable, édition de tableaux et changement de langue rapide.** Zoomez et déplacez l’image dans le panneau OCR, modifiez les cellules de tableau sur place avec export CSV/TSV (RFC-4180), personnalisez les délimiteurs LaTeX des formules, changez la langue cible directement dans la loupe de traduction, et copiez, enregistrez ou épinglez l’image traduite.
+- **Langues OCR et miroirs de modèles.** Choisissez les langues de reconnaissance préférées, activez ou désactivez chaque pack de modèles séparément et définissez un miroir de téléchargement personnalisé dans Réglages.
+
+### Historique, épingles, Accès rapide et automatisation
+
+- **Outils avancés pour l’Historique, les épingles et l’Accès rapide.** Sélection multiple avec `⇧+Flèches`, filtres par date et app, espace disque affiché, annulation de la Corbeille pendant 5 secondes et collages multi-colonnes réorganisables ; cartes d’Accès rapide dans les quatre coins avec fermeture automatique en option ; restauration jusqu’à 5 épingles fermées avec leurs transformations.
+- **Raccourcis, schéma URL, Raycast et menu Partager étendus.** Nouvelles actions pour annoter ou traduire une zone, prélever une couleur, mesurer, dessiner sur l’écran, enregistrer le replay et envoyer une image (avec lien renvoyé), commandes Raycast associées, Reconnaître le texte dans le menu Partager, quatre nouveaux raccourcis globaux et gestion des apps refusées.
+- **Reconnaissance de code et fiabilité.** Suppression plus fiable des numéros de ligne sur gouttière étroite et préservation de `//` dans les commentaires chinois/japonais, métadonnées DPI Retina dans les PNG et suppression conjointe du paquet `.studio` lors de la mise à la Corbeille.
+
 ## [0.4.0] - 2026-11-22
 
 ### Plus de possibilités de montage dans Studio

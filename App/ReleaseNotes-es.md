@@ -2,6 +2,26 @@
 
 ## [Unreleased]
 
+## [0.5.0] - 2026-11-25
+
+### Captura, grabación y edición en Studio más ágiles
+
+- **Desplazamiento en 4 direcciones y temporizador flexible.** Captura con desplazamiento hacia abajo, arriba, izquierda o derecha con velocidad ajustable; cambia los segundos del temporizador en pantalla (`D` o `1`–`5`) y cancélalo con `Esc` o un clic.
+- **Control de audio previo y durante la grabación.** Comprueba el nivel del micrófono en vivo antes de grabar, siléncialo o actívalo durante la grabación, pausa o activa Dibujar en pantalla desde la barra de menús y elige la frecuencia y el tamaño desde el menú emergente Crear GIF.
+- **Forma de onda, volumen general, recorte y paquetes de Studio.** Visualiza la forma de onda del audio en la línea de tiempo, ajusta el volumen general con fundidos de entrada/salida y microfundidos en los cortes, recorta el vídeo de forma no destructiva, arrastra o redimensiona tramos de velocidad y cortes, controla la reproducción con `J`/`K`/`L`, haz zoom con pellizco en la línea de tiempo y exporta o importa paquetes independientes `.omsstudio`.
+
+### Anotación, OCR y traducción mejorados
+
+- **Flujo de marcado más rápido.** Haz doble clic en una herramienta para bloquearla, mantén Ocultar activo tras cada trazo, copia y pega marcas entre editores, toma colores del lienzo compuesto, elige entre Copiar y cerrar o Copiar sin cerrar (`⌘C`), ajusta el radio de esquinas y la intensidad de ocultación, y ejecuta Reconocer texto o Imprimir desde el editor.
+- **Panel OCR ampliable, edición de tablas y cambio rápido de idioma.** Amplía y desplaza imágenes en el panel OCR, edita celdas de tablas y exporta en CSV o TSV (RFC-4180), configura delimitadores LaTeX para fórmulas, cambia el idioma de destino directamente en la lupa de traducción y copia, guarda o fija la imagen traducida.
+- **Idiomas de OCR y espejos de modelos.** Configura idiomas preferidos de reconocimiento, activa o desactiva paquetes de modelos individualmente y añade un espejo de descarga personalizado en Ajustes.
+
+### Historial, fijados, Acceso rápido y automatización
+
+- **Más control en Historial, Fijados y Acceso rápido.** Selección múltiple con `⇧+Flecha`, filtros por fecha y app, uso de disco, deshacer Papelera durante 5 segundos y collages de varias columnas reordenables; tarjetas de Acceso rápido en las cuatro esquinas con cierre automático opcional; restauración de hasta 5 elementos fijados cerrados con sus transformaciones.
+- **Más acciones en Atajos, esquema URL, Raycast y Compartir.** Nuevas acciones para anotar área, traducir área, selector de color, medir, dibujar en pantalla, guardar repetición y subir imagen (devolviendo la URL), junto con comandos de Raycast, Reconocer texto en el menú Compartir, cuatro nuevos atajos globales y gestión de apps bloqueadas.
+- **Correcciones de código y fiabilidad.** Mejor eliminación de números de línea junto a márgenes estrechos y conservación de `//` en comentarios CJK, metadatos DPI Retina en PNG y limpieza conjunta de paquetes `.studio` al mover grabaciones a la Papelera.
+
 ## [0.4.0] - 2026-11-22
 
 ### Más formas de editar en Studio
