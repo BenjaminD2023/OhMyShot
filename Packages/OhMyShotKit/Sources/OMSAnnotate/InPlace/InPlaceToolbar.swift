@@ -20,6 +20,8 @@ final class InPlaceToolbar: NSView {
     }
 
     var onTool: ((AnnotationTool) -> Void)?
+    /// Double-clicking a single-shot tool chip locks or unlocks it so it stays in hand across marks.
+    var onLockTool: ((AnnotationTool) -> Void)?
     var onAction: ((Action) -> Void)?
 
     /// The rail's tools that in-place annotation offers, grouped and ordered as the editor's rail has them:
@@ -36,6 +38,7 @@ final class InPlaceToolbar: NSView {
     private var toolChips: [AnnotationTool: RailChip] = [:]
     private var actionChips: [Action: RailChip] = [:]
     private var selected: AnnotationTool? = .select
+    private var isLocked = false
     private var displayOptions: NSObjectProtocol?
 
     var hasSelectChip: Bool { toolChips[.select] != nil }
@@ -157,8 +160,23 @@ final class InPlaceToolbar: NSView {
     }
 
     /// Marks the tool in hand; nil defaults to `.select` (the selection itself or its marks are adjusted then).
-    func select(_ tool: AnnotationTool?) {
-        selected = tool ?? .select
+    func select(_ tool: AnnotationTool?, locked: Bool = false) {
+        let active = tool ?? .select
+        selected = active
+        isLocked = locked && active.isPutDownAfterMark
+        for (candidate, chip) in toolChips {
+            let chipLocked = candidate == active && isLocked
+            chip.setAccessibilityValue(chipLocked ? String(localized: "Locked", bundle: .module) : nil)
+            if candidate.isPutDownAfterMark {
+                let actionName = chipLocked
+                    ? String(localized: "Unlock Tool", bundle: .module)
+                    : String(localized: "Lock Tool", bundle: .module)
+                chip.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: actionName) { [weak self] in
+                    self?.onLockTool?(candidate)
+                    return true
+                }])
+            }
+        }
         applyAppearance()
     }
 
@@ -184,9 +202,12 @@ final class InPlaceToolbar: NSView {
             let hover = Theme.ChipFill.hoverColor(dark: dark, contrast: contrast)
             for (tool, chip) in toolChips {
                 let isSelected = tool == selected
+                let locked = isSelected && isLocked
                 chip.state = isSelected ? .on : .off
                 chip.contentTintColor = isSelected ? .controlAccentColor : .labelColor
                 chip.layer?.backgroundColor = isSelected ? highlight : chip.isHovered ? hover : .clear
+                chip.layer?.borderWidth = locked ? (contrast ? 2 : 1.5) : 0
+                chip.layer?.borderColor = locked ? NSColor.controlAccentColor.cgColor : nil
             }
             for (action, chip) in actionChips {
                 let enabled = switch action {
@@ -216,6 +237,9 @@ final class InPlaceToolbar: NSView {
         let name = tool.name
         let chip = makeChip(symbol: tool.symbol, name: name, help: tool.help)
         chip.setButtonType(.onOff)
+        if tool.isPutDownAfterMark {
+            chip.onDoubleClick = { [weak self] in self?.onLockTool?(tool) }
+        }
         toolChips[tool] = chip
         return chip
     }
@@ -224,7 +248,7 @@ final class InPlaceToolbar: NSView {
         let (symbol, name, help): (String, String, String) = switch action {
         case .undo: ("arrow.uturn.backward", String(localized: "Undo", bundle: .module), String(localized: "Undo (⌘Z)", bundle: .module))
         case .redo: ("arrow.uturn.forward", String(localized: "Redo", bundle: .module), String(localized: "Redo (⇧⌘Z)", bundle: .module))
-        case .openInEditor: ("arrow.up.forward.square", String(localized: "Open in Editor", bundle: .module), String(localized: "Open in the editor, to zoom, crop, or set a background", bundle: .module))
+        case .openInEditor: ("arrow.up.forward.square", String(localized: "Open in Editor", bundle: .module), String(localized: "Open in the editor, to zoom, crop, or set a background (⌘E)", bundle: .module))
         case .save: ("square.and.arrow.down", String(localized: "Save", bundle: .module), String(localized: "Save to the export folder (⌘S)", bundle: .module))
         case .pin: ("pin", String(localized: "Pin to Screen", bundle: .module), String(localized: "Pin over the selection (⇧⌘P)", bundle: .module))
         case .upload: ("icloud.and.arrow.up", String(localized: "Upload", bundle: .module), String(localized: "Upload to the default destination (⇧⌘U)", bundle: .module))

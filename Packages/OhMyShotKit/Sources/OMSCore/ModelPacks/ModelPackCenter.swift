@@ -13,9 +13,13 @@ public final class ModelPackCenter {
     public enum State: Equatable, Sendable {
         /// Nothing of it on this Mac.
         case available
+        /// An earlier version was installed and the catalog moved to a newer version; `carried` bytes were kept from it.
+        case updateAvailable(from: String, carried: Int64)
         /// Part of it downloaded, nothing running: `done` of its bytes.
         case paused(done: Int64)
         case downloading(done: Int64)
+        /// Downloaded and verified; compiling / warming models before first use.
+        case preparing(ModelPackStore.Receipt)
         case installed(ModelPackStore.Receipt)
         /// The last download failed, `done` of its bytes kept.
         case failed(message: String, done: Int64)
@@ -24,7 +28,9 @@ public final class ModelPackCenter {
     public private(set) var packs: [ModelPack]
     public private(set) var states: [String: State] = [:]
 
-    /// Told once a pack is installed, with its folder: where step 2 compiles and warms a model, in the reader.
+    /// Optional async preparation (compiling / warming models) run after download finishes and before `.installed`.
+    @ObservationIgnored public var prepareInstalled: (@MainActor (ModelPack, URL) async -> Void)?
+    /// Told once a pack is installed (and prepared, if `prepareInstalled` is set), with its folder.
     @ObservationIgnored public var onInstalled: ((ModelPack, URL) -> Void)?
     /// Told when a download fails (not when it is paused or cancelled), with why.
     @ObservationIgnored public var onFailed: ((ModelPack, String) -> Void)?
@@ -32,9 +38,13 @@ public final class ModelPackCenter {
     /// What was made from them elsewhere (Core ML's cache in the reader) can go too.
     @ObservationIgnored public var onRemoved: (() -> Void)?
 
+    /// Optional custom mirror provider (e.g. `https://hf-mirror.com`), tried before `huggingface.co`.
+    @ObservationIgnored public var customMirror: (@Sendable () -> String?)?
+
     @ObservationIgnored private let store: ModelPackStore
     @ObservationIgnored private let downloader: ModelPackDownloader
     @ObservationIgnored private var downloads: [String: Download] = [:]
+    @ObservationIgnored private var preparing: Set<String> = []
 
     private final class Download {
         var task: Task<Void, Never>?
@@ -46,8 +56,15 @@ public final class ModelPackCenter {
         }
     }
 
-    /// - Parameter packs: what the build offers; packs whose listing has a problem are left out.
-    public init(packs: [ModelPack] = ModelPackCatalog.packs, store: ModelPackStore, downloader: ModelPackDownloader) {
+    /// - Parameters:
+    ///   - packs: what the build offers; packs whose listing has a problem are left out.
+    ///   - customMirror: optional custom mirror provider used for license previews and downloads.
+    public init(
+        packs: [ModelPack] = ModelPackCatalog.packs,
+        store: ModelPackStore,
+        downloader: ModelPackDownloader,
+        customMirror: (@Sendable () -> String?)? = nil
+    ) {
         self.packs = packs.filter { pack in
             guard let problem = pack.problem else { return true }
             Log.modelPacks.error("Model pack \(pack.id, privacy: .public) left out: \(problem, privacy: .public)")
@@ -55,6 +72,7 @@ public final class ModelPackCenter {
         }
         self.store = store
         self.downloader = downloader
+        self.customMirror = customMirror
     }
 
     /// Whether the build offers any pack; with none, the app says nothing about them.
@@ -70,10 +88,15 @@ public final class ModelPackCenter {
         let store = store, packs = packs
         let (found, removed) = await Self.read(packs, in: store)
         if removed { onRemoved?() }
-        for pack in packs where downloads[pack.id] == nil {
+        for pack in packs where downloads[pack.id] == nil && !preparing.contains(pack.id) {
             let state = found[pack.id] ?? .available
-            if case .failed(let message, _) = states[pack.id], case .paused(let done) = state {
-                states[pack.id] = .failed(message: message, done: done)
+            if case .failed(let message, _) = states[pack.id] {
+                switch state {
+                case .paused(let done), .updateAvailable(_, let done):
+                    states[pack.id] = .failed(message: message, done: done)
+                default:
+                    states[pack.id] = state
+                }
             } else {
                 states[pack.id] = state
             }
@@ -88,6 +111,8 @@ public final class ModelPackCenter {
         for pack in packs {
             if let receipt = store.receipt(of: pack) {
                 states[pack.id] = .installed(receipt)
+            } else if let origin = store.updateOrigin(of: pack) {
+                states[pack.id] = .updateAvailable(from: origin, carried: store.downloaded(pack))
             } else if store.downloadStarted(pack) {
                 states[pack.id] = .paused(done: store.downloaded(pack))
             } else {
@@ -98,10 +123,13 @@ public final class ModelPackCenter {
         return (states, removed)
     }
 
-    /// The installed pack's folder, or nil when this version isn't installed.
+    /// The installed pack's folder, or nil when this version isn't installed or is still preparing.
     public func installedFolder(of pack: ModelPack) -> URL? {
-        if case .installed = state(of: pack) { return store.folder(of: pack) }
-        return store.receipt(of: pack) == nil ? nil : store.folder(of: pack)
+        switch state(of: pack) {
+        case .installed: return store.folder(of: pack)
+        case .preparing: return nil
+        default: return store.receipt(of: pack) == nil ? nil : store.folder(of: pack)
+        }
     }
 
     /// The license of an installed pack, read from its folder, or nil when the pack isn't installed.
@@ -116,22 +144,40 @@ public final class ModelPackCenter {
     }
 
     /// The text of the pack's license, fetched on its own (a few kilobytes) to be read before the download starts.
-    public func license(of pack: ModelPack) async throws -> String {
-        try await downloader.license(of: pack)
+    public func license(of pack: ModelPack, customMirror overrideMirror: String? = nil) async throws -> String {
+        try await downloader.license(of: pack, customMirror: overrideMirror ?? customMirror?())
     }
 
-    /// Downloads the pack, or goes on with a download paused or failed. Asking for one under way does nothing.
-    public func download(_ pack: ModelPack) {
-        guard packs.contains(pack), downloads[pack.id] == nil else { return }
-        if case .installed = state(of: pack) { return }
+    /// Fetches the pack's own `LICENSE.txt`, falling back to the bundled license text when the host is unreachable.
+    /// The pack's own `LICENSE.txt` is still downloaded and verified by SHA-256 during download.
+    public func licenseOrFallback(of pack: ModelPack, customMirror overrideMirror: String? = nil) async throws -> (text: String, isFallback: Bool) {
+        do {
+            return (try await license(of: pack, customMirror: overrideMirror), false)
+        } catch let error as ModelPackError {
+            if case .unreachable = error, let fallback = pack.fallbackLicenseText {
+                return (fallback, true)
+            }
+            throw error
+        }
+    }
+
+    /// Downloads the pack, or goes on with a download paused, update-available, or failed. Asking for one under way does nothing.
+    public func download(_ pack: ModelPack, customMirror overrideMirror: String? = nil) {
+        guard packs.contains(pack), downloads[pack.id] == nil, !preparing.contains(pack.id) else { return }
+        switch state(of: pack) {
+        case .installed, .preparing: return
+        default: break
+        }
         let download = Download()
         downloads[pack.id] = download
         states[pack.id] = .downloading(done: done(of: pack))
-        let downloader = downloader, id = pack.id
+        let downloader = downloader, store = store, id = pack.id
+        let mirror = overrideMirror ?? customMirror?()
         download.task = Task { [weak self] in
+            await Self.removing { store.clearUpdateOrigin(of: pack) }
             let outcome: Result<ModelPackStore.Receipt, Error>
             do {
-                let receipt = try await downloader.download(pack) { done in
+                let receipt = try await downloader.download(pack, customMirror: mirror) { done in
                     Task { @MainActor in self?.moved(id, to: done) }
                 }
                 outcome = .success(receipt)
@@ -162,6 +208,7 @@ public final class ModelPackCenter {
 
     /// Removes the pack from this Mac, a download under way included.
     public func remove(_ pack: ModelPack) {
+        preparing.remove(pack.id)
         if downloads[pack.id] != nil {
             stop(pack, .remove)
         } else {
@@ -182,8 +229,9 @@ public final class ModelPackCenter {
 
     private func done(of pack: ModelPack) -> Int64 {
         switch state(of: pack) {
+        case .updateAvailable(_, let carried): carried
         case .paused(let done), .downloading(let done), .failed(_, let done): done
-        case .available, .installed: 0
+        case .available, .preparing, .installed: 0
         }
     }
 
@@ -198,8 +246,20 @@ public final class ModelPackCenter {
         switch outcome {
         case .success(let receipt):
             downloads[pack.id] = nil
-            states[pack.id] = .installed(receipt)
-            onInstalled?(pack, store.folder(of: pack))
+            let folder = store.folder(of: pack)
+            if let prepareInstalled {
+                preparing.insert(pack.id)
+                states[pack.id] = .preparing(receipt)
+                await prepareInstalled(pack, folder)
+                let stillPreparing = preparing.remove(pack.id) != nil
+                if stillPreparing, states[pack.id] == .preparing(receipt) {
+                    states[pack.id] = .installed(receipt)
+                    onInstalled?(pack, folder)
+                }
+            } else {
+                states[pack.id] = .installed(receipt)
+                onInstalled?(pack, folder)
+            }
             let packs = packs
             let removed = await Self.removedUnused(keeping: packs, in: store)
             if removed { onRemoved?() }

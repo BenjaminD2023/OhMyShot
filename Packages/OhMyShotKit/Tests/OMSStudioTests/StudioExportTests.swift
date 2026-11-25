@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreImage
+import CoreMedia
 import CoreText
 import Foundation
 import Testing
@@ -669,6 +670,22 @@ struct StudioExportTests {
         context.draw(image, in: CGRect(x: -x, y: -(image.height - 1 - y), width: image.width, height: image.height))
         let bytes = try #require(context.data).assumingMemoryBound(to: UInt8.self)
         return (0..<3).map { Double(bytes[$0]) }
+    }
+
+    @Test func compositionHonorsProjectFramesPerSecondAndOutputMaxSide() async throws {
+        let source = try await Self.movie(seconds: 1)
+        defer { try? FileManager.default.removeItem(at: source) }
+        var project = StudioProject(
+            background: .color(red: 1, green: 1, blue: 1), padding: 0, outputMaxSide: 160, framesPerSecond: 30
+        )
+        project.shadow = 0
+        let renderer = StudioRenderer(
+            telemetry: Self.telemetry(), project: project, duration: 1, recordingSize: CGSize(width: 320, height: 200), background: nil
+        )
+        #expect(renderer.layout.canvas == CGSize(width: 160, height: 100))
+        let composition = try await StudioComposition.make(source: AVURLAsset(url: source), renderer: renderer, cuts: [])
+        #expect(composition.videoComposition.frameDuration == CMTime(value: 1, timescale: 30))
+        #expect(composition.videoComposition.renderSize == CGSize(width: 160, height: 100))
     }
 
     private static func gray(of image: CGImage, x: Int, y: Int) throws -> Double {

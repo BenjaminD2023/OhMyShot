@@ -1,5 +1,6 @@
 import AppKit
 import AVKit
+import CoreGraphics
 import OMSCore
 import OMSDesign
 import SwiftUI
@@ -16,7 +17,7 @@ struct StudioView: View {
             VStack(spacing: 0) {
                 PlayerArea(view: player)
                     // The chosen zoom is aimed over the movie itself.
-                    .overlay { StudioZoomAim(document: document) }
+                    .overlay { StudioZoomAim(document: document) { model.isAimingFocused = $0 } }
                     .padding(20)
                     .overlay { previewState }
                     .background(Color(nsColor: .underPageBackgroundColor))
@@ -33,11 +34,17 @@ struct StudioView: View {
         }
         .overlay {
             if let progress = model.progress {
+                let percent = Int((min(max(progress, 0), 1) * 100).rounded())
+                let label = model.exportLabel ?? (model.makesGIF
+                    ? String(localized: "Making the GIF…", bundle: .module)
+                    : String(localized: "Exporting…", bundle: .module))
                 VStack(spacing: 10) {
                     ProgressView(value: progress)
                         .frame(width: 180)
-                    Group {
-                        model.makesGIF ? Text("Making the GIF…", bundle: .module) : Text("Exporting…", bundle: .module)
+                    HStack(spacing: 6) {
+                        Text(verbatim: label)
+                        Text(verbatim: "\(percent)%")
+                            .monospacedDigit()
                     }
                     .font(.callout)
                     .foregroundStyle(.secondary)
@@ -52,7 +59,7 @@ struct StudioView: View {
                 .padding(.horizontal, 22)
                 .padding(.vertical, 16)
                 .windowNoticeCard()
-                .accessibilityElement(children: .combine)
+                .accessibilityElement(children: .contain)
             }
         }
         .toolbar { toolbar }
@@ -160,6 +167,8 @@ struct StudioView: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button { model.controller?.saveMovieAs() } label: { Text("Save As…", bundle: .module) }
+                Divider()
+                Button { model.controller?.exportProjectPackage() } label: { Text("Export Project Package…", bundle: .module) }
             } label: {
                 Label {
                     model.saved ? Text("Saved", bundle: .module) : Text("Save", bundle: .module)
@@ -226,6 +235,16 @@ struct TransportBar: View {
                 .font(.callout.monospacedDigit())
                 .foregroundStyle(.secondary)
                 .accessibilityLabel(Self.spokenPosition(of: document))
+            if model.shuttleRate != 0, model.shuttleRate != 1 {
+                let speed = Self.shuttleLabel(model.shuttleRate)
+                Text(verbatim: speed)
+                    .font(.callout.monospacedDigit())
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 6)
+                    .padding(.vertical, 2)
+                    .background(Color.primary.opacity(0.08), in: Capsule())
+                    .accessibilityLabel(Text("Playback speed \(speed)", bundle: .module))
+            }
             Spacer()
             Button {
                 document.addZoom()
@@ -237,6 +256,15 @@ struct TransportBar: View {
             .help(document.canAddZoom
                 ? Text("A zoom at the playhead, following the pointer", bundle: .module)
                 : Text("No room for a zoom at the playhead: move it past the zooms there", bundle: .module))
+            Button {
+                document.addSpeed()
+            } label: {
+                Label { Text("Add Speed", bundle: .module) } icon: { Image(systemName: "gauge.with.needle") }
+            }
+            .disabled(!document.canAddSpeed)
+            .help(document.canAddSpeed
+                ? Text("Play a stretch faster or slower from the playhead", bundle: .module)
+                : Text("No room for a speed stretch at the playhead: move it past the speeds there", bundle: .module))
             if document.canChangeLayoutAlongTheTimeline {
                 Button {
                     document.addCameraSegment()
@@ -256,8 +284,15 @@ struct TransportBar: View {
                 }
                 .help(Text("Put the chosen cut back in the movie", bundle: .module))
             } else {
-                // Nothing chosen yet: how to choose it, while the row has room to say so.
-                if document.selectedRange == nil {
+                if let range = document.selectedRange {
+                    Button {
+                        document.keepOnly(range)
+                    } label: {
+                        Label { Text("Keep Only", bundle: .module) } icon: { Image(systemName: "timeline.selection") }
+                    }
+                    .help(Text("Trim the movie to only the chosen range", bundle: .module))
+                } else {
+                    // Nothing chosen yet: how to choose it, while the row has room to say so.
                     ViewThatFits(in: .horizontal) {
                         Text("Drag along the clip to choose what to cut", bundle: .module)
                             .font(.callout)
@@ -315,6 +350,12 @@ struct TransportBar: View {
         value.formatted(.number.precision(.fractionLength(0...1))) + "×"
     }
 
+    /// A shuttle speed label: "2×", "4×", "−1×", "−2×".
+    static func shuttleLabel(_ rate: Float) -> String {
+        let magnitude = Int(abs(rate).rounded())
+        return rate < 0 ? "−\(magnitude)×" : "\(magnitude)×"
+    }
+
     /// A time as the transport shows it, in the inspector's clock but rounded down: 0:12.34, 1:02:09.40.
     static func format(_ seconds: Double) -> String {
         StudioTimeInput.clock(max(0, seconds), rounding: .down)
@@ -334,10 +375,18 @@ struct StudioInspector: View {
     var body: some View {
         ScrollViewReader { proxy in
             form
-                // A zoom chosen on the timeline brings its section, first in the inspector, into view.
+                // A zoom, cut, speed stretch, or layout chosen on the timeline brings its section into view.
                 .onChange(of: document.selectedZoom) { _, chosen in
                     guard chosen != nil else { return }
                     proxy.scrollTo(Self.chosenZoomID, anchor: .top)
+                }
+                .onChange(of: document.selectedCut) { _, chosen in
+                    guard chosen != nil else { return }
+                    proxy.scrollTo(Self.chosenCutID, anchor: .top)
+                }
+                .onChange(of: document.selectedSpeed) { _, chosen in
+                    guard chosen != nil else { return }
+                    proxy.scrollTo(Self.chosenSpeedID, anchor: .top)
                 }
                 .onChange(of: document.selectedSegment) { _, chosen in
                     guard chosen != nil else { return }
@@ -347,6 +396,8 @@ struct StudioInspector: View {
     }
 
     private static let chosenZoomID = "chosen-zoom"
+    private static let chosenCutID = "chosen-cut"
+    private static let chosenSpeedID = "chosen-speed"
     private static let chosenLayoutID = "chosen-layout"
 
     private var form: some View {
@@ -384,16 +435,45 @@ struct StudioInspector: View {
                         Text("Remove Zoom", bundle: .module)
                     }
                 } header: {
-                    Text("Chosen Zoom", bundle: .module)
+                    zoom.isAutomatic ? Text("Automatic Zoom", bundle: .module) : Text("Chosen Zoom", bundle: .module)
                 }
                 .id(Self.chosenZoomID)
+            }
+            if let cutStart = document.selectedCut,
+               let cutIndex = document.project.cuts.firstIndex(where: { $0.lowerBound == cutStart }) {
+                let cut = document.project.cuts[cutIndex]
+                Section {
+                    StudioTimeRangeFields(start: cut.lowerBound, end: cut.upperBound) { value, start in
+                        document.setCutEdge(at: cut.lowerBound, start: start, to: value) ?? cut
+                    }
+                    .id(cutIndex)
+                    Button(role: .destructive) {
+                        document.restoreCut(at: cut.lowerBound)
+                    } label: {
+                        Text("Restore Cut", bundle: .module)
+                    }
+                } header: {
+                    Text("Chosen Cut", bundle: .module)
+                }
+                .id(Self.chosenCutID)
             }
             // A stretch chosen on the clip, or a speed on the timeline: how fast it plays, beside Cut.
             if let rate = document.chosenRate {
                 Section {
+                    if let start = document.selectedSpeed,
+                       let speedIndex = document.project.speeds.firstIndex(where: { $0.start == start }) {
+                        let speed = document.project.speeds[speedIndex]
+                        StudioTimeRangeFields(start: speed.start, end: speed.end) { value, isStart in
+                            document.setSpeedEdge(at: speed.start, start: isStart, to: value) ?? speed.start...speed.end
+                        }
+                        .id(speedIndex)
+                    }
                     Picker(selection: Binding(get: { rate }, set: { document.setSpeed($0) })) {
                         Text("As recorded", bundle: .module).tag(1.0)
                         ForEach(StudioProject.speedRates, id: \.self) { rate in
+                            Text(verbatim: TransportBar.speed(rate)).tag(rate)
+                        }
+                        if rate != 1.0, !StudioProject.speedRates.contains(where: { abs($0 - rate) < 1e-6 }) {
                             Text(verbatim: TransportBar.speed(rate)).tag(rate)
                         }
                     } label: {
@@ -405,16 +485,22 @@ struct StudioInspector: View {
                         } label: {
                             Text("Remove Speed", bundle: .module)
                         }
-                    } else {
+                    } else if let range = document.selectedRange {
                         Button {
                             document.deleteSelection()
                         } label: {
                             Text("Cut", bundle: .module)
                         }
+                        Button {
+                            document.keepOnly(range)
+                        } label: {
+                            Text("Keep Only", bundle: .module)
+                        }
                     }
                 } header: {
                     document.selectedSpeed == nil ? Text("Chosen Stretch", bundle: .module) : Text("Chosen Speed", bundle: .module)
                 }
+                .id(Self.chosenSpeedID)
             }
             Section {
                 LazyVGrid(columns: Array(repeating: GridItem(.fixed(44), spacing: 8), count: 5), spacing: 8) {
@@ -525,6 +611,35 @@ struct StudioInspector: View {
                 LabeledSlider(title: Text("Shadow", bundle: .module), value: $document.project.shadow, range: 0...1, reading: Self.percent, document: document)
             } header: {
                 Text("Frame", bundle: .module)
+            }
+
+            Section {
+                Picker(selection: cropPresetChoice) {
+                    Text("Full", bundle: .module).tag(CropPreset.full)
+                    Text("16:9", bundle: .module).tag(CropPreset.widescreen)
+                    Text("4:3", bundle: .module).tag(CropPreset.standard)
+                    Text("1:1", bundle: .module).tag(CropPreset.square)
+                    Text("9:16", bundle: .module).tag(CropPreset.vertical)
+                    if cropPresetChoice.wrappedValue == .custom {
+                        Text("Custom", bundle: .module).tag(CropPreset.custom)
+                    }
+                } label: {
+                    Text("Preset", bundle: .module)
+                }
+                .accessibilityLabel(Text("Crop preset", bundle: .module))
+                LabeledSlider(title: Text("Left", bundle: .module), value: cropLeftBinding, range: 0...0.9, reading: Self.percent, document: document)
+                LabeledSlider(title: Text("Right", bundle: .module), value: cropRightBinding, range: 0...0.9, reading: Self.percent, document: document)
+                LabeledSlider(title: Text("Top", bundle: .module), value: cropTopBinding, range: 0...0.9, reading: Self.percent, document: document)
+                LabeledSlider(title: Text("Bottom", bundle: .module), value: cropBottomBinding, range: 0...0.9, reading: Self.percent, document: document)
+                if document.project.crop != nil {
+                    Button {
+                        document.resetCrop()
+                    } label: {
+                        Text("Reset Crop", bundle: .module)
+                    }
+                }
+            } header: {
+                Text("Crop", bundle: .module)
             }
 
             Section {
@@ -707,6 +822,21 @@ struct StudioInspector: View {
                         .font(.callout)
                         .foregroundStyle(.secondary)
                 }
+                if !document.automaticZooms.isEmpty {
+                    Button {
+                        document.resetToAutomaticZooms()
+                    } label: {
+                        Text("Reset to Automatic", bundle: .module)
+                    }
+                    .disabled(document.matchesAutomaticZooms)
+                }
+                if !document.project.zooms.isEmpty {
+                    Button(role: .destructive) {
+                        document.clearAllZooms()
+                    } label: {
+                        Text("Clear All Zooms", bundle: .module)
+                    }
+                }
             } header: {
                 Text("Zoom", bundle: .module)
             }
@@ -727,7 +857,19 @@ struct StudioInspector: View {
                         Text("What you typed is kept with this recording, on this Mac. Settings › Recording can keep shortcuts only, or no keys.", bundle: .module)
                             .font(.callout)
                             .foregroundStyle(.secondary)
+                    } else if document.telemetry.keystrokeMode == .shortcuts {
+                        Text("Only shortcuts were recorded", bundle: .module)
+                            .font(.callout)
+                            .foregroundStyle(.secondary)
                     }
+                } header: {
+                    Text("Keys", bundle: .module)
+                }
+            } else if document.telemetry.keystrokeMode == .shortcuts, !document.telemetry.keys.isEmpty {
+                Section {
+                    Text("Only shortcuts were recorded", bundle: .module)
+                        .font(.callout)
+                        .foregroundStyle(.secondary)
                 } header: {
                     Text("Keys", bundle: .module)
                 }
@@ -746,15 +888,56 @@ struct StudioInspector: View {
             // apart, else the recording's sound as one.
             if !document.sounds.isEmpty {
                 Section {
+                    Toggle(isOn: Binding(get: { document.project.audio.master.isMuted }, set: { document.setMasterMuted($0) })) {
+                        Text("Mute Audio", bundle: .module)
+                    }
+                    LabeledSlider(
+                        title: Text("Master volume", bundle: .module),
+                        value: $document.project.audio.master.volume,
+                        range: 0...1, reading: Self.percent, document: document
+                    )
+                    .disabled(document.project.audio.master.isMuted)
                     ForEach(document.sounds, id: \.self) { sound in
                         SoundLevelRow(sound: sound, document: document)
+                            .disabled(document.project.audio.master.isMuted)
                     }
+                    LabeledSlider(
+                        title: Text("Fade In", bundle: .module),
+                        value: Binding(get: { document.project.audio.fadeIn }, set: { document.setAudioFadeIn($0) }),
+                        range: 0...3, reading: Self.seconds, document: document
+                    )
+                    .disabled(document.project.audio.master.isMuted)
+                    LabeledSlider(
+                        title: Text("Fade Out", bundle: .module),
+                        value: Binding(get: { document.project.audio.fadeOut }, set: { document.setAudioFadeOut($0) }),
+                        range: 0...3, reading: Self.seconds, document: document
+                    )
+                    .disabled(document.project.audio.master.isMuted)
                 } header: {
                     Text("Audio", bundle: .module)
                 }
             }
 
             Section {
+                Picker(selection: resolutionChoice) {
+                    Text("Original", bundle: .module).tag(ResolutionChoice.original)
+                    Text("1080p", bundle: .module).tag(ResolutionChoice.p1080)
+                    Text("720p", bundle: .module).tag(ResolutionChoice.p720)
+                    if case .custom(let pixels) = resolutionChoice.wrappedValue {
+                        Text(verbatim: "\(pixels) px").tag(ResolutionChoice.custom(pixels))
+                    }
+                } label: {
+                    Text("Resolution", bundle: .module)
+                }
+                Picker(selection: Binding(
+                    get: { document.project.resolvedFramesPerSecond <= 30 ? 30 : 60 },
+                    set: { document.setFramesPerSecond($0 == 60 ? nil : $0) }
+                )) {
+                    Text("60 fps", bundle: .module).tag(60)
+                    Text("30 fps", bundle: .module).tag(30)
+                } label: {
+                    Text("Frame Rate", bundle: .module)
+                }
                 Picker(selection: Binding(get: { document.project.quality }, set: { document.setQuality($0) })) {
                     Text("Smaller file", bundle: .module).tag(StudioProject.Quality.smaller)
                     Text("Standard", bundle: .module).tag(StudioProject.Quality.standard)
@@ -762,10 +945,16 @@ struct StudioInspector: View {
                 } label: {
                     Text("Quality", bundle: .module)
                 }
-                // Follows the quality, the shape and padding, and the cuts; unknown when the recording's size is.
+                // Follows the resolution, quality, shape, padding, and cuts; byte estimate is unknown when the recording's size is.
+                let canvas = document.movieLayout().canvas
+                let dimensions = "\(Int(canvas.width)) × \(Int(canvas.height))"
                 if let bytes = document.estimatedMovieByteCount {
-                    Text(verbatim: StudioExporter.estimateDescription(byteCount: bytes))
-                        .font(.callout)
+                    Text(verbatim: "\(dimensions) · \(StudioExporter.estimateDescription(byteCount: bytes))")
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                } else {
+                    Text(verbatim: dimensions)
+                        .font(.callout.monospacedDigit())
                         .foregroundStyle(.secondary)
                 }
             } header: {
@@ -874,8 +1063,133 @@ struct StudioInspector: View {
             )
     }
 
+    private enum ResolutionChoice: Hashable {
+        case original
+        case p1080
+        case p720
+        case custom(Int)
+    }
+
+    private var resolutionChoice: Binding<ResolutionChoice> {
+        Binding {
+            switch document.project.outputMaxSide {
+            case nil: .original
+            case 1920: .p1080
+            case 1280: .p720
+            case let pixels?: .custom(pixels)
+            }
+        } set: { choice in
+            switch choice {
+            case .original: document.setOutputMaxSide(nil)
+            case .p1080: document.setOutputMaxSide(1920)
+            case .p720: document.setOutputMaxSide(1280)
+            case .custom(let pixels): document.setOutputMaxSide(pixels)
+            }
+        }
+    }
+
+    private enum CropPreset: Hashable {
+        case full
+        case widescreen
+        case standard
+        case square
+        case vertical
+        case custom
+
+        var ratio: Double? {
+            switch self {
+            case .full, .custom: nil
+            case .widescreen: 16.0 / 9
+            case .standard: 4.0 / 3
+            case .square: 1.0
+            case .vertical: 9.0 / 16
+            }
+        }
+    }
+
+    private var cropPresetChoice: Binding<CropPreset> {
+        Binding {
+            guard let crop = document.project.crop else { return .full }
+            let size = document.recordingSize
+            for preset in [CropPreset.widescreen, .standard, .square, .vertical] {
+                guard let ratio = preset.ratio,
+                      let expected = StudioProject.centeredCrop(aspectRatio: ratio, recordingSize: size) else { continue }
+                if abs(crop.minX - expected.minX) < 0.005
+                    && abs(crop.minY - expected.minY) < 0.005
+                    && abs(crop.width - expected.width) < 0.005
+                    && abs(crop.height - expected.height) < 0.005 {
+                    return preset
+                }
+            }
+            return .custom
+        } set: { preset in
+            switch preset {
+            case .full:
+                document.resetCrop()
+            case .widescreen, .standard, .square, .vertical:
+                if let ratio = preset.ratio {
+                    document.setCrop(StudioProject.centeredCrop(aspectRatio: ratio, recordingSize: document.recordingSize))
+                }
+            case .custom:
+                break
+            }
+        }
+    }
+
+    private var cropLeftBinding: Binding<Double> {
+        Binding {
+            Double(document.project.effectiveCrop.minX)
+        } set: { newValue in
+            let crop = document.project.effectiveCrop
+            let rightInset = max(0, 1.0 - Double(crop.maxX))
+            let left = min(max(newValue, 0), max(0, 0.9 - rightInset))
+            let width = max(0.1, 1.0 - left - rightInset)
+            document.setCrop(CGRect(x: left, y: Double(crop.minY), width: width, height: Double(crop.height)))
+        }
+    }
+
+    private var cropRightBinding: Binding<Double> {
+        Binding {
+            max(0, 1.0 - Double(document.project.effectiveCrop.maxX))
+        } set: { newValue in
+            let crop = document.project.effectiveCrop
+            let left = Double(crop.minX)
+            let right = min(max(newValue, 0), max(0, 0.9 - left))
+            let width = max(0.1, 1.0 - left - right)
+            document.setCrop(CGRect(x: left, y: Double(crop.minY), width: width, height: Double(crop.height)))
+        }
+    }
+
+    private var cropTopBinding: Binding<Double> {
+        Binding {
+            Double(document.project.effectiveCrop.minY)
+        } set: { newValue in
+            let crop = document.project.effectiveCrop
+            let bottomInset = max(0, 1.0 - Double(crop.maxY))
+            let top = min(max(newValue, 0), max(0, 0.9 - bottomInset))
+            let height = max(0.1, 1.0 - top - bottomInset)
+            document.setCrop(CGRect(x: Double(crop.minX), y: top, width: Double(crop.width), height: height))
+        }
+    }
+
+    private var cropBottomBinding: Binding<Double> {
+        Binding {
+            max(0, 1.0 - Double(document.project.effectiveCrop.maxY))
+        } set: { newValue in
+            let crop = document.project.effectiveCrop
+            let top = Double(crop.minY)
+            let bottom = min(max(newValue, 0), max(0, 0.9 - top))
+            let height = max(0.1, 1.0 - top - bottom)
+            document.setCrop(CGRect(x: Double(crop.minX), y: top, width: Double(crop.width), height: height))
+        }
+    }
+
     static func percent(_ value: Double) -> String {
         "\(Int((value * 100).rounded()))%"
+    }
+
+    static func seconds(_ value: Double) -> String {
+        "\(TransportBar.oneDecimal(value)) s"
     }
 
     /// The capsule swatch edge (black 0.18, white 0.38 in Dark; 0.40 and 0.60 under Increase Contrast),

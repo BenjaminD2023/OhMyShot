@@ -33,12 +33,14 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         addSubview(capsule)
         capsule.alphaValue = 0
 
-        rail.select(session.tool)
+        rail.select(session.tool, locked: session.isToolLocked)
         rail.onSelect = { [weak self] tool in self?.choose(tool) }
+        rail.onLock = { [weak self] tool in self?.lock(tool) }
         rail.keyedColors = { [weak self] in self?.canvas.keyedColors ?? [] }
         rail.markTarget = canvas
         capsule.bind(to: session, canvas: canvas) { [weak self] in self?.refreshCapsule() }
         capsule.onCropReset = { [weak self] in self?.canvas.resetCrop() }
+        capsule.onCropCancel = { [weak self] in self?.canvas.cancelCrop() }
         capsule.onCropRatio = { [weak self] ratio in self?.canvas.chooseCropRatio(ratio) }
         capsule.onCropDone = { [weak self] in
             guard let self else { return }
@@ -71,27 +73,43 @@ final class EditorContentView: NSView, NSPopoverDelegate {
     }
 
     private func choose(_ tool: AnnotationTool) {
-        session.tool = tool
+        if session.tool == tool, session.isToolLocked {
+            session.isToolLocked = false
+        } else {
+            session.tool = tool
+        }
+        window?.makeFirstResponder(canvas)
+    }
+
+    private func lock(_ tool: AnnotationTool) {
+        guard tool.isPutDownAfterMark else { return }
+        if session.tool == tool, session.isToolLocked {
+            session.isToolLocked = false
+            VoiceOver.announce(String(localized: "\(tool.name) unlocked", bundle: .module), from: rail)
+        } else {
+            session.lockTool(tool)
+            VoiceOver.announce(String(localized: "\(tool.name) locked", bundle: .module), from: rail)
+        }
         window?.makeFirstResponder(canvas)
     }
 
     private func sessionChanged(_ event: AnnotationSession.Event) {
         switch event {
         case .tool:
-            rail.select(session.tool)
+            rail.select(session.tool, locked: session.isToolLocked)
             if session.tool != .background { adjustPopover?.close() }
             refreshCapsule()
         case .selection, .settings:
             refreshCapsule()
         case .document:
             // The selected mark may have changed kind of settings (undo, a restyle elsewhere), or the
-            // background its fill.
-            if !session.selection.isEmpty || session.tool == .background || capsule.countsStaleSuggestions(of: session) { refreshCapsule() }
+            // background its fill, or the next counter number advanced.
+            if !session.selection.isEmpty || session.tool == .background || session.tool == .counter || capsule.countsStaleSuggestions(of: session) { refreshCapsule() }
             adjustments?.refresh()
         case .history:
             break
         case .suggestions:
-            if session.tool == .redact { refreshCapsule() }
+            if session.tool == .redact || session.currentKind == .redact { refreshCapsule() }
         case .textLines:
             if session.tool == .highlighter {
                 refreshCapsule()
@@ -106,12 +124,25 @@ final class EditorContentView: NSView, NSPopoverDelegate {
             capsule.showBackground(StyleCapsule.BackgroundState(
                 backdrop: session.document.backdrop,
                 lastPicture: BackdropPresets.shared.lastPicture,
-                blur: session.blurredCapture
+                blur: session.blurredCapture,
+                isPickingColor: canvas.isPickingColor
             ))
         } else {
             capsule.refresh(from: session, canvas: canvas)
         }
         placeCapsule()
+    }
+
+    /// Switches to Background mode and opens the Adjust popover scrolled/focused on Watermark.
+    func showWatermarkAdjustments() {
+        if session.tool != .background { session.tool = .background }
+        layoutSubtreeIfNeeded()
+        guard let chip = capsule.adjustChip else { return }
+        if let adjustPopover, adjustPopover.isShown {
+            adjustments?.focusWatermark()
+            return
+        }
+        showAdjustments(from: chip, focusingWatermark: true)
     }
 
     #if DEBUG
@@ -158,12 +189,16 @@ final class EditorContentView: NSView, NSPopoverDelegate {
         }
     }
 
-    private func showAdjustments(from chip: NSView) {
+    private func showAdjustments(from chip: NSView, focusingWatermark: Bool = false) {
         if let adjustPopover, adjustPopover.isShown {
-            adjustPopover.close()
+            if focusingWatermark {
+                adjustments?.focusWatermark()
+            } else {
+                adjustPopover.close()
+            }
             return
         }
-        let model = BackdropAdjustments(session: session)
+        let model = BackdropAdjustments(session: session, focusingWatermark: focusingWatermark)
         let hosting = NSHostingController(rootView: BackdropAdjustView(model: model))
         hosting.sizingOptions = .preferredContentSize
         let popover = NSPopover()

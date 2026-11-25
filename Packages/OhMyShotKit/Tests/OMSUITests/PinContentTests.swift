@@ -1,4 +1,7 @@
 import AppKit
+import CoreGraphics
+import Foundation
+import OMSCore
 import Testing
 @testable import OMSUI
 
@@ -21,8 +24,49 @@ struct PinColorTests {
         #expect(try #require(PinColor.parse("rgb(51 102 255 / 50%)")).hex == "#3366FF80")
     }
 
+    @Test func hslOKLCHAndDisplayP3ParseAndFormatAllColorFormats() throws {
+        let hsl = try #require(PinColor.parse("hsl(225, 100%, 60%)"))
+        #expect(hsl.hex == "#3366FF")
+        #expect(hsl.hsl == "hsl(225, 100%, 60%)")
+        let hsla = try #require(PinColor.parse("hsla(120deg, 100%, 50%, 0.5)"))
+        #expect(hsla.hex == "#00FF0080")
+        #expect(hsla.hsl == "hsla(120, 100%, 50%, 0.5)")
+        let turnHSL = try #require(PinColor.parse("hsl(0.5turn 100% 50%)"))
+        #expect(turnHSL.hex == "#00FFFF")
+
+        // Round-trip OKLCH through ScreenColor -> PinColor.parse.
+        let red = try #require(PinColor.parse("#FF0000"))
+        let parsedOKLCH = try #require(PinColor.parse(red.oklch))
+        #expect(abs(parsedOKLCH.red - 1) < 0.02 && parsedOKLCH.green < 0.03 && parsedOKLCH.blue < 0.03)
+        let translucentOKLCH = try #require(PinColor.parse("oklch(62.8% 0.258 29.2 / 50%)"))
+        #expect(abs(translucentOKLCH.alpha - 0.5) < 0.01)
+        #expect(translucentOKLCH.oklch.hasSuffix("/ 0.5)"))
+
+        // Display P3 preserves its native Display P3 CGColor and alpha.
+        let p3 = try #require(PinColor.parse("color(display-p3 1 0 0)"))
+        #expect(p3.original.colorSpace?.name == CGColorSpace.displayP3)
+        #expect(p3.displayP3 == "color(display-p3 1 0 0)")
+        let translucentP3 = try #require(PinColor.parse("color(display-p3 0.25 0.5 0.75 / 0.5)"))
+        #expect(translucentP3.original.colorSpace?.name == CGColorSpace.displayP3)
+        #expect(translucentP3.displayP3 == "color(display-p3 0.25 0.5 0.75 / 0.5)")
+
+        // Every ColorFormat maps to its matching formatted string.
+        for format in ColorFormat.allCases {
+            #expect(!red.string(in: format).isEmpty)
+        }
+        #expect(red.string(in: .hex) == red.hex)
+        #expect(red.string(in: .rgb) == red.rgb)
+        #expect(red.string(in: .hsl) == red.hsl)
+        #expect(red.string(in: .oklch) == red.oklch)
+        #expect(red.string(in: .displayP3) == red.displayP3)
+    }
+
     @Test func onlyAWholeColorIsAColor() {
-        for text in ["3366FF", "123456", "#3366F", "#GG66FF", "rgb(300, 0, 0)", "rgb(1, 2)", "The color is #3366FF", "#3366FF and more", ""] {
+        for text in [
+            "3366FF", "123456", "#3366F", "#GG66FF", "rgb(300, 0, 0)", "rgb(1, 2)",
+            "hsl(120, 100%, 150%)", "hsl(120, 50, 50%)", "oklch(1.5 0.2 30)",
+            "color(srgb 1 0 0)", "color(display-p3 1 0)", "The color is #3366FF", "#3366FF and more", "",
+        ] {
             #expect(PinColor.parse(text) == nil, "\(text)")
         }
     }
@@ -92,5 +136,15 @@ struct PinTextTests {
 
     @Test func trailingBlankLinesAreNotShown() {
         #expect(PinText.displayed("hello\n\n  \n") == "hello")
+    }
+
+    @Test func scrollableAttributedLinksOnlyHTTPAndHTTPS() {
+        let text = "Docs: https://example.com/guide and javascript:alert(1)"
+        let attributed = PinText.scrollableAttributed(text)
+        var urls: [URL] = []
+        attributed.enumerateAttribute(.link, in: NSRange(location: 0, length: attributed.length)) { value, _, _ in
+            if let url = value as? URL { urls.append(url) }
+        }
+        #expect(urls.map(\.absoluteString) == ["https://example.com/guide"])
     }
 }

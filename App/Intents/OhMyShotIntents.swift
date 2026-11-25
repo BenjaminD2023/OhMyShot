@@ -296,7 +296,92 @@ struct AnnotateImageIntent: AppIntent {
     }
 }
 
+struct UploadImageIntent: AppIntent {
+    static let title: LocalizedStringResource = "Upload Image"
+    static let description = IntentDescription("Upload an image to your default upload destination and return its link.")
+
+    @Parameter(title: "Image", supportedContentTypes: [.image])
+    var image: IntentFile
+
+    static var parameterSummary: some ParameterSummary {
+        Summary("Upload \(\.$image)")
+    }
+
+    @MainActor
+    func perform() async throws -> some IntentResult & ReturnsValue<URL> {
+        let actions = await ShortcutsBridge.current()
+        let link = try await actions.upload(image.data, filename: image.filename, type: image.type)
+        return .result(value: link)
+    }
+}
+
 // MARK: - Modes
+
+struct AnnotateAreaIntent: AppIntent {
+    static let title: LocalizedStringResource = "Annotate Area"
+    static let description = IntentDescription("Choose an area of the screen and annotate it right in place.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        try await run(.annotateArea(AutomationRegion()))
+        return .result()
+    }
+}
+
+struct TranslateAreaIntent: AppIntent {
+    static let title: LocalizedStringResource = "Translate Area"
+    static let description = IntentDescription("Drag over text on screen to translate it on this Mac.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        try await run(.translateArea(AutomationRegion()))
+        return .result()
+    }
+}
+
+struct PickColorIntent: AppIntent {
+    static let title: LocalizedStringResource = "Pick Color"
+    static let description = IntentDescription("Pick a color from the screen and copy it to the clipboard.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        try await run(.pickColor)
+        return .result()
+    }
+}
+
+struct MeasureScreenIntent: AppIntent {
+    static let title: LocalizedStringResource = "Measure Screen"
+    static let description = IntentDescription("Measure distances and element sizes on screen.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        try await run(.measure)
+        return .result()
+    }
+}
+
+struct DrawOnScreenIntent: AppIntent {
+    static let title: LocalizedStringResource = "Draw on Screen"
+    static let description = IntentDescription("Draw over the screen, or stop drawing while active.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        try await run(.drawOnScreen)
+        return .result()
+    }
+}
+
+struct SaveReplayIntent: AppIntent {
+    static let title: LocalizedStringResource = "Save Replay"
+    static let description = IntentDescription("Save the last 15 seconds buffered by Replay.")
+
+    @MainActor
+    func perform() async throws -> some IntentResult {
+        try await run(.saveReplay)
+        return .result()
+    }
+}
 
 struct RecordScreenIntent: AppIntent {
     static let title: LocalizedStringResource = "Record Screen"

@@ -11,9 +11,18 @@ import OMSDesign
 public final class TextSelectionHighlight {
     private var panel: NSPanel?
     private var shape: CAShapeLayer?
+    private var statusPanel: NSPanel?
+    private let statusCapsule = ReadingCapsule()
+    private var selectionRect: CGRect = .zero
+    private(set) var currentStatus: String?
     private var breathing: Task<Void, Never>?
+    private var slowNotice: Task<Void, Never>?
     private var windowLease: ActiveResources.Lease?
     private lazy var escape = EscapeHotKey { [weak self] in self?.escapePressed() }
+    /// Room around the reading capsule for its shadow: twice the blur (8) plus the drop (2).
+    private static let statusMargin: CGFloat = 8 * 2 + 2
+    /// Delay before showing the preparing capsule when recognition has no explicit status yet.
+    static var slowNoticeDelay: Duration = .milliseconds(1500)
 
     /// Told that Escape was pressed while the highlight showed, after it has gone: what it waited for should stop.
     /// While nil, Escape stays the app in front's.
@@ -21,12 +30,14 @@ public final class TextSelectionHighlight {
 
     public init() {}
 
-    /// Shows the highlight over `selection`, in AppKit's global coordinates, until `finish`. When the
-    /// text takes more than a second to read (a model's first use), the highlight breathes slowly so it
-    /// does not look stuck.
-    public func show(_ selection: CGRect) {
+    /// Shows the highlight over `selection`, in AppKit's global coordinates, until `finish`. When `status` is given,
+    /// a non-intrusive reading capsule appears beside the selection (for example, while sending a capture to a cloud
+    /// model, so automatic Cloud OCR is explicit and cancellable with Escape). When the text takes more than a second
+    /// to read (a model's first use), the highlight breathes slowly so it does not look stuck.
+    public func show(_ selection: CGRect, status: String? = nil) {
         let panel = self.panel ?? makePanel()
-        panel.setFrame(selection.integral, display: false)
+        selectionRect = selection.integral
+        panel.setFrame(selectionRect, display: false)
         if let shape {
             CATransaction.begin()
             CATransaction.setDisableActions(true)
@@ -38,6 +49,18 @@ public final class TextSelectionHighlight {
         panel.orderFrontRegardless()
         if windowLease == nil { windowLease = ActiveResources.shared.acquire(.window) }
         if onCancel != nil { escape.arm() }
+        updateStatus(status)
+
+        slowNotice?.cancel()
+        slowNotice = nil
+        if status == nil || status?.isEmpty == true {
+            let delay = Self.slowNoticeDelay
+            slowNotice = Task { [weak self] in
+                try? await Task.sleep(for: delay)
+                guard !Task.isCancelled, let self, self.panel != nil, self.currentStatus == nil else { return }
+                self.updateStatus(String(localized: "Preparing text recognition… · Esc", bundle: .module))
+            }
+        }
 
         breathing?.cancel()
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return }
@@ -55,23 +78,96 @@ public final class TextSelectionHighlight {
         }
     }
 
+    /// Shows, updates, or clears the reading capsule beside the active selection highlight.
+    public func updateStatus(_ status: String?) {
+        let previous = currentStatus
+        guard panel != nil, let status, !status.isEmpty else {
+            currentStatus = nil
+            statusPanel?.orderOut(nil)
+            statusPanel = nil
+            return
+        }
+        slowNotice?.cancel()
+        slowNotice = nil
+        currentStatus = status
+        let statusPanel = self.statusPanel ?? makeStatusPanel()
+        self.statusPanel = statusPanel
+        let screen = NSScreen.screens.first { $0.frame.intersects(selectionRect) } ?? NSScreen.main
+        let dark = (panel?.effectiveAppearance ?? NSApp.effectiveAppearance).isDark
+        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        statusCapsule.setScale(screen?.backingScaleFactor ?? 2)
+        statusCapsule.applyAppearance(dark: dark, contrast: contrast)
+        statusCapsule.text = status
+        statusCapsule.layer.isHidden = false
+        statusCapsule.layer.frame.origin = CGPoint(x: Self.statusMargin, y: Self.statusMargin)
+        CATransaction.commit()
+
+        let size = statusCapsule.layer.bounds.size
+        let visible = screen?.visibleFrame ?? selectionRect.insetBy(dx: -500, dy: -500)
+        let origin = Self.statusOrigin(capsuleSize: size, selection: selectionRect, visibleFrame: visible)
+        let frame = CGRect(origin: origin, size: size).insetBy(dx: -Self.statusMargin, dy: -Self.statusMargin)
+        statusPanel.setFrame(frame.integral, display: false)
+        statusPanel.alphaValue = 1
+        statusPanel.orderFrontRegardless()
+        if status != previous {
+            VoiceOver.announce(status)
+        }
+    }
+
+    /// Centers the status capsule 10 pt below the selection, flipping 10 pt above or tucking 10 pt inside when near
+    /// display edges, clamped 6 pt inside `visibleFrame` (DESIGN.md › Layout › Overlay).
+    static func statusOrigin(capsuleSize: CGSize, selection: CGRect, visibleFrame: CGRect) -> CGPoint {
+        let edgePad: CGFloat = 6
+        let offset: CGFloat = 10
+        let minX = visibleFrame.minX + edgePad
+        let maxX = max(minX, visibleFrame.maxX - edgePad - capsuleSize.width)
+        let x = min(max(selection.midX - capsuleSize.width / 2, minX), maxX)
+
+        let minY = visibleFrame.minY + edgePad
+        let maxY = max(minY, visibleFrame.maxY - edgePad - capsuleSize.height)
+        let below = selection.minY - offset - capsuleSize.height
+        let above = selection.maxY + offset
+        let y: CGFloat
+        if below >= minY {
+            y = below
+        } else if above <= maxY {
+            y = above
+        } else {
+            y = min(max(selection.minY + offset, minY), maxY)
+        }
+        return CGPoint(x: x.rounded(), y: y.rounded())
+    }
+
     /// Fades the highlight: slowly once `copied` text is on the clipboard, quickly with a beep when
     /// there was none (`nil`). Instant with Reduce Motion. `announces` tells VoiceOver the count or the
-    /// empty result, for when no card does; `formula` says what Capture Formula copied, or didn't.
-    public func finish(copied text: String?, announces: Bool, formula: Bool = false) {
+    /// empty result, for when no card does; `formula` says what Capture Formula copied, or didn't;
+    /// `announcement` overrides the default VoiceOver message when provided (for example, barcode fallback).
+    public func finish(copied text: String?, announces: Bool, formula: Bool = false, announcement: String? = nil) {
         escape.disarm()
+        slowNotice?.cancel()
+        slowNotice = nil
         breathing?.cancel()
         breathing = nil
+        currentStatus = nil
         if text == nil { NSSound.beep() }
         if announces {
-            let message = if formula {
+            let message = if let announcement {
+                announcement
+            } else if formula {
                 text == nil ? String(localized: "No formula found", bundle: .module) : String(localized: "Copied the formula as LaTeX", bundle: .module)
             } else {
                 text.map(TextResultCard.copiedCount) ?? String(localized: "No text found", bundle: .module)
             }
             VoiceOver.announce(message)
         }
-        guard let panel else { return }
+        let statusPanel = self.statusPanel
+        self.statusPanel = nil
+        guard let panel else {
+            statusPanel?.orderOut(nil)
+            return
+        }
         self.panel = nil
         shape?.removeAnimation(forKey: "breathe")
         shape = nil
@@ -80,10 +176,12 @@ public final class TextSelectionHighlight {
             context.duration = duration
             context.timingFunction = CAMediaTimingFunction(name: .easeIn)
             panel.animator().alphaValue = 0
+            statusPanel?.animator().alphaValue = 0
         }
         Task { [weak self] in
             if duration > 0 { try? await Task.sleep(for: .seconds(duration)) }
             panel.orderOut(nil)
+            statusPanel?.orderOut(nil)
             if self?.panel == nil {
                 self?.windowLease = nil
                 // The reading is done by now, and what it used freed (the selection's pixels, a TIFF's buffers): its
@@ -96,8 +194,13 @@ public final class TextSelectionHighlight {
     /// Takes the highlight away at once, without a sound: something else now shows the result, over it.
     public func hide() {
         escape.disarm()
+        slowNotice?.cancel()
+        slowNotice = nil
         breathing?.cancel()
         breathing = nil
+        currentStatus = nil
+        statusPanel?.orderOut(nil)
+        statusPanel = nil
         guard let panel else { return }
         self.panel = nil
         shape?.removeAnimation(forKey: "breathe")
@@ -142,6 +245,24 @@ public final class TextSelectionHighlight {
         panel.contentView = view
         self.panel = panel
         self.shape = shape
+        return panel
+    }
+
+    private func makeStatusPanel() -> NSPanel {
+        let panel = NSPanel(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        panel.isOpaque = false
+        panel.backgroundColor = .clear
+        panel.hasShadow = false
+        panel.ignoresMouseEvents = true
+        panel.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+        panel.collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .transient]
+        panel.hidesOnDeactivate = false
+        panel.isReleasedWhenClosed = false
+        panel.animationBehavior = .none
+        let view = NSView()
+        view.wantsLayer = true
+        view.layer?.addSublayer(statusCapsule.layer)
+        panel.contentView = view
         return panel
     }
 

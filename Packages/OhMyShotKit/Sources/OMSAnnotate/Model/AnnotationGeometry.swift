@@ -123,6 +123,23 @@ nonisolated extension Annotation {
         }
     }
 
+    /// Whether changing ink color applies to this mark.
+    public var supportsColor: Bool {
+        switch shape {
+        case .spotlight, .image, .magnifier: false
+        case .redaction(let redaction): redaction.method == .solid
+        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox, .textHighlight, .text, .counter: true
+        }
+    }
+
+    /// Whether changing stroke width / counter size applies to this mark.
+    public var supportsLineWidth: Bool {
+        switch shape {
+        case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .counter: true
+        case .text, .redaction, .spotlight, .highlightBox, .textHighlight, .image, .magnifier: false
+        }
+    }
+
     /// Whether `point` (pixels) is on the mark, within `tolerance` pixels. With `interior` false, marks
     /// that cover an area answer only near their edges.
     public func contains(_ point: CGPoint, tolerance: CGFloat, scale: CGFloat, interior: Bool = true) -> Bool {

@@ -9,9 +9,18 @@ struct CardKeysTests {
         #expect(CardKeys.command(for: .character("s"), modifiers: [.command, .shift]) == .saveAs)
         #expect(CardKeys.command(for: .character("e"), modifiers: .command) == .annotate)
         #expect(CardKeys.command(for: .space, modifiers: []) == .quickLook)
-        #expect(CardKeys.command(for: .escape, modifiers: []) == .close)
+        #expect(CardKeys.command(for: .escape, modifiers: []) == .releaseKeyboard)
+        #expect(CardKeys.command(for: .character("w"), modifiers: .command) == .close)
+        #expect(CardKeys.command(for: .character("w"), modifiers: [.command, .option]) == .closeAll)
         #expect(CardKeys.command(for: .delete, modifiers: .command) == .moveToTrash)
         #expect(CardKeys.command(for: .character("z"), modifiers: .command) == .undoTrash)
+    }
+
+    /// Escape gives the keyboard back without closing the card; Close in the menu shows ⌘W.
+    @Test func escapeReleasesKeyboardAndCloseShowsCommandW() {
+        #expect(CardKeys.binding(for: .releaseKeyboard) == .init(key: .escape, modifiers: [], command: .releaseKeyboard))
+        #expect(CardKeys.binding(for: .close) == .init(key: .character("w"), modifiers: .command, command: .close))
+        #expect(CardKeys.binding(for: .closeAll) == .init(key: .character("w"), modifiers: [.command, .option], command: .closeAll))
     }
 
     /// Delete alone means nothing: a card keeps the keys after a click, and a Delete typed for the app in front must

@@ -4,9 +4,8 @@ import Observation
 /// The cloud model the person reads with, kept in the app's defaults with its key in the Keychain, and where it reads
 /// by itself (Docs/ocr.md › Cloud models).
 ///
-/// One model: choosing a service in Settings › Text sets it up, and choosing Off removes it and its key. Choosing it
-/// is the person's yes to sending pictures there: from the Recognized Text window's Read with button whenever they
-/// press it, and on its own wherever they turn that on (every picture in that window, or Capture Text).
+/// One active model at a time: choosing a service in Settings › Text switches to it while preserving each service's
+/// saved configuration and Keychain key, and choosing Off disables cloud reading without discarding saved keys.
 @MainActor
 @Observable
 public final class CloudModelStore {
@@ -30,12 +29,15 @@ public final class CloudModelStore {
 
     @ObservationIgnored private let defaults: UserDefaults
     @ObservationIgnored public let secrets: any SecretStore
+    /// Saved configurations per service preset so switching services or turning Off preserves Keychain keys.
+    @ObservationIgnored private var savedModels: [String: CloudModel] = [:]
 
     /// The one secret a model has.
     public nonisolated static let keyField = "apiKey"
 
     private enum Key {
         static let model = "cloudModel"
+        static let savedModels = "cloudModelsByPreset"
         static let readsInPanel = "cloudReadsInPanel"
         static let readsCaptureText = "cloudReadsCaptureText"
         /// The first cut's list of models, the one used last, and the hosts agreed to (34f042b).
@@ -47,10 +49,14 @@ public final class CloudModelStore {
     public init(defaults: UserDefaults = .standard, secrets: any SecretStore) {
         self.defaults = defaults
         self.secrets = secrets
+        savedModels = defaults.data(forKey: Key.savedModels).flatMap { try? JSONDecoder().decode([String: CloudModel].self, from: $0) } ?? [:]
         model = defaults.data(forKey: Key.model).flatMap { try? JSONDecoder().decode(CloudModel.self, from: $0) }
         readsInPanel = defaults.bool(forKey: Key.readsInPanel)
         readsCaptureText = defaults.bool(forKey: Key.readsCaptureText)
         migrateFirstCut()
+        if let model {
+            savedModels[Self.presetKey(of: model)] = model
+        }
         hasKey = model.map { secrets.secret(Self.keyField, of: $0.id) != nil } ?? false
     }
 
@@ -93,13 +99,21 @@ public final class CloudModelStore {
         readsCaptureText ? usableModel : nil
     }
 
-    /// Sets up the model a preset starts, in place of the one there (whose key goes); nil turns cloud reading off,
-    /// removing the model and its key, and where it read by itself.
+    /// Switches to the saved or fresh model for `preset`, preserving the previous service's configuration and Keychain
+    /// key. Passing nil turns cloud reading off without deleting saved keys.
     public func choose(_ preset: CloudModel.Preset?) {
-        if let old = model { secrets.removeSecret(Self.keyField, of: old.id) }
-        model = preset?.makeModel()
-        hasKey = false
-        if model == nil {
+        if let old = model {
+            savedModels[Self.presetKey(of: old)] = old
+        }
+        if let preset {
+            var next = savedModels[preset.rawValue] ?? preset.makeModel()
+            next.preset = preset
+            savedModels[preset.rawValue] = next
+            model = next
+            hasKey = secrets.secret(Self.keyField, of: next.id) != nil
+        } else {
+            model = nil
+            hasKey = false
             readsInPanel = false
             readsCaptureText = false
         }
@@ -110,6 +124,7 @@ public final class CloudModelStore {
     public func update(_ edited: CloudModel) {
         guard let model, edited.id == model.id, edited != model else { return }
         self.model = edited
+        savedModels[Self.presetKey(of: edited)] = edited
         persist()
     }
 
@@ -122,10 +137,21 @@ public final class CloudModelStore {
         hasKey = true
     }
 
+    /// Explicitly removes the active model's API key from the Keychain.
+    public func clearKey() {
+        guard let model else { return }
+        secrets.removeSecret(Self.keyField, of: model.id)
+        hasKey = false
+    }
+
     /// The saved key, with `key` for this model as though saved: what Settings' Test reads with before it is stored.
     public func secrets(typing key: String?, for model: CloudModel) -> any SecretStore {
         let typed = key?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         return DraftSecretStore(typed: typed.isEmpty ? [:] : [Self.keyField: typed], id: model.id, base: secrets)
+    }
+
+    private static func presetKey(of model: CloudModel) -> String {
+        (model.preset ?? preset(of: model)).rawValue
     }
 
     private func persist() {
@@ -133,6 +159,11 @@ public final class CloudModelStore {
             defaults.set(try? JSONEncoder().encode(model), forKey: Key.model)
         } else {
             defaults.removeObject(forKey: Key.model)
+        }
+        if savedModels.isEmpty {
+            defaults.removeObject(forKey: Key.savedModels)
+        } else {
+            defaults.set(try? JSONEncoder().encode(savedModels), forKey: Key.savedModels)
         }
     }
 }

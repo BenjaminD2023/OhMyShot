@@ -1,10 +1,12 @@
 import AppKit
+import CoreGraphics
 import Foundation
 import Testing
 @testable import OMSAnnotate
 
 /// The kept-color chips in the style capsule, pressed directly: nothing is shown on screen.
 @MainActor
+@Suite(.serialized)
 struct KeptColorChipTests {
     private let scratch = ScratchDefaults()
 
@@ -107,5 +109,154 @@ struct KeptColorChipTests {
         let views = order(with)
         let first = try #require(views.firstIndex { $0.accessibilityLabel() == "Saved Color" })
         #expect(views[first - 1] is NSBox)
+    }
+
+    @Test func colorPanelElevatesAboveHighLevelHostWindowAndRestoresOnRelease() throws {
+        _ = NSApplication.shared
+        let capsule = makeCapsule()
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let hostLevel = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+        window.level = hostLevel
+        window.contentView?.addSubview(capsule)
+        defer {
+            capsule.releaseColorPanel()
+            window.close()
+            NSColorPanel.shared.orderOut(nil)
+        }
+
+        let originalLevel = NSColorPanel.shared.level
+        let originalHides = NSColorPanel.shared.hidesOnDeactivate
+        capsule.show(kind: .arrow, settings: ToolSettings.defaults(for: .arrow), hasSelection: false)
+        let wheel = try #require(chips(in: capsule, labeled: "Other Color…").first)
+
+        wheel.performClick(nil)
+        #expect(NSColorPanel.shared.level == NSWindow.Level(rawValue: hostLevel.rawValue + 1))
+        #expect(!NSColorPanel.shared.hidesOnDeactivate)
+
+        // Opening again while elevated must not overwrite the saved original state.
+        wheel.performClick(nil)
+        #expect(NSColorPanel.shared.level == NSWindow.Level(rawValue: hostLevel.rawValue + 1))
+        #expect(!NSColorPanel.shared.hidesOnDeactivate)
+
+        capsule.releaseColorPanel()
+        #expect(NSColorPanel.shared.level == originalLevel)
+        #expect(NSColorPanel.shared.hidesOnDeactivate == originalHides)
+    }
+
+    @Test func colorPanelRestoresWhenTakenOverByANormalLevelWindow() throws {
+        _ = NSApplication.shared
+        let elevatedCapsule = makeCapsule()
+        let elevatedWindow = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
+        elevatedWindow.isReleasedWhenClosed = false
+        let hostLevel = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+        elevatedWindow.level = hostLevel
+        elevatedWindow.contentView?.addSubview(elevatedCapsule)
+
+        let normalCapsule = makeCapsule()
+        let normalWindow = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
+        normalWindow.isReleasedWhenClosed = false
+        normalWindow.level = .normal
+        normalWindow.contentView?.addSubview(normalCapsule)
+
+        defer {
+            elevatedCapsule.releaseColorPanel()
+            normalCapsule.releaseColorPanel()
+            elevatedWindow.close()
+            normalWindow.close()
+            NSColorPanel.shared.orderOut(nil)
+        }
+
+        let originalLevel = NSColorPanel.shared.level
+        let originalHides = NSColorPanel.shared.hidesOnDeactivate
+        elevatedCapsule.show(kind: .arrow, settings: ToolSettings.defaults(for: .arrow), hasSelection: false)
+        normalCapsule.show(kind: .arrow, settings: ToolSettings.defaults(for: .arrow), hasSelection: false)
+
+        try #require(chips(in: elevatedCapsule, labeled: "Other Color…").first).performClick(nil)
+        #expect(NSColorPanel.shared.level == NSWindow.Level(rawValue: hostLevel.rawValue + 1))
+        #expect(!NSColorPanel.shared.hidesOnDeactivate)
+
+        try #require(chips(in: normalCapsule, labeled: "Other Color…").first).performClick(nil)
+        #expect(NSColorPanel.shared.level == originalLevel)
+        #expect(NSColorPanel.shared.hidesOnDeactivate == originalHides)
+    }
+
+    @Test func savedColorContextMenuLowersHighLevelHostWindowWhileTracking() throws {
+        _ = NSApplication.shared
+        let capsule = makeCapsule(keeping: [kept])
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 100), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let hostLevel = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+        window.level = hostLevel
+        window.contentView?.addSubview(capsule)
+        defer { window.close() }
+
+        capsule.show(kind: .arrow, settings: ToolSettings.defaults(for: .arrow), hasSelection: false)
+        let chip = try #require(chips(in: capsule, labeled: "Saved Color").first)
+        var levelDuringMenu: NSWindow.Level?
+        var menuTitles: [String] = []
+        chip.popUpMenu = { menu, _, _ in
+            levelDuringMenu = window.level
+            menuTitles = menu.items.map(\.title)
+        }
+
+        let rightClick = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        chip.rightMouseDown(with: rightClick)
+        #expect(menuTitles == ["Remove Saved Color"])
+        #expect(levelDuringMenu == NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1))
+        #expect(window.level == hostLevel)
+
+        levelDuringMenu = nil
+        let controlClick = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: .zero, modifierFlags: [.control], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        chip.mouseDown(with: controlClick)
+        #expect(levelDuringMenu == NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1))
+        #expect(window.level == hostLevel)
+    }
+
+    @Test func finishingInPlaceAnnotationReleasesElevatedColorPanel() throws {
+        _ = NSApplication.shared
+        let context = try #require(CGContext(
+            data: nil, width: 400, height: 200, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fill(CGRect(x: 0, y: 0, width: 400, height: 200))
+        let image = try #require(context.makeImage())
+        var cancelled = false
+        let annotator = InPlaceAnnotationView(
+            frame: image, scale: 1, size: CGSize(width: 400, height: 200), selection: CGRect(x: 40, y: 40, width: 120, height: 80),
+            actions: .init(copy: { _ in }, save: { _ in }, openInEditor: { _ in }, cancel: { cancelled = true })
+        )
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        let hostLevel = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
+        window.level = hostLevel
+        window.contentView = annotator
+        defer {
+            annotator.capsule.releaseColorPanel()
+            window.close()
+            NSColorPanel.shared.orderOut(nil)
+        }
+
+        let originalLevel = NSColorPanel.shared.level
+        let originalHides = NSColorPanel.shared.hidesOnDeactivate
+        annotator.session.tool = .arrow
+        let wheel = try #require(chips(in: annotator.capsule, labeled: "Other Color…").first)
+        wheel.performClick(nil)
+        #expect(NSColorPanel.shared.level == NSWindow.Level(rawValue: hostLevel.rawValue + 1))
+        #expect(!NSColorPanel.shared.hidesOnDeactivate)
+
+        // First backOut puts down .arrow to .select; second cancels and calls finish -> releaseColorPanel().
+        annotator.backOut()
+        annotator.backOut()
+        #expect(cancelled)
+        #expect(NSColorPanel.shared.level == originalLevel)
+        #expect(NSColorPanel.shared.hidesOnDeactivate == originalHides)
     }
 }

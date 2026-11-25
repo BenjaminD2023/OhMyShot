@@ -67,7 +67,8 @@ extension SettingsTab {
                     String(localized: "Snap the selection to text", bundle: .module),
                     String(localized: "Find QR codes and barcodes", bundle: .module),
                     String(localized: "All-In-One remembers the last area", bundle: .module),
-                ], keywords: String(localized: "SEARCH_KEYWORDS_SELECTING", defaultValue: "cursor, mouse, aspect ratio, ratio, scan code", bundle: .module)),
+                    String(localized: "Hide desktop icons while capturing", bundle: .module),
+                ], keywords: String(localized: "SEARCH_KEYWORDS_SELECTING", defaultValue: "cursor, mouse, aspect ratio, ratio, scan code, desktop icons", bundle: .module)),
                 SettingsSearchRow(String(localized: "Magnifier", bundle: .module), terms: [
                     String(localized: "Size", bundle: .module),
                 ], keywords: String(localized: "SEARCH_KEYWORDS_MAGNIFIER", defaultValue: "loupe, zoom, lens, pixel", bundle: .module)),
@@ -103,9 +104,16 @@ extension SettingsTab {
                     String(localized: "Convert to sRGB", bundle: .module),
                     String(localized: "Add a 1 px border", bundle: .module),
                     String(localized: "Add a watermark", bundle: .module),
+                    String(localized: "Watermark text", bundle: .module),
+                    String(localized: "Tone", bundle: .module),
+                    String(localized: "Opacity", bundle: .module),
+                    String(localized: "Size", bundle: .module),
                 ], keywords: String(localized: "SEARCH_KEYWORDS_PICTURES", defaultValue: "resolution, 2x, HiDPI, color profile, color space, outline", bundle: .module)),
                 SettingsSearchRow(String(localized: "File name", bundle: .module), terms: [
                     String(localized: "Ask for a name when saving", bundle: .module),
+                    String(localized: "Edit as Text", bundle: .module),
+                    String(localized: "Restore Default", bundle: .module),
+                    String(localized: "Reset Counter", bundle: .module),
                 ], keywords: String(localized: "SEARCH_KEYWORDS_FILE_NAME", defaultValue: "filename, naming, pattern, template, date, counter", bundle: .module)),
                 SettingsSearchRow(String(localized: "Clipboard", bundle: .module), terms: [
                     String(localized: "Picture only", bundle: .module),
@@ -115,8 +123,10 @@ extension SettingsTab {
         case .quickAccess:
             [
                 SettingsSearchRow(String(localized: "Position", bundle: .module), terms: [
-                    String(localized: "Bottom left", bundle: .module),
-                    String(localized: "Bottom right", bundle: .module),
+                    String(localized: "Bottom Left", bundle: .module),
+                    String(localized: "Bottom Right", bundle: .module),
+                    String(localized: "Top Left", bundle: .module),
+                    String(localized: "Top Right", bundle: .module),
                 ], keywords: String(localized: "SEARCH_KEYWORDS_QUICK_ACCESS_POSITION", defaultValue: "corner, placement, overlay, thumbnail", bundle: .module)),
                 SettingsSearchRow(String(localized: "Size", bundle: .module), terms: [
                     String(localized: "Small", bundle: .module),
@@ -128,6 +138,7 @@ extension SettingsTab {
                 ], keywords: String(localized: "SEARCH_KEYWORDS_QUICK_ACCESS_DISPLAY", defaultValue: "monitor, screen, multiple displays, external display", bundle: .module)),
                 SettingsSearchRow(String(localized: "Close cards", bundle: .module), terms: [
                     String(localized: "Save and close", bundle: .module),
+                    String(localized: "Close card after action", bundle: .module),
                 ], keywords: String(localized: "SEARCH_KEYWORDS_CLOSE_CARDS", defaultValue: "auto close, dismiss, timeout, hide automatically", bundle: .module)),
             ]
         case .recording:
@@ -152,7 +163,7 @@ extension SettingsTab {
                 ], keywords: String(localized: "SEARCH_KEYWORDS_KEYSTROKES", defaultValue: "keyboard, typing, key presses, show keys", bundle: .module)),
                 SettingsSearchRow(String(localized: "Studio", bundle: .module), terms: [
                     String(localized: "Keep the keys pressed", bundle: .module),
-                ], keywords: String(localized: "SEARCH_KEYWORDS_STUDIO", defaultValue: "keystrokes, key presses, record keys", bundle: .module)),
+                ], keywords: String(localized: "SEARCH_KEYWORDS_STUDIO", defaultValue: "keystrokes, key presses, record keys, Input Monitoring", bundle: .module)),
                 SettingsSearchRow(String(localized: "Frame rate", bundle: .module), keywords: String(localized: "SEARCH_KEYWORDS_FRAME_RATE", defaultValue: "fps, frames per second, smooth", bundle: .module)),
                 SettingsSearchRow(String(localized: "Video format", bundle: .module), terms: [
                     String(localized: "HEVC", bundle: .module),
@@ -179,16 +190,29 @@ extension SettingsTab {
                 SettingsSearchRow(String(localized: "Recognized Text", bundle: .module), terms: [
                     String(localized: "Wrap text to window", bundle: .module),
                 ], keywords: String(localized: "SEARCH_KEYWORDS_RECOGNIZED_TEXT", defaultValue: "OCR panel, OCR window, word wrap", bundle: .module)),
+                SettingsSearchRow(String(localized: "Recognition languages", bundle: .module), terms: [
+                    String(localized: "Automatic", bundle: .module),
+                ], keywords: String(localized: "SEARCH_KEYWORDS_RECOGNITION_LANGUAGES", defaultValue: "OCR, languages, Korean, Russian, Arabic, Japanese, Chinese, script, BCP-47", bundle: .module)),
                 SettingsSearchRow(String(localized: "Text from apps", bundle: .module), terms: [
+                    String(localized: "Use the app’s own characters", bundle: .module),
                     String(localized: "Accessibility", bundle: .module),
-                ], keywords: String(localized: "SEARCH_KEYWORDS_TEXT_FROM_APPS", defaultValue: "exact text, characters, app text", bundle: .module)),
+                ], keywords: String(localized: "SEARCH_KEYWORDS_TEXT_FROM_APPS", defaultValue: "exact text, characters, app text, AppText", bundle: .module)),
                 SettingsSearchRow(String(localized: "Translate into", bundle: .module), keywords: String(localized: "SEARCH_KEYWORDS_TRANSLATE_INTO", defaultValue: "translation, translate, target language", bundle: .module)),
                 SettingsSearchRow(String(localized: "Model packs", bundle: .module), keywords: String(localized: "SEARCH_KEYWORDS_MODEL_PACKS", defaultValue: "download, model, formula, LaTeX, math, table, VLM, PaddleOCR", bundle: .module)),
+                SettingsSearchRow(String(localized: "Download mirror", bundle: .module), terms: [
+                    String(localized: "Default (Hugging Face)", bundle: .module),
+                    "hf-mirror.com",
+                ], keywords: String(localized: "SEARCH_KEYWORDS_DOWNLOAD_MIRROR", defaultValue: "mirror, Hugging Face, hf-mirror, proxy", bundle: .module)),
+                SettingsSearchRow(String(localized: "Formula format", bundle: .module), terms: [
+                    "$…$",
+                    "$$…$$",
+                    #"\(…\)"#,
+                ], keywords: String(localized: "SEARCH_KEYWORDS_FORMULA_FORMAT", defaultValue: "Plain LaTeX, formula delimiter, math delimiter, dollar", bundle: .module)),
                 SettingsSearchRow(String(localized: "Cloud reading", bundle: .module), terms: [
                     String(localized: "API key", bundle: .module),
                     String(localized: "Base URL", bundle: .module),
                     String(localized: "Model", bundle: .module),
-                ], keywords: String(localized: "SEARCH_KEYWORDS_CLOUD_READING", defaultValue: "AI, LLM, OpenAI, cloud OCR, GPT, Gemini, Claude", bundle: .module)),
+                ], keywords: String(localized: "SEARCH_KEYWORDS_CLOUD_READING", defaultValue: "AI, LLM, OpenAI, cloud OCR, GPT, Gemini, Claude, Ollama, Qwen, local model", bundle: .module)),
             ]
         case .tools:
             [
@@ -234,6 +258,7 @@ extension SettingsTab {
                 SettingsSearchRow(String(localized: "Approved apps", bundle: .module), terms: [
                     String(localized: "Command-line tools", bundle: .module),
                 ], keywords: String(localized: "SEARCH_KEYWORDS_APPROVED_APPS", defaultValue: "Terminal, CLI, command line, scripts", bundle: .module)),
+                SettingsSearchRow(String(localized: "Blocked apps", bundle: .module), keywords: String(localized: "SEARCH_KEYWORDS_BLOCKED_APPS", defaultValue: "denied, refused, unblock, callers", bundle: .module)),
             ]
         case .permissions:
             Permission.allCases.map { SettingsSearchRow($0.title, keywords: $0.searchKeywords) }

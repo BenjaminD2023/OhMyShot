@@ -234,6 +234,39 @@ struct AllInOneSetupTests {
         let result = run(["escape"])
         #expect(result.cancelled && result.chose.isEmpty)
     }
+
+    @Test func deleteBackspaceSpaceAndWLeaveAreaSetup() {
+        let cases: [(String, AllInOneSetupView.ExitTarget)] = [
+            ("backspace", .area),
+            ("delete", .area),
+            ("space", .window),
+            ("w", .windowPicker),
+        ]
+        for (action, expected) in cases {
+            let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: true)
+            var chose: [AllInOneChoice] = []
+            var exited: [AllInOneSetupView.ExitTarget] = []
+            var cancelled = false
+            view.onChoose = { choice, _, _ in chose.append(choice) }
+            view.onReturnToSelection = { exited.append($0) }
+            view.onCancel = { cancelled = true }
+            _ = view.debugAct(action)
+            #expect(exited == [expected], "\(action)")
+            #expect(chose.isEmpty && !cancelled, "\(action)")
+        }
+    }
+
+    /// While typing a size in the fields, Backspace, Space, and W stay in the field instead of leaving setup.
+    @Test func typingInSizeFieldsDoesNotLeaveSetupOnBackspaceSpaceOrW() throws {
+        let (view, window, _) = try typing("640")
+        var exited: [AllInOneSetupView.ExitTarget] = []
+        view.onReturnToSelection = { exited.append($0) }
+        #expect(window.firstResponder is NSText)
+        _ = view.debugAct("backspace")
+        _ = view.debugAct("space")
+        _ = view.debugAct("w")
+        #expect(exited.isEmpty)
+    }
 }
 
 /// Capture Area's size control: All-In-One's frame with only Capture, the size, and the shape on its bar.
@@ -385,6 +418,146 @@ struct AreaSizeControlTests {
         _ = view.debugAct("escape")
         #expect(cancelled)
     }
+
+    @Test func sizingControlIgnoresAllInOneExitKeys() {
+        let (view, chose, passedOn) = control()
+        var exited: [AllInOneSetupView.ExitTarget] = []
+        view.onReturnToSelection = { exited.append($0) }
+        for key in ["backspace", "delete", "space", "w"] {
+            _ = view.debugAct(key)
+        }
+        #expect(exited.isEmpty && chose().isEmpty && passedOn.keys == 4)
+    }
+
+    @Test func annotateSizingBarShowsAnnotateWhileCaptureSizingShowsCapture() {
+        let capture = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: false, kind: .sizing, annotates: false)
+        let annotate = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: false, kind: .sizing, annotates: true)
+        #expect(capture.primaryActionTitle == "Capture")
+        #expect(annotate.primaryActionTitle == "Annotate")
+    }
+}
+
+/// Shared `AreaSetupView` behaviors across All-In-One, Recording, and Scrolling setups (`U-05`, `M-04`, `U-23`).
+@MainActor
+struct AreaSetupSharedBehaviorTests {
+    private static let display = DisplayInfo(
+        id: 1, name: "Test", frame: CGRect(x: 0, y: 0, width: 800, height: 600), pixelSize: CGSize(width: 1600, height: 1200),
+        backingScale: 2, maximumPotentialEDR: 1
+    )
+    private static let area = CGRect(x: 100, y: 200, width: 300, height: 150)
+
+    private func keyEvent(_ keyCode: UInt16, characters: String = "", modifiers: NSEvent.ModifierFlags = []) throws -> NSEvent {
+        try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: modifiers, timestamp: 0, windowNumber: 0, context: nil,
+            characters: characters, charactersIgnoringModifiers: characters, isARepeat: false, keyCode: keyCode
+        ))
+    }
+
+    private func mouseEvent(_ type: NSEvent.EventType, in view: NSView, atFlipped point: CGPoint) throws -> NSEvent {
+        let location = view.convert(point, to: nil)
+        return try #require(NSEvent.mouseEvent(
+            with: type, location: location, modifierFlags: [], timestamp: 0, windowNumber: view.window?.windowNumber ?? 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+    }
+
+    /// `U-05`: Pressing Escape or right-clicking during a move or resize adjustment restores the original area
+    /// instead of keeping the partial drag; right-clicking while idle cancels setup.
+    @Test func escapeAndRightClickRestoreOriginalAreaDuringMoveAndResize() throws {
+        let view = AllInOneSetupView(display: Self.display, area: Self.area, offersUpload: false)
+        var cancelled = 0
+        view.onCancel = { cancelled += 1 }
+        let localStart = AreaFrame.local(Self.area, on: Self.display)
+
+        // Move drag cancelled with Escape restores `Self.area`.
+        let inside = CGPoint(x: localStart.midX, y: localStart.midY)
+        view.mouseDown(with: try mouseEvent(.leftMouseDown, in: view, atFlipped: inside))
+        view.mouseDragged(with: try mouseEvent(.leftMouseDragged, in: view, atFlipped: CGPoint(x: inside.x + 80, y: inside.y + 40)))
+        #expect(view.adjustment != nil && view.area != Self.area)
+        view.keyDown(with: try keyEvent(53, characters: "\u{1b}"))
+        #expect(view.adjustment == nil && view.area == Self.area && cancelled == 0)
+
+        // Resize drag (bottom-right corner) cancelled with right-click restores `Self.area`.
+        let corner = CGPoint(x: localStart.maxX, y: localStart.maxY)
+        view.mouseDown(with: try mouseEvent(.leftMouseDown, in: view, atFlipped: corner))
+        view.mouseDragged(with: try mouseEvent(.leftMouseDragged, in: view, atFlipped: CGPoint(x: corner.x + 60, y: corner.y + 50)))
+        #expect(view.adjustment != nil && view.area != Self.area)
+        view.rightMouseDown(with: try mouseEvent(.rightMouseDown, in: view, atFlipped: corner))
+        #expect(view.adjustment == nil && view.area == Self.area && cancelled == 0)
+
+        // Right-click while not adjusting cancels setup.
+        view.rightMouseDown(with: try mouseEvent(.rightMouseDown, in: view, atFlipped: inside))
+        #expect(cancelled == 1)
+    }
+
+    /// `M-04` + `U-23`: RecordingSetupView supports arrow-key nudge/resize, Tab pixel size editing, and updates
+    /// `bar.recordsWindow` when dragging a new area over a `.window` target.
+    @Test func recordingSetupSupportsNudgeTabSizingAndWindowToAreaSync() throws {
+        let view = RecordingSetupView(display: Self.display, target: .area(Self.area), choices: RecordingChoices())
+        let window = NSWindow(contentRect: Self.display.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+        window.contentView = view
+        window.makeFirstResponder(view)
+        view.layoutSubtreeIfNeeded()
+
+        // Arrow-key nudge and Shift/Option variants work via inherited AreaSetupView.nudge.
+        view.keyDown(with: try keyEvent(124)) // right (+1 pt)
+        #expect(view.target == .area(Self.area.offsetBy(dx: 1, dy: 0)))
+        view.keyDown(with: try keyEvent(125, modifiers: .shift)) // shift-down (-10 pt in y-up global space)
+        #expect(view.target == .area(Self.area.offsetBy(dx: 1, dy: -10)))
+        view.keyDown(with: try keyEvent(124, modifiers: .option)) // option-right (+1 pt width)
+        if case .area(let resized) = view.target {
+            #expect(resized.width == Self.area.width + 1)
+        } else {
+            Issue.record("Expected .area target after Option-Right")
+        }
+
+        // Tab opens on-demand pixel size capsule and typing sets the area size.
+        #expect(!view.isEditingSize)
+        view.keyDown(with: try keyEvent(48, characters: "\t"))
+        #expect(view.isEditingSize)
+        let editor = try #require(window.firstResponder as? NSTextView)
+        editor.insertText("800", replacementRange: NSRange(location: 0, length: (editor.string as NSString).length))
+        editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        #expect(!view.isEditingSize && window.firstResponder === view)
+        if case .area(let typed) = view.target {
+            #expect(typed.width == 400)
+        } else {
+            Issue.record("Expected .area target after typing width")
+        }
+
+        // U-23: Starting from a `.window` target and dragging a new area switches `bar.recordsWindow` to false.
+        let winTarget = WindowTarget(id: 9, frame: CGRect(x: 100, y: 100, width: 200, height: 200), ownerName: "Safari", title: "Docs")
+        let windowSetup = RecordingSetupView(display: Self.display, target: .window(winTarget), choices: RecordingChoices())
+        #expect(windowSetup.bar.recordsWindow)
+        windowSetup.mouseDown(with: try mouseEvent(.leftMouseDown, in: windowSetup, atFlipped: CGPoint(x: 450, y: 100)))
+        windowSetup.mouseDragged(with: try mouseEvent(.leftMouseDragged, in: windowSetup, atFlipped: CGPoint(x: 650, y: 300)))
+        windowSetup.mouseUp(with: try mouseEvent(.leftMouseUp, in: windowSetup, atFlipped: CGPoint(x: 650, y: 300)))
+        #expect(!windowSetup.bar.recordsWindow)
+        if case .area = windowSetup.target {} else {
+            Issue.record("Expected target to switch from .window to .area after dragging outside")
+        }
+    }
+
+    /// `M-04`: ScrollingSetupView supports arrow-key nudge/resize and Tab pixel size editing.
+    @Test func scrollingSetupSupportsArrowNudgeAndTabPixelSizing() throws {
+        let view = ScrollingSetupView(display: Self.display, area: Self.area)
+        let window = NSWindow(contentRect: Self.display.frame, styleMask: [.borderless], backing: .buffered, defer: true)
+        window.contentView = view
+        window.makeFirstResponder(view)
+        view.layoutSubtreeIfNeeded()
+
+        view.keyDown(with: try keyEvent(124))
+        #expect(view.area == Self.area.offsetBy(dx: 1, dy: 0))
+        view.keyDown(with: try keyEvent(124, modifiers: .option))
+        #expect(view.area.width == Self.area.width + 1)
+
+        view.keyDown(with: try keyEvent(48, characters: "\t"))
+        let editor = try #require(window.firstResponder as? NSTextView)
+        editor.insertText("640", replacementRange: NSRange(location: 0, length: (editor.string as NSString).length))
+        editor.doCommand(by: #selector(NSResponder.insertNewline(_:)))
+        #expect(view.area.width == 320 && window.firstResponder === view)
+        #expect(view.barSizeSummary.hasPrefix("640 × "))
+    }
 }
 
 /// The bar before an area: how it is chosen and what it is for are two marks, and the second can be let go.
@@ -417,7 +590,7 @@ struct AllInOneBarTests {
         bar.showModes(true)
         bar.usesWindowPreview(true, takesW: true)
         #expect(bar.help(for: .area) == "Drag to capture an area (A)")
-        #expect(bar.help(for: .window) == "Choose an app and preview its window (W)")
+        #expect(bar.help(for: .window) == "All Windows (W) · Space selects on screen")
         #expect(bar.help(for: .fullscreen) == "Capture this whole screen (F)")
         #expect(bar.help(for: .text) == "Drag over text to copy it (O)")
         // All-In-One's Text and Scrolling point at a window with W as with Space; the tools on their own take Space.

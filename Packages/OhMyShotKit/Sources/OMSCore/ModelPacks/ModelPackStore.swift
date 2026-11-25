@@ -43,6 +43,25 @@ public struct ModelPackStore: Sendable {
     }
 
     static let receiptName = "Receipt.json"
+    static let updateOriginName = "UpdatedFrom.txt"
+
+    /// The previously installed version that `pack`'s staged download replaces, if an update cleared it away.
+    public func updateOrigin(of pack: ModelPack) -> String? {
+        let url = downloadFolder(of: pack).appending(path: Self.updateOriginName)
+        guard let data = try? Data(contentsOf: url) else { return nil }
+        let version = String(decoding: data, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+        return version.isEmpty ? nil : version
+    }
+
+    /// Removes the update-origin marker once a download is explicitly resumed or installed.
+    public func clearUpdateOrigin(of pack: ModelPack) {
+        try? FileManager.default.removeItem(at: downloadFolder(of: pack).appending(path: Self.updateOriginName))
+    }
+
+    private func recordUpdateOrigin(_ version: String, for pack: ModelPack) {
+        guard let staging = try? prepareDownload(of: pack) else { return }
+        try? Data(version.utf8).write(to: staging.appending(path: Self.updateOriginName), options: .atomic)
+    }
 
     /// The receipt of the pack's version, when that version is installed.
     public func receipt(of pack: ModelPack) -> Receipt? {
@@ -93,6 +112,7 @@ public struct ModelPackStore: Sendable {
     /// already there without a receipt (left by a version cut off while it was being installed) is replaced.
     func install(_ pack: ModelPack, now: Date = .now) throws -> Receipt {
         let staging = downloadFolder(of: pack), target = folder(of: pack)
+        clearUpdateOrigin(of: pack)
         // To the second, as the receipt keeps it.
         let installed = Date(timeIntervalSince1970: now.timeIntervalSince1970.rounded(.down))
         let receipt = Receipt(id: pack.id, version: pack.version, size: pack.size, installed: installed)
@@ -147,6 +167,7 @@ public struct ModelPackStore: Sendable {
                 if !entry.hasSuffix(".download"), receipt(of: pack) == nil,
                    manager.fileExists(atPath: old.appending(path: Self.receiptName).path(percentEncoded: false)) {
                     let carried = carryOver(from: old, to: pack)
+                    recordUpdateOrigin(entry, for: pack)
                     if carried > 0 { Log.modelPacks.notice("Carried \(carried, privacy: .public) files of \(id, privacy: .public) \(entry, privacy: .public) over to \(pack.version, privacy: .public)") }
                 }
                 if (try? manager.removeItem(at: old)) != nil { removed.append("\(id)/\(entry)") }

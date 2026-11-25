@@ -6,6 +6,7 @@ import ImageIO
 import Testing
 @testable import OMSRecording
 
+@Suite(.serialized)
 struct GIFMakerTests {
     @Test(arguments: [65_535, 65_536, 120_000, 131_071])
     func longFrameDelaysAreSplitWithoutLosingTime(delay: Int) throws {

@@ -6,7 +6,7 @@ import CoreGraphics
 /// them.
 public enum SelfTimerTarget: Equatable {
     case area(CGRect)
-    /// With the keys held as it was clicked: Shift turns its background the other way round.
+    /// With the keys held as it was clicked: Option turns its background the other way round.
     case window(WindowTarget, NSEvent.ModifierFlags)
     case windows([WindowTarget], NSEvent.ModifierFlags)
 

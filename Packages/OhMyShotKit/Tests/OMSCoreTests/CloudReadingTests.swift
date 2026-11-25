@@ -490,6 +490,12 @@ struct CloudReaderTests {
         #expect(resources.isIdle)
     }
 
+    @Test func testConfigurationUsesThirtySecondTimeouts() {
+        let config = CloudReader.testConfiguration()
+        #expect(config.timeoutIntervalForRequest == 30)
+        #expect(config.timeoutIntervalForResource == 30)
+    }
+
     @Test func cancellingStopsTheReading() async throws {
         let host = "silent.test"
         let secrets = InMemorySecretStore()
@@ -542,24 +548,48 @@ struct CloudModelStoreTests {
         #expect(CloudModelStore(defaults: defaults, secrets: secrets).model == edited)
     }
 
-    @Test func anotherServiceOrOffTakesTheKeyAway() throws {
+    @Test func switchingServicesOrOffPreservesKeysAndClearKeyRemovesActiveKey() throws {
         let (store, defaults, secrets, cleanup) = try makeStore()
         defer { cleanup() }
         store.choose(.anthropic)
+        let claudeID = try #require(store.model?.id)
         try store.setKey("k1")
         store.readsInPanel = true
         store.readsCaptureText = true
+
         store.choose(.qwen)
+        let qwenID = try #require(store.model?.id)
         #expect(store.model?.model == "qwen3-vl-plus")
-        #expect(secrets.count == 0)
+        #expect(!store.hasKey)
+        // Claude's key is preserved in Keychain when switching to Qwen.
+        #expect(secrets.secret(CloudModelStore.keyField, of: claudeID) == "k1")
         #expect(store.readsCaptureText)
         try store.setKey("k2")
+        #expect(store.hasKey)
+
+        // Switching Off preserves both keys while clearing active toggles.
         store.choose(nil)
         #expect(store.model == nil)
-        #expect(secrets.count == 0)
+        #expect(!store.hasKey)
         #expect(!store.readsInPanel && !store.readsCaptureText)
+        #expect(secrets.secret(CloudModelStore.keyField, of: claudeID) == "k1")
+        #expect(secrets.secret(CloudModelStore.keyField, of: qwenID) == "k2")
+
+        // Switching back to Claude restores its model and saved key.
+        store.choose(.anthropic)
+        #expect(store.model?.id == claudeID)
+        #expect(store.hasKey)
+        #expect(store.usableModel?.id == claudeID)
+
+        // Explicit clearKey removes only the active service's key.
+        store.clearKey()
+        #expect(!store.hasKey)
+        #expect(store.usableModel == nil)
+        #expect(secrets.secret(CloudModelStore.keyField, of: claudeID) == nil)
+        #expect(secrets.secret(CloudModelStore.keyField, of: qwenID) == "k2")
+
         let reopened = CloudModelStore(defaults: defaults, secrets: secrets)
-        #expect(reopened.model == nil && !reopened.readsCaptureText)
+        #expect(reopened.model?.id == claudeID && !reopened.hasKey)
     }
 
     @Test func theFirstCutsModelUsedLastIsKeptWithItsKey() throws {

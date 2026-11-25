@@ -11,8 +11,10 @@ struct QuickAccessSettingsView: View {
                 HelpTopic(String(localized: "Show on the display with the pointer", bundle: .module), Text("Cards stand on the display the capture was taken on. With this on they stand on the display where the pointer is when the capture is taken.", bundle: .module)),
             ]) {
                 Picker(selection: $settings.quickAccessCorner) {
-                    Text("Bottom left", bundle: .module).tag(QuickAccessCorner.bottomLeft)
-                    Text("Bottom right", bundle: .module).tag(QuickAccessCorner.bottomRight)
+                    Text("Bottom Left", bundle: .module).tag(QuickAccessCorner.bottomLeft)
+                    Text("Bottom Right", bundle: .module).tag(QuickAccessCorner.bottomRight)
+                    Text("Top Left", bundle: .module).tag(QuickAccessCorner.topLeft)
+                    Text("Top Right", bundle: .module).tag(QuickAccessCorner.topRight)
                 } label: {
                     Text("Position", bundle: .module)
                 }
@@ -39,7 +41,8 @@ struct QuickAccessSettingsView: View {
             SettingsDivider()
 
             SettingsRow(String(localized: "Close cards", bundle: .module), help: [
-                HelpTopic(String(localized: "Close cards", bundle: .module), Text("A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in General, without asking for a name, and keeps the card if that fails.", bundle: .module)),
+                HelpTopic(String(localized: "Close cards", bundle: .module), Text("A card waits while the pointer is over it, its menu is open, it is being dragged, Quick Look shows it, it has the keyboard, the editor has its capture open, or its upload is going. It then has at least 4 seconds more, or the selected delay if shorter. Close leaves the capture in Capture History, unless History is set to Never in General, when a card that was not saved takes its capture with it; Save and Close also saves a copy to the folder in Screenshots, without asking for a name, and keeps the card if that fails.", bundle: .module)),
+                HelpTopic(String(localized: "Close card after action", bundle: .module), Text("Closes a card after copying, saving, pinning, printing, sharing, or dragging it out. Turn this off to keep cards open for multiple actions, or hold Option while clicking Copy or Save.", bundle: .module)),
             ]) {
                 VStack(alignment: .leading, spacing: 6) {
                     HStack(spacing: 6) {
@@ -67,6 +70,9 @@ struct QuickAccessSettingsView: View {
                         .labelsHidden()
                         .fixedSize()
                         .disabled(settings.quickAccessCloseAfter == 0)
+                    }
+                    Toggle(isOn: $settings.quickAccessClosesAfterAction) {
+                        Text("Close card after action", bundle: .module)
                     }
                     if settings.quickAccessPreferences.closingDiscardsUnsavedCaptures(history: settings.historyRetention) {
                         SettingsWarning(Text("History is off: a card that closes unsaved takes its capture with it.", bundle: .module))

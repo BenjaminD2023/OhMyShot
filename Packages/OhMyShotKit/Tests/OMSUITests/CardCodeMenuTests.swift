@@ -78,6 +78,35 @@ struct CardCodeMenuTests {
         }
         #expect(try offered(by: card).map(\.payload) == ["ticket 4821"])
     }
+
+    @Test func structuredPayloadsShowTailoredMenuTitlesAndActions() async throws {
+        let card = try card()
+        let wifi = "WIFI:T:WPA;S:StudioNet;P:s3cr3t;;"
+        let mail = "mailto:hello@example.com?subject=Hi"
+        let tel = "tel:+1-555-0100"
+        let vcard = "BEGIN:VCARD\nVERSION:3.0\nFN:Ada Lovelace\nEMAIL:ada@example.com\nEND:VCARD"
+        card.lookForCodes {
+            [
+                FoundCode(payload: wifi, isMatrix: true, box: .zero),
+                FoundCode(payload: mail, isMatrix: true, box: .zero),
+                FoundCode(payload: tel, isMatrix: true, box: .zero),
+                FoundCode(payload: vcard, isMatrix: true, box: .zero),
+            ]
+        }
+        card.setHovering(true)
+        for _ in 0..<100 where card.foundCodes.isEmpty {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        let menu = try #require(card.menu(for: try rightClick()))
+        let codeItems = menu.items.filter { $0.action == Selector(("codeClicked:")) }
+        #expect(codeItems.map(\.title) == [
+            "Copy Password for “StudioNet”",
+            "Open Mail “hello@example.com”",
+            "Call “+1-555-0100”",
+            "Copy Contact “Ada Lovelace”",
+        ])
+        #expect(codeItems.compactMap { $0.representedObject as? String } == [wifi, mail, tel, vcard])
+    }
 }
 
 /// How many times a card looked for codes.

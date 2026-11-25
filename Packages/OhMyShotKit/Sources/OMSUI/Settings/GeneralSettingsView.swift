@@ -11,6 +11,8 @@ struct GeneralSettingsView: View {
     let retention: RetentionSelection
     /// The updater's state, in builds that look for updates.
     let updates: UpdateStatus?
+    /// Additional cleanup (such as resetting the automatic screenshot background preset) after `resetToDefaults()`.
+    var onReset: (() -> Void)? = nil
     @State private var launchAtLogin = false
     @State private var loadedLaunchAtLogin = false
     @State private var loginItemError: String?
@@ -153,6 +155,7 @@ struct GeneralSettingsView: View {
         ) {
             Button(role: .destructive) {
                 settings.resetToDefaults()
+                onReset?()
             } label: {
                 Text("Reset", bundle: .module)
             }

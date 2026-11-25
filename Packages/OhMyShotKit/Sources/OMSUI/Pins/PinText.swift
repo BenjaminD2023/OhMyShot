@@ -9,10 +9,12 @@ enum PinText {
     static let minWidth: CGFloat = 64
     /// Inside the card, around the text.
     static let padding = CGSize(width: 14, height: 11)
-    /// Lines shown before the rest is cut with an ellipsis; Copy still takes all of it.
+    /// Lines shown before the window height caps; longer text scrolls inside the card.
     static let maxLines = 30
-    /// The most of a long text the card ever lays out, so a pasted log never stalls it.
+    /// The most of a long text the card measures for its initial size.
     static let maxCharacters = 4000
+    /// The most of a long text the scrollable card lays out, so a multi-megabyte log never stalls it.
+    static let maxScrollableCharacters = 32_000
 
     /// The system face at 13 pt, or the monospaced one at 12 pt for code.
     static func font(for text: String) -> NSFont {
@@ -43,6 +45,13 @@ enum PinText {
         return shown
     }
 
+    /// What the scrollable text view shows: all lines up to `maxScrollableCharacters`, without trailing blank lines.
+    static func scrollableDisplayed(_ text: String) -> String {
+        var shown = String(text.prefix(maxScrollableCharacters))
+        while let last = shown.last, last.isWhitespace { shown.removeLast() }
+        return shown
+    }
+
     /// The text as the card draws it, in label ink.
     static func attributed(_ text: String) -> NSAttributedString {
         let shown = displayed(text)
@@ -50,6 +59,26 @@ enum PinText {
             .font: font(for: text),
             .foregroundColor: NSColor.labelColor,
         ])
+    }
+
+    /// Scrollable text with clickable `http`/`https` link attributes attached via `NSDataDetector`.
+    static func scrollableAttributed(_ text: String) -> NSMutableAttributedString {
+        let shown = scrollableDisplayed(text)
+        let content = shown.isEmpty ? " " : shown
+        let attributed = NSMutableAttributedString(string: content, attributes: [
+            .font: font(for: text),
+            .foregroundColor: NSColor.labelColor,
+        ])
+        if let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) {
+            let fullRange = NSRange(location: 0, length: (content as NSString).length)
+            for match in detector.matches(in: content, options: [], range: fullRange) {
+                guard let url = match.url,
+                      let scheme = url.scheme?.lowercased(),
+                      scheme == "http" || scheme == "https" else { continue }
+                attributed.addAttribute(.link, value: url, range: match.range)
+            }
+        }
+        return attributed
     }
 
     /// The text's own size at 100 percent: its width up to the card's, its height up to `maxLines` lines.

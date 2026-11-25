@@ -18,6 +18,7 @@ final class ScrollingCaptureCoordinator {
     private let overlay: OverlayController
     private let permissions: PermissionCenter
     private let captures: CaptureCoordinator
+    private let settings: SettingsStore
     private let outline = AreaOutline()
     /// Made for each capture, so it takes the accessibility display options as they are then.
     private var panel = ScrollingPanel()
@@ -64,20 +65,25 @@ final class ScrollingCaptureCoordinator {
         var inner: CGRect?
         var takesInner = false
 
-        init(capture: ScrollingCapture, display: DisplayInfo, appName: String?, copiesToClipboard: Bool) {
+        init(capture: ScrollingCapture, display: DisplayInfo, appName: String?, copiesToClipboard: Bool, scrollSpeed: Double) {
             self.capture = capture
             self.display = display
             self.appName = appName
             self.copiesToClipboard = copiesToClipboard
+            self.scrollSpeed = scrollSpeed
         }
     }
 
-    init(displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, permissions: PermissionCenter, captures: CaptureCoordinator) {
+    init(
+        displays: DisplayTopology, capturer: ScreenCapturer, overlay: OverlayController, permissions: PermissionCenter,
+        captures: CaptureCoordinator, settings: SettingsStore? = nil
+    ) {
         self.displays = displays
         self.capturer = capturer
         self.overlay = overlay
         self.permissions = permissions
         self.captures = captures
+        self.settings = settings ?? captures.settings
     }
 
     var isCapturing: Bool { run != nil }
@@ -108,8 +114,10 @@ final class ScrollingCaptureCoordinator {
         // An area left framed when Auto-scroll asked for Accessibility is framed again.
         let choosing = area ?? keptArea
         keptArea = nil
+        overlay.lastArea = captures.lastRecalledArea
         overlay.begin(mode: .area, purpose: .scroll, options: .init(startsScrollingAtOnce: starts), choosing: choosing) { [weak self] outcome in
             guard let self, case .scroll(let area, let display, let auto) = outcome else { return }
+            captures.noteLastArea(area)
             if auto || autoScrolls, !AutoScroller.isAllowed {
                 // Asked now, before anything is captured: macOS's question would be in the picture. The area is kept
                 // for the next Scrolling Capture, and that is said where it was.
@@ -145,9 +153,11 @@ final class ScrollingCaptureCoordinator {
         let capture = ScrollingCapture(source, preview: ScrollingPanel.previewPixels(on: display))
         capture.onProgress = { [weak self] progress in self?.progressed(progress) }
         capture.onStopped = { [weak self] _ in self?.streamEnded() }
-        let run = Run(capture: capture, display: display, appName: appName, copiesToClipboard: copiesToClipboard)
+        let speed = min(max(settings.scrollingAutoSpeed, 0.25), 3.0)
+        let run = Run(capture: capture, display: display, appName: appName, copiesToClipboard: copiesToClipboard, scrollSpeed: speed)
         self.run = run
         panel = makePanel()
+        panel.setAutoScrollSpeed(speed)
         do {
             try await capture.start()
         } catch {
@@ -409,12 +419,27 @@ final class ScrollingCaptureCoordinator {
         panel.onDone = { [weak self] in self?.finish() }
         panel.onCancel = { [weak self] in self?.cancel() }
         panel.onAutoScroll = { [weak self] on in self?.setAutoScroll(on) }
+        panel.onDirectionChanged = { [weak self] direction in self?.setAutoScrollDirection(direction) }
         panel.onSpeedChanged = { [weak self] speed in
-            guard let run = self?.run else { return }
-            run.scrollSpeed = speed
-            run.scroller?.speedMultiplier = speed
+            guard let self else { return }
+            let clamped = min(max(speed, 0.25), 3.0)
+            self.settings.scrollingAutoSpeed = clamped
+            guard let run = self.run else { return }
+            run.scrollSpeed = clamped
+            run.scroller?.speedMultiplier = clamped
         }
         return panel
+    }
+
+    private func setAutoScrollDirection(_ direction: AutoScroller.Direction) {
+        guard let run, run.direction != direction else { return }
+        run.direction = direction
+        run.against = 0
+        panel.setAutoScrollDirection(direction)
+        if run.scroller != nil {
+            setAutoScroll(false)
+            setAutoScroll(true)
+        }
     }
 
     // MARK: Auto-scroll

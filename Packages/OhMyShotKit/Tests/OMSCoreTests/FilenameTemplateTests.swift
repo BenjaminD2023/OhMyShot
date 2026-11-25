@@ -27,7 +27,24 @@ struct FilenameTemplateTests {
     @Test func theWindowTitleIsATokenAndAnAreaWithNoneHasEmptyText() {
         let template = FilenameTemplate(pattern: "{app} - {window}")
         #expect(template.name(date: date, appName: "Safari", windowTitle: "Apple", timeZone: utc) == "Safari - Apple")
-        #expect(template.name(date: date, appName: "Safari", timeZone: utc) == "Safari -")
+        #expect(template.name(date: date, appName: "Safari", timeZone: utc) == "Safari")
+    }
+
+    @Test func danglingSeparatorsAndEmptyBracketsCollapseWhenOptionalTokensAreEmpty() {
+        let withDate = FilenameTemplate(pattern: "{app} - {window} - {date}")
+        #expect(withDate.name(date: date, appName: nil, windowTitle: nil, timeZone: utc) == "2026-10-08")
+        #expect(withDate.name(date: date, appName: "Safari", windowTitle: nil, timeZone: utc) == "Safari - 2026-10-08")
+        #expect(withDate.name(date: date, appName: nil, windowTitle: "Docs", timeZone: utc) == "Docs - 2026-10-08")
+
+        let underscored = FilenameTemplate(pattern: "{app}_{window}_{date}")
+        #expect(underscored.name(date: date, appName: "Safari", windowTitle: nil, timeZone: utc) == "Safari_2026-10-08")
+
+        let bracketed = FilenameTemplate(pattern: "Shot ({window})")
+        #expect(bracketed.name(date: date, windowTitle: nil, timeZone: utc) == "Shot")
+        #expect(bracketed.name(date: date, windowTitle: "Notes", timeZone: utc) == "Shot (Notes)")
+
+        let bothEmpty = FilenameTemplate(pattern: "{app} - {window}")
+        #expect(bothEmpty.name(date: date, appName: nil, windowTitle: nil, timeZone: utc) == "OhMyShot")
     }
 
     @Test func aLongWindowTitleIsCutAndANameNeverPassesWhatTheFileSystemTakes() {

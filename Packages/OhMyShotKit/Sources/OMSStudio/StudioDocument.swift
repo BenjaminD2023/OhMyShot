@@ -89,6 +89,8 @@ public final class StudioDocument {
     public var hasPendingSave: Bool { savedRevision < projectRevision }
     /// Counts the compositions made, so the window knows to play the newest.
     public private(set) var compositionGeneration = 0
+    /// Normalized peak amplitude bins (`0...1`) for the timeline audio waveform silhouette.
+    public private(set) var waveform: [Float] = []
     /// Where the preview is, in the recording's seconds.
     public var time: Double = 0
     public var isPlaying = false
@@ -100,6 +102,7 @@ public final class StudioDocument {
 
     @ObservationIgnored private let background: @Sendable (String, CGSize) -> CGImage?
     @ObservationIgnored private var rebuild: Task<Void, Never>?
+    @ObservationIgnored private var waveformTask: Task<Void, Never>?
     /// How many times the composition was made, so a slower, older one never replaces a newer one.
     @ObservationIgnored private var generation = 0
     /// While a slider or a zoom is dragged (non-nil), its changes are taken back as one: only the first
@@ -176,6 +179,18 @@ public final class StudioDocument {
         pendingSave?.cancel()
         rebuild?.cancel()
         previewBuild?.cancel()
+        waveformTask?.cancel()
+    }
+
+    /// Extracts normalized peak amplitude bins for the timeline waveform silhouette off the main actor.
+    public func loadWaveform() {
+        waveformTask?.cancel()
+        let urls = soundFiles.isEmpty ? [source] : soundFiles.map(\.url)
+        waveformTask = Task { [weak self] in
+            let peaks = await StudioWaveform.extract(from: urls, binCount: 200)
+            guard !Task.isCancelled, let self else { return }
+            self.waveform = peaks
+        }
     }
 
     /// Whether a camera was recorded beside the recording, so it can be shown.
@@ -193,9 +208,13 @@ public final class StudioDocument {
         return drawn
     }
 
-    /// Where everything goes in the movie as the project is now, no larger than `largestSide`.
-    func movieLayout(largestSide: Double = StudioRenderer.largestSide) -> StudioRenderer.Layout {
-        StudioRenderer.layout(recordingSize: recordingSize, project: project, hasCamera: hasCamera, largestSide: largestSide)
+    /// Where everything goes in the movie as the project is now, no larger than `largestSide` (or the project's
+    /// export limit when nil).
+    func movieLayout(largestSide: Double? = nil) -> StudioRenderer.Layout {
+        StudioRenderer.layout(
+            recordingSize: recordingSize, project: project, hasCamera: hasCamera,
+            largestSide: largestSide ?? project.resolvedOutputMaxSide
+        )
     }
 
     /// Whether the camera showed while recording but couldn't be recorded, or its movie is gone since.
@@ -216,9 +235,30 @@ public final class StudioDocument {
         }
     }
 
-    /// Whether keys were written down while recording, so they can be shown.
+    /// Mutes or unmutes all audio via the master level as one named Undo step.
+    public func setMasterMuted(_ muted: Bool) {
+        guard project.audio.master.isMuted != muted else { return }
+        change(named: muted ? String(localized: "Mute Audio", bundle: .module) : String(localized: "Unmute Audio", bundle: .module)) {
+            project.audio.master.isMuted = muted
+        }
+    }
+
+    public func setAudioFadeIn(_ seconds: Double) {
+        let clamped = StudioProject.Audio.clampedFade(seconds)
+        guard project.audio.fadeIn != clamped else { return }
+        project.audio.fadeIn = clamped
+    }
+
+    public func setAudioFadeOut(_ seconds: Double) {
+        let clamped = StudioProject.Audio.clampedFade(seconds)
+        guard project.audio.fadeOut != clamped else { return }
+        project.audio.fadeOut = clamped
+    }
+
+    /// Whether displayable keys (excluding unrecorded typing placeholders under Shortcuts only) were written down
+    /// while recording, so they can be shown.
     public var hasKeys: Bool {
-        !telemetry.keys.isEmpty
+        telemetry.keys.contains { $0.keyCode != StudioTelemetry.Key.unrecordedKeyCode }
     }
 
     /// Makes the preview's composition again from the project as it is now; the newest one asked for wins.
@@ -260,13 +300,13 @@ public final class StudioDocument {
         if mine == generation { previewBuild = nil }
     }
 
-    /// The composition the export writes: the project as it is now, at the movie's full size, the person in the
+    /// The composition the export writes: the project as it is now, at the movie's export resolution, the person in the
     /// camera found with Vision's accurate matte.
     public func makeExportComposition(project snapshot: StudioProject? = nil) async throws -> StudioComposition {
         try Task.checkCancellation()
         let exported = snapshot ?? project
         let matte = exported.camera.background == .original ? nil : StudioCameraMatte(quality: .export)
-        return try await composition(project: exported, largestSide: StudioRenderer.largestSide, cameraMatte: matte)
+        return try await composition(project: exported, largestSide: exported.resolvedOutputMaxSide, cameraMatte: matte)
     }
 
     func previewFailed(_ message: String) {
@@ -279,8 +319,10 @@ public final class StudioDocument {
         generation += 1
         rebuild?.cancel()
         previewBuild?.cancel()
+        waveformTask?.cancel()
         rebuild = nil
         previewBuild = nil
+        waveformTask = nil
         composition = nil
         cachedMotion = nil
         previewMatte = nil
@@ -365,12 +407,13 @@ public final class StudioDocument {
     /// The longest side the preview needs: the movie fitted in the preview's pixels, in steps of 128 so a
     /// small change of the window's size films nothing again, between 640 and the export's.
     private func previewLargestSide() -> Double {
-        guard let pixels = previewPixels else { return 1920 }
+        let cap = max(640, project.resolvedOutputMaxSide)
+        guard let pixels = previewPixels else { return min(1920, cap) }
         let full = movieLayout().canvas
-        guard full.width > 0, full.height > 0 else { return 1920 }
+        guard full.width > 0, full.height > 0 else { return min(1920, cap) }
         let fit = min(pixels.width / full.width, pixels.height / full.height)
         let side = max(full.width, full.height) * fit
-        return min(max((side / 128).rounded(.up) * 128, 640), StudioRenderer.largestSide)
+        return min(max((side / 128).rounded(.up) * 128, 640), cap)
     }
 
     // MARK: Editing
@@ -390,6 +433,54 @@ public final class StudioDocument {
         changed.zooms = zooms.sorted { $0.start < $1.start }
         change(named: on ? String(localized: "Zoom on Clicks", bundle: .module) : String(localized: "No Zoom on Clicks", bundle: .module)) {
             project = changed
+        }
+    }
+
+    /// Whether the project's zooms already match the recording's automatic zooms.
+    public var matchesAutomaticZooms: Bool {
+        guard project.automaticZooms else { return false }
+        let expected = automaticZooms
+        guard project.zooms.count == expected.count else { return false }
+        return zip(project.zooms, expected).allSatisfy { a, b in
+            a.isAutomatic && a.start == b.start && a.end == b.end && a.scale == b.scale && a.target == b.target
+        }
+    }
+
+    /// Replaces all zooms (manual and automatic) with the recording's automatic zooms in one undoable step.
+    public func resetToAutomaticZooms() {
+        var changed = project
+        changed.automaticZooms = true
+        changed.zooms = automaticZooms
+        change(named: String(localized: "Reset to Automatic", bundle: .module)) {
+            project = changed
+        }
+    }
+
+    /// Removes all zooms and turns automatic zooms off in one undoable step.
+    public func clearAllZooms() {
+        var changed = project
+        changed.automaticZooms = false
+        changed.zooms = []
+        change(named: String(localized: "Clear All Zooms", bundle: .module)) {
+            project = changed
+        }
+    }
+
+    /// Sets the video crop rectangle (normalized `0...1`, top-left origin, or `nil` for full frame) as a named
+    /// Undo step (coalescing when wrapped in `beginContinuousChange()` / `endContinuousChange()`).
+    public func setCrop(_ rect: CGRect?) {
+        let normalized = StudioProject.normalizedCrop(rect)
+        guard project.crop != normalized else { return }
+        change(named: String(localized: "Crop Video", bundle: .module)) {
+            project.crop = normalized
+        }
+    }
+
+    /// Clears any active video crop back to the full recording.
+    public func resetCrop() {
+        guard project.crop != nil else { return }
+        change(named: String(localized: "Reset Crop", bundle: .module)) {
+            project.crop = nil
         }
     }
 
@@ -444,6 +535,20 @@ public final class StudioDocument {
     public func setQuality(_ quality: StudioProject.Quality) {
         change(named: String(localized: "Change Quality", bundle: .module)) {
             project.quality = quality
+        }
+    }
+
+    /// Sets the export's maximum side in pixels (nil for Original up to 4K), as one step that Undo names.
+    public func setOutputMaxSide(_ maxSide: Int?) {
+        change(named: String(localized: "Change Resolution", bundle: .module)) {
+            project.outputMaxSide = maxSide
+        }
+    }
+
+    /// Sets the export's frame rate in frames per second (nil for 60 fps), as one step that Undo names.
+    public func setFramesPerSecond(_ framesPerSecond: Int?) {
+        change(named: String(localized: "Change Frame Rate", bundle: .module)) {
+            project.framesPerSecond = framesPerSecond
         }
     }
 
@@ -534,9 +639,11 @@ public final class StudioDocument {
     /// frame the preview shows while the zoom is fully in there, else halfway through it, which is fully in; the
     /// middle of the recording until a movie is made.
     public func aim(of id: UUID) -> StudioProject.Zoom.Spot {
-        guard let zoom = project.zooms.first(where: { $0.id == id }) else { return .init(x: 0.5, y: 0.5) }
+        let crop = project.effectiveCrop
+        let fallback = StudioProject.Zoom.Spot(x: Double(crop.midX), y: Double(crop.midY))
+        guard let zoom = project.zooms.first(where: { $0.id == id }) else { return fallback }
         if let target = zoom.target { return target }
-        guard let track = composition?.renderer.track, track.width > 0, track.height > 0 else { return .init(x: 0.5, y: 0.5) }
+        guard let track = composition?.renderer.track, track.width > 0, track.height > 0 else { return fallback }
         let frame = track.frame(at: isFullyIn(zoom) ? shownTime : (zoom.start + zoom.end) / 2)
         return StudioProject.Zoom.Spot(x: frame.centerX / track.width, y: frame.centerY / track.height).clamped
     }
@@ -613,6 +720,103 @@ public final class StudioDocument {
             project.speeds.removeAll { $0.start == start }
         }
         if selection == .speed(start) { selection = .none }
+    }
+
+    /// Where Add Speed places a speed stretch: at the playhead, past any speed occupying that place, up to
+    /// 2 seconds long and at least 0.25 s; nil when there is no room.
+    private var roomForSpeed: (start: Double, end: Double)? {
+        let length = 2.0
+        let shortest = 0.25
+        var start = min(max(time, 0), max(duration - shortest, 0))
+        while let blocking = project.speeds.first(where: { $0.start <= start && start < $0.end }) {
+            start = blocking.end
+        }
+        let next = project.speeds.filter { $0.start >= start }.map(\.start).min() ?? duration
+        let end = min(start + length, next, duration)
+        return end - start >= shortest ? (start, end) : nil
+    }
+
+    /// Whether Add Speed has room at the playhead.
+    public var canAddSpeed: Bool { roomForSpeed != nil }
+
+    /// Adds a speed stretch at the playhead in the room adjacent speeds leave.
+    public func addSpeed(rate: Double = 2) {
+        guard let (start, end) = roomForSpeed else { return }
+        let minRate = StudioProject.speedRates.min() ?? 0.5
+        let maxRate = StudioProject.speedRates.max() ?? 4
+        let clamped = rate.isFinite ? min(max(rate, minRate), maxRate) : 2
+        let effectiveRate = abs(clamped - 1) > 0.01 ? clamped : 2
+        let speed = StudioProject.Speed(start: start, end: end, rate: effectiveRate)
+        let normalized = StudioProject.normalizedSpeeds(project.speeds + [speed], duration: duration)
+        change(named: String(localized: "Add Speed", bundle: .module)) {
+            project.speeds = normalized
+        }
+        if let placed = normalized.first(where: { $0.start <= start && start < $0.end }) {
+            selection = .speed(placed.start)
+        }
+    }
+
+    /// How far the speed stretch starting at `start` can reach before meeting an adjacent speed or the recording's ends.
+    public func limits(ofSpeedAt start: Double) -> ClosedRange<Double> {
+        guard let index = project.speeds.firstIndex(where: { $0.start == start }) else { return 0...max(0, duration) }
+        let speed = project.speeds[index]
+        let minBound = index > 0 ? min(speed.start, project.speeds[index - 1].end) : 0
+        let maxBound = index + 1 < project.speeds.count ? max(speed.end, project.speeds[index + 1].start) : max(speed.end, duration)
+        return minBound...max(minBound, maxBound)
+    }
+
+    /// Moves the speed stretch starting at `speedStart` to start at `newStart`, preserving its duration within its
+    /// neighbor limits. Keeps the speed selected if it was selected before.
+    @discardableResult
+    public func moveSpeed(at speedStart: Double, to newStart: Double) -> ClosedRange<Double>? {
+        guard let index = project.speeds.firstIndex(where: { $0.start == speedStart }) else { return nil }
+        let speed = project.speeds[index]
+        let length = speed.end - speed.start
+        let bounds = limits(ofSpeedAt: speedStart)
+        let clampedStart = min(max(newStart, bounds.lowerBound), max(bounds.lowerBound, bounds.upperBound - length))
+        let clampedEnd = min(bounds.upperBound, clampedStart + length)
+        let updated = StudioProject.Speed(start: clampedStart, end: clampedEnd, rate: speed.rate)
+        guard updated != speed else { return speed.start...speed.end }
+        let wasSelected = selection == .speed(speedStart)
+        change(named: String(localized: "Move Speed", bundle: .module)) {
+            project.speeds[index] = updated
+        }
+        if wasSelected { selection = .speed(updated.start) }
+        return updated.start...updated.end
+    }
+
+    /// Resizes the speed stretch starting at `speedStart` to `newStart...newEnd`, clamped within its neighbor limits
+    /// and at least `StudioProject.shortestSpeed` long. Keeps the speed selected if it was selected before.
+    @discardableResult
+    public func resizeSpeed(at speedStart: Double, start newStart: Double, end newEnd: Double) -> ClosedRange<Double>? {
+        guard let index = project.speeds.firstIndex(where: { $0.start == speedStart }) else { return nil }
+        let speed = project.speeds[index]
+        let bounds = limits(ofSpeedAt: speedStart)
+        let shortest = min(StudioProject.shortestSpeed, max(0, bounds.upperBound - bounds.lowerBound))
+        let clampedStart = min(max(newStart, bounds.lowerBound), bounds.upperBound - shortest)
+        let clampedEnd = min(max(newEnd, clampedStart + shortest), bounds.upperBound)
+        let updated = StudioProject.Speed(start: clampedStart, end: clampedEnd, rate: speed.rate)
+        guard updated != speed else { return speed.start...speed.end }
+        let wasSelected = selection == .speed(speedStart)
+        change(named: String(localized: "Resize Speed", bundle: .module)) {
+            project.speeds[index] = updated
+        }
+        if wasSelected { selection = .speed(updated.start) }
+        return updated.start...updated.end
+    }
+
+    /// Moves one end of the speed stretch starting at `speedStart` to `time`, keeping the other end fixed and
+    /// enforcing minimum length and neighbor bounds. Returns the resulting range, or nil if no such speed exists.
+    @discardableResult
+    public func setSpeedEdge(at speedStart: Double, start: Bool, to time: Double) -> ClosedRange<Double>? {
+        guard let speed = project.speeds.first(where: { $0.start == speedStart }) else { return nil }
+        if start {
+            let clamped = min(time, speed.end - StudioProject.shortestSpeed)
+            return resizeSpeed(at: speedStart, start: clamped, end: speed.end)
+        } else {
+            let clamped = max(time, speed.start + StudioProject.shortestSpeed)
+            return resizeSpeed(at: speedStart, start: speed.start, end: clamped)
+        }
     }
 
     // MARK: Camera layout
@@ -722,6 +926,11 @@ public final class StudioDocument {
         if selection == .zoom(id) { selection = .none }
     }
 
+    /// The shortest cut, in seconds (matches `cut(_:)`).
+    public static let shortestCut = 0.05
+    /// Minimum gap kept between adjacent cuts while resizing so dragging an edge never merges a cut into its neighbor.
+    public static let minimumCutGap = 0.05
+
     /// Takes back the cut that starts at `start`: that stretch is in the movie again.
     public func restoreCut(at start: Double) {
         change(named: String(localized: "Restore Cut", bundle: .module)) {
@@ -730,10 +939,63 @@ public final class StudioDocument {
         if selection == .cut(start) { selection = .none }
     }
 
+    /// How far the cut starting at `start` can reach before it meets an adjacent cut or the recording's ends.
+    public func limits(ofCutAt start: Double) -> ClosedRange<Double> {
+        guard let index = project.cuts.firstIndex(where: { $0.lowerBound == start }) else { return 0...max(0, duration) }
+        let cut = project.cuts[index]
+        let minBound: Double = if index > 0 {
+            min(cut.lowerBound, project.cuts[index - 1].upperBound + Self.minimumCutGap)
+        } else {
+            0
+        }
+        let maxBound: Double = if index + 1 < project.cuts.count {
+            max(cut.upperBound, project.cuts[index + 1].lowerBound - Self.minimumCutGap)
+        } else {
+            max(cut.upperBound, duration)
+        }
+        return minBound...max(minBound, maxBound)
+    }
+
+    /// Resizes the cut starting at `cutStart` to `newStart...newEnd`, clamped within its neighbor limits and
+    /// at least `shortestCut` long. Keeps the cut selected if it was selected before.
+    @discardableResult
+    public func resizeCut(at cutStart: Double, start newStart: Double, end newEnd: Double) -> ClosedRange<Double>? {
+        guard let index = project.cuts.firstIndex(where: { $0.lowerBound == cutStart }) else { return nil }
+        let cut = project.cuts[index]
+        let bounds = limits(ofCutAt: cutStart)
+        let shortest = min(Self.shortestCut, max(0, bounds.upperBound - bounds.lowerBound))
+        let clampedStart = min(max(newStart, bounds.lowerBound), bounds.upperBound - shortest)
+        let clampedEnd = min(max(newEnd, clampedStart + shortest), bounds.upperBound)
+        guard clampedEnd >= clampedStart else { return cut }
+        let updated = clampedStart...clampedEnd
+        guard updated != cut else { return cut }
+        let wasSelected = selection == .cut(cutStart)
+        change(named: String(localized: "Resize Cut", bundle: .module)) {
+            project.cuts[index] = updated
+        }
+        if wasSelected { selection = .cut(updated.lowerBound) }
+        return updated
+    }
+
+    /// Moves one end of the cut starting at `cutStart` to `time`, keeping the other end fixed and the cut
+    /// at least `shortestCut` long within its neighbor limits. Returns the resulting cut range, or nil when
+    /// no cut starts at `cutStart`.
+    @discardableResult
+    public func setCutEdge(at cutStart: Double, start: Bool, to time: Double) -> ClosedRange<Double>? {
+        guard let cut = project.cuts.first(where: { $0.lowerBound == cutStart }) else { return nil }
+        if start {
+            let clamped = min(time, cut.upperBound - Self.shortestCut)
+            return resizeCut(at: cutStart, start: clamped, end: cut.upperBound)
+        } else {
+            let clamped = max(time, cut.lowerBound + Self.shortestCut)
+            return resizeCut(at: cutStart, start: cut.lowerBound, end: clamped)
+        }
+    }
+
     /// Leaves `range` (the recording's seconds) out of the movie, joined with cuts it meets.
     public func cut(_ range: ClosedRange<Double>) {
         let lower = max(0, range.lowerBound), upper = min(duration, range.upperBound)
-        guard upper - lower >= 0.05 else { return }
+        guard upper - lower >= Self.shortestCut else { return }
         let cuts = StudioProject.normalizedCuts(project.cuts + [lower...upper], duration: duration)
         // The cut it became, with those it met: the cuts are apart, so only that one holds its start.
         guard let merged = cuts.first(where: { $0.contains(lower) }) else { return }
@@ -741,6 +1003,29 @@ public final class StudioDocument {
             project.cuts = cuts
         }
         selection = .cut(merged.lowerBound)
+    }
+
+    /// Keeps only `range` (the recording's seconds) by cutting everything before and after it in one undoable step.
+    public func keepOnly(_ range: ClosedRange<Double>) {
+        let lower = max(0, min(range.lowerBound, duration))
+        let upper = max(lower, min(range.upperBound, duration))
+        guard upper - lower >= Self.shortestCut else { return }
+        var additions: [ClosedRange<Double>] = []
+        if lower >= Self.shortestCut { additions.append(0...lower) }
+        if duration - upper >= Self.shortestCut { additions.append(upper...duration) }
+        guard !additions.isEmpty else {
+            if selection == .range(range) { selection = .none }
+            return
+        }
+        let cuts = StudioProject.normalizedCuts(project.cuts + additions, duration: duration)
+        guard cuts != project.cuts else {
+            selection = .none
+            return
+        }
+        change(named: String(localized: "Keep Only", bundle: .module)) {
+            project.cuts = cuts
+        }
+        selection = .none
     }
 
     // MARK: Undo
@@ -908,4 +1193,13 @@ nonisolated public enum StudioFiles {
     /// The system's sound and the microphone, each as recorded, in a file of its own (`StudioSound`).
     public static let systemAudio = "system audio.m4a"
     public static let microphone = "microphone.m4a"
+
+    /// Verifies that an asset filename stored in `project.json` is a safe single path component (no slashes or traversal).
+    public static func isValidAssetName(_ name: String) -> Bool {
+        guard !name.isEmpty, name != ".", name != "..",
+              !name.contains("/"), !name.contains("\\"), !name.contains("\0") else {
+            return false
+        }
+        return (name as NSString).lastPathComponent == name
+    }
 }

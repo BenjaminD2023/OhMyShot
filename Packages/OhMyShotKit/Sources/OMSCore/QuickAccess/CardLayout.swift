@@ -7,13 +7,15 @@ public enum QuickAccessPlacement {
     public static let edge: CGFloat = 26
 
     /// The panel that holds the stack, `margin` wider than the cards on each side (room for their shadows), with
-    /// the cards `edge` from the bottom and from the side of `corner`.
+    /// the cards `edge` from the vertical and horizontal sides of `corner`.
     public static func panelFrame(corner: QuickAccessCorner, visible: CGRect, panelWidth: CGFloat, panelHeight: CGFloat, margin: CGFloat) -> CGRect {
-        let x = switch corner {
-        case .bottomLeft: visible.minX + edge - margin
-        case .bottomRight: visible.maxX - edge + margin - panelWidth
-        }
-        return CGRect(x: x, y: visible.minY + edge - margin, width: panelWidth, height: panelHeight)
+        let x: CGFloat = corner.slidesFromLeft
+            ? visible.minX + edge - margin
+            : visible.maxX - edge + margin - panelWidth
+        let y: CGFloat = corner.isTop
+            ? visible.maxY - edge + margin - panelHeight
+            : visible.minY + edge - margin
+        return CGRect(x: x, y: y, width: panelWidth, height: panelHeight)
     }
 
     /// The tallest the stack of cards can be on a display, margins left out.

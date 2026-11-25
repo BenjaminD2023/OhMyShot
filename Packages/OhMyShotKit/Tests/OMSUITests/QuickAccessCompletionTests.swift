@@ -1,4 +1,6 @@
 import AppKit
+import CoreGraphics
+import Foundation
 import OMSCore
 import Testing
 @testable import OMSUI
@@ -535,5 +537,220 @@ struct QuickAccessCompletionTests {
         #expect(card.isSelected)
         controller.perform(command, on: capture, keyed: true)
         #expect(card.isSelected == keepsKeyboard)
+    }
+
+    @Test func keepsCardOpenAfterActionsWhenClosesAfterActionIsOff() async throws {
+        var actions = actions(succeeds: true)
+        actions.preferences = { QuickAccessPreferences(closesAfterAction: false) }
+        actions.sharing.hasLink = { _ in true }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+
+        controller.perform(.copy, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(controller.item(capture.id) != nil)
+        #expect(card.copyButton.title == String(localized: "Copied", bundle: .module))
+
+        controller.perform(.save, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(controller.item(capture.id)?.savedURL != nil)
+        #expect(card.saveButton.title == String(localized: "Saved", bundle: .module))
+
+        controller.perform(.pin, on: capture, keyed: false)
+        controller.perform(.copyLink, on: capture, keyed: false)
+        for _ in 0..<20 { await Task.yield() }
+        #expect(controller.item(capture.id) != nil)
+    }
+
+    @Test func multiCardScreenshotMenuOffersCollagePDFAndClearRevealLabels() throws {
+        var actions = actions(succeeds: true)
+        var combinedCount = 0
+        var pdfCount = 0
+        actions.combineIntoCollage = { combinedCount = $0.count }
+        actions.exportAsPDF = { pdfCount = $0.count }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+
+        let first = try item()
+        controller.add(first)
+        let click = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let firstCard = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        let singleTitles = try #require(firstCard.menu(for: click)).items.map(\.title)
+        #expect(singleTitles.contains("Show Original in Finder"))
+        #expect(!singleTitles.contains("Combine All into Collage…"))
+        #expect(!singleTitles.contains("Export All as PDF…"))
+
+        controller.markSaved(first.id, at: URL(filePath: "/tmp/saved.png"))
+        let savedTitles = try #require(firstCard.menu(for: click)).items.map(\.title)
+        #expect(savedTitles.contains("Show in Finder"))
+
+        let second = try item()
+        controller.add(second)
+        let multiMenu = try #require(firstCard.menu(for: click))
+        let multiTitles = multiMenu.items.map(\.title)
+        #expect(multiTitles.contains("Combine All into Collage…"))
+        #expect(multiTitles.contains("Export All as PDF…"))
+        if let collageItem = multiMenu.items.first(where: { $0.title == "Combine All into Collage…" }) {
+            _ = collageItem.target?.perform(collageItem.action, with: collageItem)
+        }
+        if let pdfItem = multiMenu.items.first(where: { $0.title == "Export All as PDF…" }) {
+            _ = pdfItem.target?.perform(pdfItem.action, with: pdfItem)
+        }
+        #expect(combinedCount == 2)
+        #expect(pdfCount == 2)
+    }
+
+    @Test func preferencesChangedUpdatesCountdownAndCornerLive() throws {
+        var prefs = QuickAccessPreferences(corner: .bottomLeft, size: .medium, closeAfter: 10)
+        var actions = actions(succeeds: true)
+        actions.preferences = { prefs }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        #expect(card.isCountdownRingVisible)
+
+        prefs = QuickAccessPreferences(corner: .topRight, size: .large, closeAfter: 0)
+        controller.preferencesChanged()
+        #expect(!card.isCountdownRingVisible)
+    }
+
+    @Test func countdownRingFreezesOnHoverAndResumesWithoutJumpingBackward() throws {
+        var now: TimeInterval = 100
+        var actions = actions(succeeds: true)
+        actions.preferences = { QuickAccessPreferences(corner: .bottomLeft, size: .medium, closeAfter: 10) }
+        let controller = QuickAccessController(actions: actions)
+        controller.clock = { now }
+        defer { controller.dismissAll() }
+
+        let capture = try item()
+        controller.add(capture)
+        let card = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        #expect(card.isCountdownRingVisible)
+        #expect(!card.isCountdownRingPaused)
+
+        // Advance 7 seconds out of 10 (30% remaining) and hover to freeze the ring in place.
+        now = 107
+        card.setHovering(true)
+        #expect(card.isCountdownRingVisible)
+        #expect(card.isCountdownRingPaused)
+        #expect(abs(card.countdownRingFraction - 0.3) < 0.02)
+
+        // Leave hover after 5 seconds: grace extends remaining time, yet visual ring never jumps backward.
+        now = 112
+        card.setHovering(false)
+        #expect(card.isCountdownRingVisible)
+        #expect(!card.isCountdownRingPaused)
+        if case .running(_, _, let startFraction) = card.countdownDisplay {
+            let start = try #require(startFraction)
+            #expect(start <= 0.31)
+        } else {
+            Issue.record("Expected running countdown display after hover exit")
+        }
+    }
+
+    @Test func clickingSavedRevealsInFinderWithoutDismissingCard() throws {
+        var actions = actions(succeeds: true)
+        var revealed: [UUID] = []
+        var saveCalls = 0
+        actions.reveal = { revealed.append($0.id) }
+        actions.save = { _, _ in
+            saveCalls += 1
+            return .saved(URL(filePath: "/tmp/should-not-save-again.png"))
+        }
+        actions.preferences = { QuickAccessPreferences(closesAfterAction: true) }
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+
+        let capture = try item()
+        controller.add(capture)
+        controller.markSaved(capture.id, at: URL(filePath: "/tmp/already-saved.png"))
+        controller.perform(.save, on: capture, keyed: false)
+
+        #expect(revealed == [capture.id])
+        #expect(saveCalls == 0)
+        #expect(controller.item(capture.id) != nil)
+    }
+
+    @Test func recentlyClosedPrunesDeletedFilesAndClearsMissingSavedCopy() throws {
+        let dir = FileManager.default.temporaryDirectory.appending(path: "QuickAccessFreshness-\(UUID().uuidString)")
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let aliveURL = dir.appending(path: "alive.png")
+        let deletedURL = dir.appending(path: "deleted.png")
+        let missingSavedURL = dir.appending(path: "gone-saved.png")
+        try Data([1, 2, 3]).write(to: aliveURL)
+        try Data([4, 5, 6]).write(to: deletedURL)
+
+        let base = try item()
+        let alive = QuickAccessItem(
+            id: UUID(), kind: .screenshot, fileURL: aliveURL, thumbnail: base.thumbnail,
+            pixelWidth: 1, pixelHeight: 1, displayID: 0, savedURL: missingSavedURL
+        )
+        let deleted = QuickAccessItem(
+            id: UUID(), kind: .screenshot, fileURL: deletedURL, thumbnail: base.thumbnail,
+            pixelWidth: 1, pixelHeight: 1, displayID: 0
+        )
+
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        controller.add(alive)
+        controller.add(deleted)
+        controller.dismiss(alive.id)
+        controller.dismiss(deleted.id)
+        #expect(controller.isEmpty)
+
+        // Delete the newest closed file from disk; restoring must skip it and restore the surviving card.
+        try FileManager.default.removeItem(at: deletedURL)
+        #expect(controller.hasRecentlyClosed)
+        controller.restoreRecentlyClosed()
+        #expect(controller.itemIDs == [alive.id])
+        #expect(controller.item(alive.id)?.savedURL == nil)
+
+        // Once the remaining file is also gone from disk, hasRecentlyClosed reports false and restore does nothing.
+        controller.dismiss(alive.id)
+        try FileManager.default.removeItem(at: aliveURL)
+        #expect(!controller.hasRecentlyClosed)
+        controller.restoreRecentlyClosed()
+        #expect(controller.isEmpty)
+    }
+
+    @Test func translateMenuItemAppearsOnScreenshotsAndNotRecordings() throws {
+        let controller = QuickAccessController(actions: actions(succeeds: true))
+        defer { controller.dismissAll() }
+        var translated: [UUID] = []
+        controller.onTranslate = { translated.append($0.id) }
+
+        let screenshot = try item()
+        let recording = QuickAccessItem(
+            id: UUID(), kind: .recording, fileURL: URL(filePath: "/tmp/clip.mp4"),
+            thumbnail: screenshot.thumbnail, pixelWidth: 100, pixelHeight: 100, displayID: 0, duration: 5
+        )
+        controller.add(screenshot)
+        let click = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let shotCard = try #require(controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        let shotMenu = try #require(shotCard.menu(for: click))
+        let translateItem = try #require(shotMenu.items.first { $0.title == "Translate…" })
+        _ = translateItem.target?.perform(translateItem.action, with: translateItem)
+        #expect(translated == [screenshot.id])
+
+        controller.dismissAll()
+        controller.add(recording)
+        let recCard = try #require(
+            controller.debugPanel?.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first { $0.item.id == recording.id }
+        )
+        let recMenu = try #require(recCard.menu(for: click))
+        #expect(!recMenu.items.contains { $0.title == "Translate…" })
     }
 }

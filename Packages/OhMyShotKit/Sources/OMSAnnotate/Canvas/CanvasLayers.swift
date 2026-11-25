@@ -1,5 +1,6 @@
 import AppKit
 import CoreImage.CIFilterBuiltins
+import CoreText
 import OMSCore
 import OMSDesign
 import QuartzCore
@@ -273,12 +274,30 @@ nonisolated final class WatermarkLayer: StillLayer {
 }
 
 /// The selection, drawn in view points so its lines and handles keep their size at any zoom: a hairline
-/// box in the accent, and white handles ringed in the accent.
+/// box in the accent, and distinct handles for corners, edges, arrow heads/tails, controls, and rotation.
 nonisolated final class SelectionLayer: StillLayer {
+    enum HandleKind: Equatable {
+        /// Corner resize handle: crisp white rounded square ringed in the accent.
+        case corner
+        /// Side midpoint resize handle: subtle white circle ringed in the accent.
+        case edge
+        /// Arrow or line tail/start handle: white circle ringed in the accent.
+        case tail
+        /// Arrow head (end) handle: accent-filled circle with a white rim so head vs tail is unmistakable.
+        case arrowHead
+        /// Bend, callout pointer, or magnifier source control handle: white diamond ringed in the accent.
+        case control
+    }
+
+    struct HandleMarker: Equatable {
+        var point: CGPoint
+        var kind: HandleKind
+    }
+
     struct Outline: Equatable {
         /// In view points.
         var box: CGRect?
-        var handles: [CGPoint]
+        var handles: [HandleMarker]
         /// How far `box` is turned about its middle, in radians, clockwise.
         var angle: CGFloat = 0
         /// The rotation knob and the point on the box it stands above, in view points.
@@ -384,24 +403,14 @@ nonisolated final class SelectionLayer: StillLayer {
                 context.stroke(box.insetBy(dx: -line / 2, dy: -line / 2))
                 context.restoreGState()
             }
-            var handles = outline.handles
             if let knob = outline.knob {
                 context.setStrokeColor(accent)
                 context.setLineWidth(line)
                 context.strokeLineSegments(between: [knob.base, knob.point])
-                handles.append(knob.point)
+                drawRotationKnob(at: knob.point, line: line, in: context)
             }
-            for point in handles {
-                let size = Self.handleSize
-                let rect = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
-                context.saveGState()
-                context.setShadow(offset: CGSize(width: 0, height: contentsAreFlipped() ? 1 : -1), blur: 2, color: CGColor(gray: 0, alpha: 0.3))
-                context.setFillColor(CGColor(gray: 1, alpha: 1))
-                context.fillEllipse(in: rect)
-                context.restoreGState()
-                context.setStrokeColor(accent)
-                context.setLineWidth(line)
-                context.strokeEllipse(in: rect.insetBy(dx: line / 2, dy: line / 2))
+            for marker in outline.handles {
+                drawHandle(marker, line: line, in: context)
             }
         }
         if let preview = eyedropperPreview {
@@ -420,6 +429,116 @@ nonisolated final class SelectionLayer: StillLayer {
             context.setLineWidth(0.5)
             context.strokeEllipse(in: rect)
         }
+    }
+
+    private func drawHandle(_ marker: HandleMarker, line: CGFloat, in context: CGContext) {
+        let point = marker.point
+        let shadowY: CGFloat = contentsAreFlipped() ? 1 : -1
+        switch marker.kind {
+        case .corner:
+            let size: CGFloat = 8.5
+            let rect = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
+            let radius: CGFloat = 2
+            let path = CGPath(roundedRect: rect, cornerWidth: radius, cornerHeight: radius, transform: nil)
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: shadowY), blur: 2, color: CGColor(gray: 0, alpha: 0.3))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.addPath(path)
+            context.fillPath()
+            context.restoreGState()
+            let inset = rect.insetBy(dx: line / 2, dy: line / 2)
+            let strokeRadius = max(radius - line / 2, 0.5)
+            context.setStrokeColor(accent)
+            context.setLineWidth(line)
+            context.addPath(CGPath(roundedRect: inset, cornerWidth: strokeRadius, cornerHeight: strokeRadius, transform: nil))
+            context.strokePath()
+        case .edge:
+            let size: CGFloat = 8
+            let rect = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: shadowY), blur: 2, color: CGColor(gray: 0, alpha: 0.3))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fillEllipse(in: rect)
+            context.restoreGState()
+            context.setStrokeColor(accent)
+            context.setLineWidth(line)
+            context.strokeEllipse(in: rect.insetBy(dx: line / 2, dy: line / 2))
+        case .tail:
+            let size = Self.handleSize
+            let rect = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: shadowY), blur: 2, color: CGColor(gray: 0, alpha: 0.3))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.fillEllipse(in: rect)
+            context.restoreGState()
+            context.setStrokeColor(accent)
+            context.setLineWidth(line + 0.5)
+            context.strokeEllipse(in: rect.insetBy(dx: (line + 0.5) / 2, dy: (line + 0.5) / 2))
+        case .arrowHead:
+            let size: CGFloat = 10
+            let rect = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: shadowY), blur: 2, color: CGColor(gray: 0, alpha: 0.32))
+            context.setFillColor(accent)
+            context.fillEllipse(in: rect)
+            context.restoreGState()
+            let ring: CGFloat = 1.5
+            context.setStrokeColor(CGColor(gray: 1, alpha: 1))
+            context.setLineWidth(ring)
+            context.strokeEllipse(in: rect.insetBy(dx: ring / 2, dy: ring / 2))
+        case .control:
+            let half: CGFloat = 5
+            let diamond = CGMutablePath()
+            diamond.move(to: CGPoint(x: point.x, y: point.y - half))
+            diamond.addLine(to: CGPoint(x: point.x + half, y: point.y))
+            diamond.addLine(to: CGPoint(x: point.x, y: point.y + half))
+            diamond.addLine(to: CGPoint(x: point.x - half, y: point.y))
+            diamond.closeSubpath()
+            context.saveGState()
+            context.setShadow(offset: CGSize(width: 0, height: shadowY), blur: 2, color: CGColor(gray: 0, alpha: 0.3))
+            context.setFillColor(CGColor(gray: 1, alpha: 1))
+            context.addPath(diamond)
+            context.fillPath()
+            context.restoreGState()
+            context.setStrokeColor(accent)
+            context.setLineWidth(line)
+            context.setLineJoin(.round)
+            context.addPath(diamond)
+            context.strokePath()
+        }
+    }
+
+    private func drawRotationKnob(at point: CGPoint, line: CGFloat, in context: CGContext) {
+        let size: CGFloat = 13
+        let rect = CGRect(x: point.x - size / 2, y: point.y - size / 2, width: size, height: size)
+        let shadowY: CGFloat = contentsAreFlipped() ? 1 : -1
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: shadowY), blur: 2, color: CGColor(gray: 0, alpha: 0.3))
+        context.setFillColor(CGColor(gray: 1, alpha: 1))
+        context.fillEllipse(in: rect)
+        context.restoreGState()
+        context.setStrokeColor(accent)
+        context.setLineWidth(line)
+        context.strokeEllipse(in: rect.insetBy(dx: line / 2, dy: line / 2))
+        // Crisp curved rotation icon inside the knob.
+        context.saveGState()
+        context.setStrokeColor(accent)
+        context.setLineWidth(1.2)
+        context.setLineCap(.round)
+        let arcRadius: CGFloat = 3.1
+        let startAngle: CGFloat = -.pi * 0.75
+        let endAngle: CGFloat = .pi * 0.65
+        context.addArc(center: point, radius: arcRadius, startAngle: startAngle, endAngle: endAngle, clockwise: false)
+        context.strokePath()
+        // Tiny arrowhead at endAngle.
+        let tip = CGPoint(x: point.x + cos(endAngle) * arcRadius, y: point.y + sin(endAngle) * arcRadius)
+        let head = CGMutablePath()
+        head.move(to: CGPoint(x: tip.x + 2.0, y: tip.y - 0.8))
+        head.addLine(to: tip)
+        head.addLine(to: CGPoint(x: tip.x + 0.4, y: tip.y - 2.3))
+        context.addPath(head)
+        context.strokePath()
+        context.restoreGState()
     }
 }
 
@@ -440,6 +559,13 @@ nonisolated final class CropLayer: StillLayer {
     }
     var increasedContrast = false {
         didSet { if increasedContrast != oldValue { setNeedsDisplay() } }
+    }
+    var isDark = false {
+        didSet { if isDark != oldValue { setNeedsDisplay() } }
+    }
+    /// Live pixel dimensions pill text (e.g., "1200 × 720 px") anchored beside the crop frame.
+    var dimensionText: String? {
+        didSet { if dimensionText != oldValue { setNeedsDisplay() } }
     }
 
     override init() {
@@ -511,5 +637,67 @@ nonisolated final class CropLayer: StillLayer {
         context.setLineWidth(3)
         context.addPath(arms)
         context.strokePath()
+
+        if let text = dimensionText, !text.isEmpty, frame.width > 0, frame.height > 0 {
+            drawDimensionPill(text, around: frame, in: context)
+        }
+    }
+
+    private func drawDimensionPill(_ text: String, around frame: CGRect, in context: CGContext) {
+        let baseFont = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        let font = NSFont(descriptor: baseFont.fontDescriptor.withDesign(.rounded) ?? baseFont.fontDescriptor, size: 12) ?? baseFont
+        let ink = isDark ? CGColor(gray: 1, alpha: 0.92) : CGColor(gray: 0, alpha: 0.85)
+        let attributes: [NSAttributedString.Key: Any] = [
+            NSAttributedString.Key(kCTFontAttributeName as String): font as CTFont,
+            NSAttributedString.Key(kCTForegroundColorAttributeName as String): ink,
+        ]
+        let line = CTLineCreateWithAttributedString(NSAttributedString(string: text, attributes: attributes))
+        var ascent: CGFloat = 0
+        var descent: CGFloat = 0
+        let textWidth = CGFloat(CTLineGetTypographicBounds(line, &ascent, &descent, nil))
+        let pillWidth = ceil(textWidth) + 22
+        let pillHeight: CGFloat = 24
+        let margin: CGFloat = 8
+        let gap: CGFloat = 10
+
+        let minX = bounds.minX + margin
+        let maxX = max(minX, bounds.maxX - margin - pillWidth)
+        let x = min(max(frame.midX - pillWidth / 2, minX), maxX)
+        var y = frame.minY - gap - pillHeight
+        if y < bounds.minY + margin {
+            let below = frame.maxY + gap
+            if below + pillHeight <= bounds.maxY - margin {
+                y = below
+            } else {
+                y = min(max(frame.minY + gap, bounds.minY + margin), max(bounds.minY + margin, bounds.maxY - margin - pillHeight))
+            }
+        }
+        let pill = CGRect(x: x.rounded(), y: y.rounded(), width: pillWidth, height: pillHeight)
+        let radius = pillHeight / 2
+        let pillPath = CGPath(roundedRect: pill, cornerWidth: radius, cornerHeight: radius, transform: nil)
+
+        context.saveGState()
+        context.setShadow(offset: CGSize(width: 0, height: contentsAreFlipped() ? 2 : -2), blur: 8, color: CGColor(gray: 0, alpha: 0.18))
+        context.setFillColor(isDark ? CGColor(gray: 0.17, alpha: 0.94) : CGColor(gray: 1, alpha: 0.96))
+        context.addPath(pillPath)
+        context.fillPath()
+        context.restoreGState()
+
+        let borderWidth: CGFloat = increasedContrast ? 1 : 0.5
+        let borderColor = isDark
+            ? CGColor(gray: 1, alpha: increasedContrast ? 0.5 : 0.12)
+            : CGColor(gray: 0, alpha: increasedContrast ? 0.35 : 0.08)
+        let borderRect = pill.insetBy(dx: borderWidth / 2, dy: borderWidth / 2)
+        context.setStrokeColor(borderColor)
+        context.setLineWidth(borderWidth)
+        context.addPath(CGPath(roundedRect: borderRect, cornerWidth: radius - borderWidth / 2, cornerHeight: radius - borderWidth / 2, transform: nil))
+        context.strokePath()
+
+        context.saveGState()
+        context.textMatrix = CGAffineTransform(scaleX: 1, y: -1)
+        let baselineY = pill.midY + (ascent - descent) / 2
+        context.textPosition = CGPoint(x: pill.minX + (pill.width - textWidth) / 2, y: baselineY)
+        CTLineDraw(line, context)
+        context.restoreGState()
     }
 }

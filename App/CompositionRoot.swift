@@ -34,8 +34,9 @@ final class CompositionRoot {
     lazy var uploads: UploadCoordinator = {
         let uploads = UploadCoordinator(settings: settings, quickAccess: quickAccess)
         uploads.restoreCard = { [weak self] id in
-            guard let self, let entry = history.item(id: id) else { return }
+            guard let self, let entry = history.item(id: id) else { return false }
             Task { await self.restore(entry) }
+            return true
         }
         uploads.ended = { [weak self] id, outcome in self?.uploadEnded(id, outcome) }
         // An upload of no capture in the history (a project's, from its editor) has no card to come back to: a failure is
@@ -53,6 +54,9 @@ final class CompositionRoot {
         coordinator.readers = { [weak self] in self?.readerPacks.installed }
         coordinator.cloud = { [weak self] in self?.panelCloud() }
         coordinator.captureTextCloud = { [weak self] in self?.captureTextCloud() }
+        coordinator.onPinImage = { [weak self] image, scale in
+            self?.pins.pin(image, scale: scale, origin: .clipboard)
+        }
         return coordinator
     }()
     /// The cloud model the OCR panel's Read with, and Capture Text while Settings says so, send a picture to (L4,
@@ -118,11 +122,15 @@ final class CompositionRoot {
             // A recording under way takes the canvases in, as it took in what was on screen when it began.
             Task { await self.recordings.includeWindowsShownSince() }
         }
+        sketch.onCapture = { [weak self] in
+            self?.captures.captureFullscreen()
+        }
         return sketch
     }()
     /// The model packs the text reader reads with beside Vision, and the text reader itself.
     lazy var readerPacks: TextReaderPacks = {
         let packs = TextReaderPacks()
+        packs.isPackEnabled = { [weak self] id in self?.settings.isModelPackEnabled(id) ?? true }
         packs.secondReadingWarmed = { [weak self] in
             guard let self, settings.historyRetention != .never else { return }
             textReader.readSoon()
@@ -134,7 +142,9 @@ final class CompositionRoot {
     lazy var recordings = RecordingCoordinator(
         settings: settings, displays: displays, capturer: capturer, overlay: overlay, history: history, permissions: permissions, files: files
     )
-    lazy var scrolling = ScrollingCaptureCoordinator(displays: displays, capturer: capturer, overlay: overlay, permissions: permissions, captures: captures)
+    lazy var scrolling = ScrollingCaptureCoordinator(
+        displays: displays, capturer: capturer, overlay: overlay, permissions: permissions, captures: captures, settings: settings
+    )
     /// Hide Desktop Icons: nothing exists unless the icons are hidden.
     lazy var desktopIcons: DesktopCover = {
         let cover = DesktopCover(topology: displays, capturer: capturer)
@@ -149,10 +159,13 @@ final class CompositionRoot {
     private(set) var statusItem: StatusItemController?
     /// Release builds' updates; nil in builds without a feed, until a debug hook starts one against a feed of its own.
     var updates: UpdateController?
+    private var suppressingUpdateReminder = false
     private var automation: AutomationController?
     private(set) var settingsWindow: SettingsWindowController?
     private var onboardingWindow: OnboardingWindowController?
     private var onboardingCapture: UUID?
+    private var onboardingCancelledByUser = false
+    private var onboardingEscapeMonitor: Any?
     private var onboardingApplication: NSRunningApplication?
     /// The invitation to star OhMyShot on GitHub or join MMFoundation's Discord: counted as captures are kept, shown
     /// once, at a later launch.
@@ -233,7 +246,11 @@ final class CompositionRoot {
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
         if #available(macOS 27, *) {
-            replayStorage = ReplayCoordinator(settings: settings, displays: displays, capturer: capturer, permissions: permissions, recordings: recordings)
+            let coordinator = ReplayCoordinator(settings: settings, displays: displays, capturer: capturer, permissions: permissions, recordings: recordings)
+            coordinator.onStateChange = { [weak self] active in
+                self?.statusItem?.setReplayActive(active)
+            }
+            replayStorage = coordinator
         }
         let statusItem = makeStatusItem()
         self.statusItem = statusItem
@@ -245,6 +262,11 @@ final class CompositionRoot {
         }
 
         let settings = settings
+        observations.append(Task {
+            for await languages in Observations({ settings.ocrLanguages }) {
+                TextRecognition.setDefaultLanguages(languages)
+            }
+        })
         observations.append(Task { [weak self] in
             for await format in Observations({ settings.colorFormat }) {
                 // Every overlay's magnifier reads in it, not only Pick Color's: C copies it while capturing.
@@ -273,6 +295,12 @@ final class CompositionRoot {
         })
         // A shape chosen on Capture Area's size control is the one Shift keeps from now on; a square is the empty one.
         overlay.onKeptShapeChange = { shape in settings.areaShape = shape == .square ? "" : shape.label }
+        overlay.onColorFormatChange = { settings.colorFormat = $0 }
+        observations.append(Task { [weak self] in
+            for await _ in Observations({ settings.quickAccessPreferences }) {
+                self?.quickAccess.preferencesChanged()
+            }
+        })
         observations.append(Task { [weak statusItem] in
             for await visible in Observations({ settings.showMenuBarIcon }) {
                 statusItem?.setVisible(visible)
@@ -281,7 +309,6 @@ final class CompositionRoot {
         if let updates = UpdateController.make(), updates.start() {
             self.updates = updates
             connectUpdates(updates)
-            updates.showReleaseNotesAfterUpdate()
             observeUpdateSetting()
         }
         // Also runs once now, which is the launch-time cleanup.
@@ -309,10 +336,10 @@ final class CompositionRoot {
         })
 
         captures.onCaptured = { [weak self] item in
-            self?.didCapture(item)
+            self?.runWithoutUpdateReminder { self?.didCapture(item) }
         }
         recordings.onRecorded = { [weak self] item in
-            self?.didCapture(item)
+            self?.runWithoutUpdateReminder { self?.didCapture(item) }
         }
         // Card or not, a screenshot or a recording kept counts toward the community invitation.
         captures.onKept = { [weak self] entry in
@@ -334,11 +361,21 @@ final class CompositionRoot {
         recordings.uploadKept = { [weak self] entry in self?.uploadKept(entry) }
         captures.saveFailed = { [weak self] failure, id in self?.showSaveFailure(failure, onCardOf: id) }
         recordings.saveFailed = { [weak self] failure, id in self?.showSaveFailure(failure, onCardOf: id) }
+        recordings.onDrawOnScreen = { [weak self] in self?.handle(.drawOnScreen, from: .menu) }
         recordings.onStatus = { [weak self] status in
             guard let self else { return }
             switch status {
             case .recording(let time, let paused):
-                self.statusItem?.showRecording(elapsed: time, paused: paused) { [weak self] in self?.recordings.stop() }
+                self.statusItem?.showRecording(
+                    elapsed: time,
+                    paused: paused,
+                    actions: .init(
+                        togglePause: { [weak self] in self?.recordings.togglePause() },
+                        drawOnScreen: { [weak self] in self?.handle(.drawOnScreen, from: .menu) },
+                        stop: { [weak self] in self?.recordings.stop() },
+                        delete: { [weak self] in self?.recordings.delete() }
+                    )
+                )
             case .makingGIF(let progress):
                 self.statusItem?.showProgress(.makingGIF(progress))
             case .exportingStudio(let progress):
@@ -367,7 +404,7 @@ final class CompositionRoot {
         captures.allInOneText = { [weak self] area, frozen in
             guard let self else { return }
             let joinLines = !self.settings.textRecognitionKeepsLineBreaks
-            Task { await self.textCapture.recognize(region: area, frozen: frozen, joinLines: joinLines) }
+            Task { await self.textCapture.recognize(region: area, frozen: frozen, joinLines: joinLines, allowsCloud: true) }
         }
         captures.allInOneScroll = { [weak self] area in self?.scrolling.begin(area: area, starts: true) }
         captures.onRecord = { [weak self] target, display, choices, app in
@@ -399,10 +436,12 @@ final class CompositionRoot {
         }
         // Pins are in new captures as they are on screen (Settings can leave them out); a pin just opened
         // is fetched into the capturable content at once, so the next capture has it.
+        captures.desktopIcons = desktopIcons
+        recordings.desktopIcons = desktopIcons
         capturer.includedWindowIDs = { [weak self] in
             guard let self else { return Self.standardWindowIDs() }
             // The cover over the desktop icons too: a capture shows the desktop as it looks.
-            let covers = settings.hidesDesktopIcons ? desktopIcons.windowIDs : []
+            let covers = desktopIcons.isShown ? desktopIcons.windowIDs : []
             return pins.capturedWindowIDs.union(Self.standardWindowIDs()).union(covers).union(sketch.canvasWindowIDs)
         }
         pins.onChange = { [weak self] in self?.shareableContent.refresh() }
@@ -450,6 +489,9 @@ final class CompositionRoot {
             self?.upload(captureID: id, fileURL: file, to: destination, scale: scale)
         }
         annotations.isUploading = { [weak self] id in self?.uploads.isUploading(id) ?? false }
+        annotations.recognizeText = { [weak self] image, scale, title in
+            self?.textCapture.openPanel(image: image, scale: scale, source: title)
+        }
 
         displays.onChange = { [weak self] layout in
             guard let self else { return }
@@ -459,7 +501,7 @@ final class CompositionRoot {
             overlay.prepare()
             quickAccess.displaysChanged()
             pins.displaysChanged()
-            if settings.hidesDesktopIcons { desktopIcons.refresh() }
+            if desktopIcons.isShown { desktopIcons.refresh() }
         }
 
         logStartup()
@@ -475,12 +517,11 @@ final class CompositionRoot {
             overlay.prepare()
             shareableContent.refresh()
         }
-        // On the next turn, once what launched the app (a URL, a file to annotate) has begun.
-        Task { @MainActor [weak self] in self?.offerCommunityInvite() }
     }
 
     func prepareForTermination() {
         usageTelemetry?.stop()
+        clearOnboardingEscapeMonitor()
         onboardingWindow?.preserveProgress()
         quickAccess.dismissFirstCaptureHint()
         // A card waiting under Undo goes to the Trash as it would have a moment later.
@@ -535,13 +576,21 @@ final class CompositionRoot {
         if settings.historyRetention != .never { textReader.readNow(retryingFailed: true) }
     }
 
+    /// Shows at most one ordinary-launch window: Getting Started on a fresh install (recording the build without
+    /// stacking What's New), What's New after updating from an older build, or the one-time community invitation.
+    func presentLaunchWindows() {
+        let showedOnboarding = presentOnboardingIfNeeded()
+        updates?.showReleaseNotesAfterUpdate(onboardingPending: showedOnboarding || onboardingProgress.shouldPresentAutomatically)
+        offerCommunityInvite()
+    }
+
     /// Ordinary launches and Finder reopens can resume a guide. URL/file launches call neither: their operation
     /// comes first, and a later ordinary open is the next opportunity. No permissions prompt is repeated at launch.
     @discardableResult
     func presentOnboardingIfNeeded() -> Bool {
         guard onboardingProgress.shouldPresentAutomatically else { return false }
         guard onboardingCapture == nil else { return true }
-        showGuide(at: onboardingProgress.step)
+        showGuide(at: onboardingProgress.step, autoAdvanceGrantedPermission: true)
         return true
     }
 
@@ -561,11 +610,13 @@ final class CompositionRoot {
         }
     }
 
-    private func showGuide(at step: OnboardingProgress.Step, message: String? = nil) {
+    private func showGuide(at step: OnboardingProgress.Step, message: String? = nil, autoAdvanceGrantedPermission: Bool = false) {
         if let onboardingWindow { return onboardingWindow.show() }
         rememberOnboardingApplication()
         let controller = OnboardingWindowController(
-            permissions: permissions, startingAt: step, mode: .tour, captureMessage: message,
+            permissions: permissions, startingAt: step, mode: .tour,
+            autoAdvanceGrantedPermission: autoAdvanceGrantedPermission,
+            captureMessage: message,
             cardCorner: settings.quickAccessCorner,
             stepChanged: { [weak self] in self?.onboardingProgress.move(to: $0) },
             openShortcuts: { [weak self] in self?.showSettings(.shortcuts) },
@@ -577,6 +628,13 @@ final class CompositionRoot {
             self?.onboardingApplication = nil
         }
         keepOnboarding(controller)
+    }
+
+    private func clearOnboardingEscapeMonitor() {
+        if let monitor = onboardingEscapeMonitor {
+            NSEvent.removeMonitor(monitor)
+            onboardingEscapeMonitor = nil
+        }
     }
 
     /// The guide's button and Capture Area's real shortcut share this path, including cancellation and retry.
@@ -602,6 +660,14 @@ final class CompositionRoot {
         guard !overlay.isActive, !recordings.isRecording, !recordings.isCountingDown, !scrolling.isCapturing else { return NSSound.beep() }
         let attempt = UUID()
         onboardingCapture = attempt
+        onboardingCancelledByUser = false
+        clearOnboardingEscapeMonitor()
+        onboardingEscapeMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            if event.keyCode == 53 {
+                MainActor.assumeIsolated { self?.onboardingCancelledByUser = true }
+            }
+            return event
+        }
         onboardingProgress.move(to: .capture)
         onboardingWindow?.closeForCapture()
         onboardingWindow = nil
@@ -614,15 +680,21 @@ final class CompositionRoot {
             guard let self, onboardingCapture == attempt else { return }
             captures.captureArea(followUp: CaptureFollowUp(deliverCard: { [weak self] item, isCopied in
                 guard let self else { return }
-                didCapture(item, forceQuickAccess: true)
+                runWithoutUpdateReminder { didCapture(item, forceQuickAccess: true) }
                 guard onboardingCapture == attempt else { return }
                 quickAccess.showFirstCaptureHint(for: item.id, isCopied: isCopied)
             }, done: { [weak self] entry in
                 guard let self, onboardingCapture == attempt else { return }
                 onboardingCapture = nil
+                clearOnboardingEscapeMonitor()
+                let cancelled = onboardingCancelledByUser
+                onboardingCancelledByUser = false
                 if entry != nil {
                     onboardingProgress.complete()
                     onboardingApplication = nil
+                } else if cancelled {
+                    // User intentionally pressed Esc to cancel the practice capture: return cleanly without an error box.
+                    showGuide(at: .capture)
                 } else {
                     showGuide(at: .capture, message: String(localized: "No capture was completed. Try again, or skip the guide. If access just changed, relaunch OhMyShot."))
                 }
@@ -688,13 +760,21 @@ final class CompositionRoot {
     private var isBusyForCommunityInvite: Bool {
         overlay.isActive || captures.isSelfTimerRunning || recordings.isRecording || recordings.isCountingDown
             || scrolling.isCapturing || annotations.isEditing || !recordings.openRecordingIDs.isEmpty
-            || onboardingWindow != nil || communityInviteWindow != nil
+            || onboardingWindow != nil || communityInviteWindow != nil || updates?.isShowingReleaseNotes == true
             || NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
             || NSApp.keyWindow != nil
     }
 
+    private func runWithoutUpdateReminder(_ work: () -> Void) {
+        let previous = suppressingUpdateReminder
+        suppressingUpdateReminder = true
+        defer { suppressingUpdateReminder = previous }
+        work()
+    }
+
     /// Capture callbacks can arrive just before their coordinator clears its busy flag.
     func retryUpdateReminderAfterActivity() {
+        guard !suppressingUpdateReminder else { return }
         Task { @MainActor [weak self] in
             await Task.yield()
             self?.updates?.presentReminderIfNeeded()
@@ -704,8 +784,8 @@ final class CompositionRoot {
     private var isBusyForUpdateReminder: Bool {
         overlay.isActive || captures.isSelfTimerRunning || recordings.isRecording || recordings.isCountingDown
             || scrolling.isCapturing || annotations.isEditing || !recordings.openRecordingIDs.isEmpty
-            || onboardingWindow != nil || communityInviteWindow != nil || NSApp.modalWindow != nil
-            || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
+            || onboardingWindow != nil || communityInviteWindow != nil || updates?.isShowingReleaseNotes == true
+            || NSApp.modalWindow != nil || NSApp.windows.contains { $0.isVisible && $0.attachedSheet != nil }
     }
 
     func connectUpdates(_ updates: UpdateController) {

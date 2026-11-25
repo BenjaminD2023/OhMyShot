@@ -35,8 +35,8 @@ struct HistoryCard: View {
                         .fill(.black.opacity(0.28))
                     hoverActions
                 }
-                if item.isFavorite {
-                    favoriteBadge
+                if item.isFavorite || (hovering && model.canFavorite) {
+                    favoriteControl
                 }
             }
             .frame(height: 150)
@@ -95,8 +95,9 @@ struct HistoryCard: View {
         // VoiceOver's press does what a double-click does.
         .accessibilityAction { model.actions.annotate(item) }
         .accessibilityAction(named: Text("Restore", bundle: .module)) { model.actions.restore(item) }
-        .accessibilityAction(named: Text("Copy", bundle: .module)) { model.actions.copy(item) }
+        .accessibilityAction(named: Text("Copy", bundle: .module)) { model.copy([item]) }
         .accessibilityAction(named: Text("Save", bundle: .module)) { model.actions.save(item) }
+        .accessibilityAction(named: Text("Save As…", bundle: .module)) { model.actions.saveAs(item) }
         .accessibilityAction(named: Text("Quick Look", bundle: .module)) { model.quickLook(item) }
         .accessibilityAction(named: favoriteTitle) { model.toggleFavorite([item]) }
         .accessibilityActions {
@@ -104,6 +105,9 @@ struct HistoryCard: View {
                 Button { model.actions.annotate(item) } label: { Text("Annotate", bundle: .module) }
                 Button { model.actions.recognizeText(item) } label: { Text("Recognize Text", bundle: .module) }
                 Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
+                if let translate = model.resolvedTranslate {
+                    Button { translate(item) } label: { Text("Translate", bundle: .module) }
+                }
                 Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
                 Button { model.print(item) } label: { Text("Print", bundle: .module) }
             }
@@ -121,7 +125,7 @@ struct HistoryCard: View {
                 }
             }
         }
-        .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
+        .accessibilityAction(named: Text("Move to Trash", bundle: .module)) { model.requestTrash([item]) }
     }
 
     /// The upload entries History offers for the capture now, for its menu and VoiceOver alike. A failed upload is the
@@ -190,20 +194,39 @@ struct HistoryCard: View {
         item.isFavorite ? Text("Remove from Favorites", bundle: .module) : Text("Add to Favorites", bundle: .module)
     }
 
-    /// A star in the top-right corner of a favorite, in the length badge's materials and ink.
-    private var favoriteBadge: some View {
-        Image(systemName: "star.fill")
-            .font(.caption.weight(.semibold))
-            .foregroundStyle(Color(nsColor: dark ? NSColor(white: 1, alpha: 0.92) : NSColor(white: 0, alpha: 0.85)))
-            .frame(width: 22, height: 22)
-            .background(Circle().fill(Color(cgColor: Theme.Material.capsuleFill(dark: dark))))
-            .overlay {
-                Circle().strokeBorder(Color(cgColor: Theme.Material.edge(dark: dark, contrast: increasedContrast)), lineWidth: Theme.Material.edgeWidth(contrast: increasedContrast))
+    /// A star in the top-right corner of a favorite, becoming a clickable toggle button on hover when History is on.
+    @ViewBuilder private var favoriteControl: some View {
+        Group {
+            if hovering && model.canFavorite {
+                Button {
+                    model.toggleFavorite([item])
+                } label: {
+                    Image(systemName: item.isFavorite ? "star.fill" : "star")
+                        .foregroundStyle(item.isFavorite ? Color.yellow : Color.primary)
+                        .frame(width: 16, height: 16)
+                }
+                .buttonStyle(.glass)
+                .help(favoriteTitle)
+                .accessibilityLabel(favoriteTitle)
+            } else {
+                Image(systemName: "star.fill")
+                    .font(.caption.weight(.semibold))
+                    .foregroundStyle(Color(nsColor: dark ? NSColor(white: 1, alpha: 0.92) : NSColor(white: 0, alpha: 0.85)))
+                    .frame(width: 22, height: 22)
+                    .background(Circle().fill(Color(cgColor: Theme.Material.capsuleFill(dark: dark))))
+                    .overlay {
+                        Circle().strokeBorder(Color(cgColor: Theme.Material.edge(dark: dark, contrast: increasedContrast)), lineWidth: Theme.Material.edgeWidth(contrast: increasedContrast))
+                    }
+                    .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
+                    .accessibilityHidden(true)
             }
-            .shadow(color: .black.opacity(0.18), radius: 4, y: 1)
-            .padding(8)
-            .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
-            .accessibilityHidden(true)
+        }
+        .padding(8)
+        .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topTrailing)
+    }
+
+    private var isStudio: Bool {
+        item.kind == .recording && model.store.hasStudioProject(item)
     }
 
     /// What it is, the app it was taken in, as the card's caption shows, and its size.
@@ -212,13 +235,19 @@ struct HistoryCard: View {
         guard let app = item.appName else {
             return switch item.media {
             case .screenshot: Text("Screenshot, \(width) by \(height) pixels", bundle: .module)
-            case .movie: Text("Recording, \(width) by \(height) pixels", bundle: .module)
+            case .movie:
+                isStudio
+                    ? Text("Studio recording, \(width) by \(height) pixels", bundle: .module)
+                    : Text("Recording, \(width) by \(height) pixels", bundle: .module)
             case .gif: Text("GIF, \(width) by \(height) pixels", bundle: .module)
             }
         }
         return switch item.media {
         case .screenshot: Text("Screenshot from \(app), \(width) by \(height) pixels", bundle: .module)
-        case .movie: Text("Recording from \(app), \(width) by \(height) pixels", bundle: .module)
+        case .movie:
+            isStudio
+                ? Text("Studio recording from \(app), \(width) by \(height) pixels", bundle: .module)
+                : Text("Recording from \(app), \(width) by \(height) pixels", bundle: .module)
         case .gif: Text("GIF from \(app), \(width) by \(height) pixels", bundle: .module)
         }
     }
@@ -226,11 +255,14 @@ struct HistoryCard: View {
     private var dark: Bool { colorScheme == .dark }
     private var increasedContrast: Bool { contrast == .increased }
 
-    /// A small play badge in the corner, or "GIF" for a GIF, with the length when it is known.
+    /// A small play badge in the corner, "Studio" for a Studio recording, or "GIF" for a GIF, with the length when known.
     private var recordingBadge: some View {
         HStack(spacing: 4) {
             if item.media == .gif {
                 Text(verbatim: "GIF")
+            } else if isStudio {
+                Image(systemName: "wand.and.sparkles")
+                Text(CaptureMedia.studioBadgeTitle)
             } else {
                 Image(systemName: "play.fill")
             }
@@ -269,18 +301,29 @@ struct HistoryCard: View {
             .controlSize(.large)
 
             HStack(spacing: 6) {
-                iconButton("doc.on.doc", Text("Copy", bundle: .module)) { model.actions.copy(item) }
+                let justCopied = model.copyFeedback?.itemIDs.contains(item.id) == true && model.copyFeedback?.kind == .capture
+                iconButton(
+                    justCopied ? "checkmark" : "doc.on.doc",
+                    justCopied ? Text("Copied", bundle: .module) : Text("Copy", bundle: .module),
+                    tint: justCopied ? .green : nil
+                ) { model.copy([item]) }
                 iconButton("square.and.arrow.down", Text("Save", bundle: .module)) { model.actions.save(item) }
-                iconButton("folder", Text("Show in Finder", bundle: .module)) { model.actions.reveal(item) }
-                iconButton("trash", Text("Move to Trash", bundle: .module)) { model.moveToTrash(item) }
+                iconButton("folder", Text("Show Original in Finder", bundle: .module)) { model.actions.reveal(item) }
+                iconButton("trash", Text("Move to Trash", bundle: .module)) { model.requestTrash([item]) }
             }
         }
     }
 
-    private func iconButton(_ symbol: String, _ label: Text, action: @escaping () -> Void) -> some View {
+    private func iconButton(_ symbol: String, _ label: Text, tint: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            Image(systemName: symbol)
-                .frame(width: 16, height: 16)
+            if let tint {
+                Image(systemName: symbol)
+                    .foregroundStyle(tint)
+                    .frame(width: 16, height: 16)
+            } else {
+                Image(systemName: symbol)
+                    .frame(width: 16, height: 16)
+            }
         }
         .buttonStyle(.glass)
         .help(label)
@@ -288,16 +331,36 @@ struct HistoryCard: View {
     }
 
     @ViewBuilder private var menu: some View {
-        Button { model.actions.restore(item) } label: { Text("Restore", bundle: .module) }
-            .keyboardShortcut(.return, modifiers: [])
-        Button { model.actions.copy(item) } label: { Text("Copy", bundle: .module) }
-            .keyboardShortcut("c")
-        Button { model.actions.save(item) } label: { Text("Save", bundle: .module) }
-            .keyboardShortcut("s")
+        let targets = model.itemsActedOn(from: item)
+        let multiple = targets.count > 1
+        Button { targets.forEach(model.actions.restore) } label: {
+            multiple ? Text("Restore \(targets.count) Captures", bundle: .module) : Text("Restore", bundle: .module)
+        }
+        .keyboardShortcut(.return, modifiers: [])
+        Button { model.copy(targets) } label: {
+            multiple ? Text("Copy \(targets.count) Captures", bundle: .module) : Text("Copy", bundle: .module)
+        }
+        .keyboardShortcut("c")
+        Button { targets.forEach(model.actions.save) } label: {
+            multiple ? Text("Save \(targets.count) Captures", bundle: .module) : Text("Save", bundle: .module)
+        }
+        .keyboardShortcut("s")
+        if !multiple {
+            Button { model.actions.saveAs(item) } label: { Text("Save As…", bundle: .module) }
+                .keyboardShortcut("s", modifiers: [.command, .shift])
+        }
         // Every capture selected when this is one of them; with History off, dimmed, and why under it.
-        let favorites = model.itemsActedOn(from: item)
-        Button { model.toggleFavorite(favorites) } label: {
-            favorites.allSatisfy(\.isFavorite) ? Text("Remove from Favorites", bundle: .module) : Text("Add to Favorites", bundle: .module)
+        let allFavorited = targets.allSatisfy(\.isFavorite)
+        Button { model.toggleFavorite(targets) } label: {
+            if multiple {
+                allFavorited
+                    ? Text("Remove \(targets.count) from Favorites", bundle: .module)
+                    : Text("Add \(targets.count) to Favorites", bundle: .module)
+            } else {
+                allFavorited
+                    ? Text("Remove from Favorites", bundle: .module)
+                    : Text("Add to Favorites", bundle: .module)
+            }
         }
         .keyboardShortcut(".", modifiers: [])
         .disabled(!model.canFavorite)
@@ -305,16 +368,31 @@ struct HistoryCard: View {
             Text(HistoryModel.favoritesNeedHistory)
         }
         Divider()
-        Button { model.quickLook(item) } label: { Text("Quick Look", bundle: .module) }
-            .keyboardShortcut(.space, modifiers: [])
-        Button { model.actions.annotate(item) } label: { Text(item.media.openMenuTitle) }
-            .keyboardShortcut("o")
-        Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
-        if item.kind == .screenshot {
-            Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }
-            Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
-            Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
-            Button { model.print(item) } label: { Text("Print…", bundle: .module) }
+        if !multiple {
+            Button { model.quickLook(item) } label: { Text("Quick Look", bundle: .module) }
+                .keyboardShortcut(.space, modifiers: [])
+        }
+        Button { targets.forEach(model.actions.annotate) } label: {
+            if multiple {
+                targets.allSatisfy({ $0.kind == .screenshot })
+                    ? Text("Annotate \(targets.count) Captures…", bundle: .module)
+                    : Text("Open \(targets.count) in Editor…", bundle: .module)
+            } else {
+                Text(item.media.openMenuTitle(isStudio: isStudio))
+            }
+        }
+        .keyboardShortcut("o")
+        if !multiple {
+            Button { model.actions.open(item) } label: { Text("Open", bundle: .module) }
+            if item.kind == .screenshot {
+                Button { model.actions.recognizeText(item) } label: { Text("Recognize Text…", bundle: .module) }
+                Button { model.copyText(item) } label: { Text("Copy Text", bundle: .module) }
+                if let translate = model.resolvedTranslate {
+                    Button { translate(item) } label: { Text("Translate…", bundle: .module) }
+                }
+                Button { model.actions.pin(item) } label: { Text("Pin to Screen", bundle: .module) }
+                Button { model.print(item) } label: { Text("Print…", bundle: .module) }
+            }
         }
         let collage = model.collageItems(from: item), pdf = model.pdfItems(from: item)
         if !collage.isEmpty {
@@ -325,29 +403,37 @@ struct HistoryCard: View {
                 pdf.count == 1 ? Text("Export as PDF…", bundle: .module) : Text("Export \(pdf.count) as PDF…", bundle: .module)
             }
         }
-        Button { model.actions.reveal(item) } label: { Text("Show in Finder", bundle: .module) }
-        Divider()
-        Button { share(atPointer: true) } label: { Text("Share…", bundle: .module) }
-        if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
-            Button { if let file = model.fileToHandOver(item) { EmailSharing.send(file) } } label: { Text("Send by Email", bundle: .module) }
+        if !multiple {
+            Button { model.actions.reveal(item) } label: { Text("Show Original in Finder", bundle: .module) }
         }
-        ForEach(Array(sharingEntries.enumerated()), id: \.offset) { _, entry in
-            if case .uploadTo(let targets) = entry {
-                Menu {
-                    ForEach(targets) { target in
-                        Button { model.actions.sharing.upload(item, target.id) } label: {
-                            if target.isDefault { Label(target.name, systemImage: "checkmark") } else { Text(target.name) }
+        Divider()
+        Button { share(atPointer: true) } label: {
+            multiple ? Text("Share \(targets.count) Captures…", bundle: .module) : Text("Share…", bundle: .module)
+        }
+        if !multiple {
+            if EmailSharing.canSendRecently(model.store.fileURL(for: item)) {
+                Button { if let file = model.fileToHandOver(item) { EmailSharing.send(file) } } label: { Text("Send by Email", bundle: .module) }
+            }
+            ForEach(Array(sharingEntries.enumerated()), id: \.offset) { _, entry in
+                if case .uploadTo(let targets) = entry {
+                    Menu {
+                        ForEach(targets) { target in
+                            Button { model.actions.sharing.upload(item, target.id) } label: {
+                                if target.isDefault { Label(target.name, systemImage: "checkmark") } else { Text(target.name) }
+                            }
                         }
+                    } label: {
+                        Text(entry.menuTitle)
                     }
-                } label: {
-                    Text(entry.menuTitle)
+                } else {
+                    Button { run(entry) } label: { Text(entry.menuTitle) }
                 }
-            } else {
-                Button { run(entry) } label: { Text(entry.menuTitle) }
             }
         }
         Divider()
-        Button(role: .destructive) { model.moveToTrash(item) } label: { Text("Move to Trash", bundle: .module) }
-            .keyboardShortcut(.delete)
+        Button(role: .destructive) { model.requestTrash(targets) } label: {
+            multiple ? Text("Move \(targets.count) to Trash", bundle: .module) : Text("Move to Trash", bundle: .module)
+        }
+        .keyboardShortcut(.delete)
     }
 }

@@ -4,6 +4,7 @@ import OMSCore
 import OMSDesign
 import OMSUI
 import OSLog
+import SwiftUI
 
 /// Uploads captures to the destinations the user set up, and says how it went: on the capture's card while
 /// it is on screen, by the pointer in the Copied reading when it is not, and aloud for VoiceOver.
@@ -20,6 +21,10 @@ final class UploadCoordinator {
     private let settings: SettingsStore
     private let quickAccess: QuickAccessController
     private let copied = CopiedHUD()
+    private let failureNotice = UploadFailureHUD()
+    /// A headless failed upload currently held open in `failureNotice`, so Retry can still read its file before
+    /// retention releases it.
+    private var pendingFailedCaptureID: UUID?
     /// Uploads being deleted from their storage, so a second request waits for the first.
     private var deleting: Set<UUID> = []
     /// Asks before a file is removed from its storage; scripted checks answer for themselves.
@@ -27,10 +32,20 @@ final class UploadCoordinator {
     /// Whether a capture's link went to the clipboard, for the card's wording and its Copy Link.
     private var linkCopied: Set<UUID> = []
 
+    struct LastFailure: Equatable {
+        let captureID: UUID
+        let destinationName: String
+        let message: String
+    }
+
+    /// Most recent upload failure, kept until a subsequent upload succeeds or another fails.
+    private(set) var lastFailure: LastFailure?
+
     /// Where a link is copied. The clipboard; scripted checks point it at a pasteboard of their own.
     var pasteboard: NSPasteboard = .general
-    /// Brings a capture's card back, so a failure that nobody saw can be retried from it.
-    var restoreCard: ((UUID) -> Void)?
+    /// Brings a capture's card back, so a failure that nobody saw can be retried from it. Returns whether a card
+    /// could be restored.
+    var restoreCard: ((UUID) -> Bool)?
     /// Whether Settings give a capture a card, which is what a failure that nobody saw comes back to. Set by the
     /// composition root, which knows whether the capture is a screenshot or a recording.
     var showsCard: ((UUID) -> Bool)?
@@ -96,12 +111,27 @@ final class UploadCoordinator {
     }
 
     func retry(captureID: UUID) {
+        if pendingFailedCaptureID == captureID {
+            pendingFailedCaptureID = nil
+            failureNotice.hide(notifyDismiss: false)
+        }
         if !center.retry(captureID: captureID) {
             Log.upload.notice("Retry not possible: the destination is gone")
             VoiceOver.announce(String(localized: "That destination was removed. Choose Upload again to pick another."))
             center.forget(captureID: captureID)
             quickAccess.setUpload(nil, for: captureID)
+            ended?(captureID, .failed)
+        } else if quickAccess.item(captureID) == nil {
+            copied.show(String(localized: "Uploading…"), near: NSEvent.mouseLocation)
         }
+    }
+
+    /// Retries the most recent failed upload, if still retryable.
+    @discardableResult
+    func retryLastFailure() -> Bool {
+        guard let failure = lastFailure else { return false }
+        retry(captureID: failure.captureID)
+        return center.isUploading(failure.captureID)
     }
 
     func cancel(captureID: UUID) {
@@ -110,6 +140,7 @@ final class UploadCoordinator {
 
     /// Cancels every upload and waits for the transfers to stop, so nothing is half sent when the app quits.
     func cancelAll(then done: @escaping () -> Void) -> Bool {
+        failureNotice.hide(notifyDismiss: true)
         guard !center.isIdle else { return false }
         Task {
             await center.cancelAll()
@@ -118,7 +149,10 @@ final class UploadCoordinator {
         return true
     }
 
-    var uploadingIDs: Set<UUID> { center.uploadingIDs }
+    var uploadingIDs: Set<UUID> {
+        guard let pendingFailedCaptureID else { return center.uploadingIDs }
+        return center.uploadingIDs.union([pendingFailedCaptureID])
+    }
 
     // MARK: Links
 
@@ -227,8 +261,17 @@ final class UploadCoordinator {
                 } catch {
                     Log.upload.error("Delete failed")
                     let reason = error.localizedDescription
-                    tell(String(localized: "Couldn’t delete. \(reason)"), near: record.captureID)
+                    VoiceOver.announce(String(localized: "Couldn’t delete. \(reason)"))
                     NSSound.beep()
+                    failureNotice.show(
+                        title: String(localized: "Couldn’t delete from \(destination.name)"),
+                        message: reason,
+                        corner: settings.quickAccessCorner,
+                        avoiding: quickAccess.cardsFrame,
+                        retryTitle: nil,
+                        onRetry: nil,
+                        onDismiss: nil
+                    )
                 }
             }
         }
@@ -249,7 +292,7 @@ final class UploadCoordinator {
     }
 
     private static func askToDelete(title: String, message: String, button: String, destructive: Bool) -> Bool {
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         let alert = NSAlert()
         alert.messageText = title
         alert.informativeText = message
@@ -274,6 +317,11 @@ final class UploadCoordinator {
     // MARK: Events
 
     private func finished(_ captureID: UUID, _ result: UploadResult, _ destination: UploadDestination) {
+        if lastFailure?.captureID == captureID { lastFailure = nil }
+        if pendingFailedCaptureID == captureID {
+            pendingFailedCaptureID = nil
+            failureNotice.hide(notifyDismiss: false)
+        }
         // With no card to hold the link, copying it is the only way it reaches anyone.
         let copies = settings.copyLinkAfterUpload || quickAccess.item(captureID) == nil
         if copies {
@@ -296,6 +344,10 @@ final class UploadCoordinator {
         debugStatus?(captureID, status)
         #endif
         guard let status else {
+            if pendingFailedCaptureID == captureID {
+                pendingFailedCaptureID = nil
+                failureNotice.hide(notifyDismiss: false)
+            }
             quickAccess.setUpload(nil, for: captureID)
             ended?(captureID, .cancelled)
             return
@@ -308,19 +360,44 @@ final class UploadCoordinator {
         quickAccess.setUpload(cardUpload(status, for: captureID), for: captureID)
         if case .failed(let message) = status {
             Log.upload.error("Upload to \(destinationName, privacy: .private) failed")
+            lastFailure = LastFailure(captureID: captureID, destinationName: destinationName, message: message)
             VoiceOver.announce(String(localized: "Upload failed. \(message)"))
             if quickAccess.item(captureID) != nil {
                 NSSound.beep()
-            } else if showsCard?(captureID) ?? settings.showQuickAccess {
+                ended?(captureID, .failed)
+            } else if (showsCard?(captureID) ?? settings.showQuickAccess), restoreCard?(captureID) == true {
                 // Nobody saw it: the card comes back with the failure and Retry.
-                restoreCard?(captureID)
+                ended?(captureID, .failed)
             } else {
-                // The reason in the reading itself: with no card there is no tooltip to hover.
-                let reason = message.count > 90 ? message.prefix(89) + "…" : Substring(message)
-                copied.show(String(localized: "Upload failed. \(String(reason))"), near: NSEvent.mouseLocation)
+                // Headless failure (Quick Access is off, or no card can be restored): show a non-activating notice
+                // with enough time to read and an interactive Retry button before releasing the capture file.
+                presentHeadlessFailure(captureID: captureID, destinationName: destinationName, message: message)
             }
-            ended?(captureID, .failed)
         }
+    }
+
+    private func presentHeadlessFailure(captureID: UUID, destinationName: String, message: String) {
+        if let previous = pendingFailedCaptureID, previous != captureID {
+            pendingFailedCaptureID = nil
+            ended?(previous, .failed)
+        }
+        pendingFailedCaptureID = captureID
+        NSSound.beep()
+        failureNotice.show(
+            title: String(localized: "Upload to \(destinationName) failed"),
+            message: message,
+            corner: settings.quickAccessCorner,
+            avoiding: quickAccess.cardsFrame,
+            retryTitle: String(localized: "Retry"),
+            onRetry: { [weak self] in
+                self?.retry(captureID: captureID)
+            },
+            onDismiss: { [weak self] in
+                guard let self, self.pendingFailedCaptureID == captureID else { return }
+                self.pendingFailedCaptureID = nil
+                self.ended?(captureID, .failed)
+            }
+        )
     }
 
     private func cardUpload(_ status: UploadStatus, for captureID: UUID) -> CardUpload {
@@ -350,5 +427,220 @@ final class UploadCoordinator {
     private func write(_ link: URL) {
         pasteboard.clearContents()
         pasteboard.setString(link.absoluteString, forType: .string)
+    }
+}
+
+/// Non-activating floating notice for upload and remote-delete failures when no Quick Access card is visible.
+/// Follows `DESIGN.md` floating card tokens (12 pt continuous corners, floating card shadow, orange status symbol),
+/// stays readable for 8 seconds (20 seconds with VoiceOver), pauses dismissal on hover, and offers one-click Retry.
+private final class UploadFailureHUD {
+    private var panel: UploadFailurePanel?
+    private var dismissal: Task<Void, Never>?
+    private var windowLease: ActiveResources.Lease?
+    private var onDismiss: (() -> Void)?
+    private var hovered = false
+
+    private static let margin: CGFloat = Theme.Shadow.radius * 2 + Theme.Shadow.drop
+    private static let displayDuration: TimeInterval = 8
+    private static let voiceOverDuration: TimeInterval = 20
+
+    func show(
+        title: String,
+        message: String,
+        corner: QuickAccessCorner,
+        avoiding cardsFrame: CGRect?,
+        retryTitle: String?,
+        onRetry: (() -> Void)?,
+        onDismiss: (() -> Void)?
+    ) {
+        dismissal?.cancel()
+        dismissal = nil
+        let previousDismiss = self.onDismiss
+        self.onDismiss = nil
+        previousDismiss?()
+
+        self.onDismiss = onDismiss
+        hovered = false
+
+        let panel = self.panel ?? UploadFailurePanel()
+        self.panel = panel
+        let card = UploadFailureCard(
+            title: title,
+            message: message,
+            retryTitle: retryTitle,
+            margin: Self.margin,
+            onRetry: onRetry.map { retry in
+                { [weak self] in
+                    self?.hide(notifyDismiss: false)
+                    retry()
+                }
+            },
+            onClose: { [weak self] in self?.hide(notifyDismiss: true) },
+            onHover: { [weak self] inside in self?.setHovered(inside) }
+        )
+        let hosting = NSHostingView(rootView: card)
+        let size = hosting.fittingSize
+        panel.contentView = hosting
+
+        let pointer = NSEvent.mouseLocation
+        let screen = NSScreen.screens.first { $0.frame.contains(pointer) } ?? NSScreen.main
+        let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1280, height: 800)
+        let cardSize = CGSize(width: max(1, size.width - Self.margin * 2), height: max(1, size.height - Self.margin * 2))
+        let edgePad: CGFloat = 6
+        let cornerInset: CGFloat = 26
+        let rawX = corner.slidesFromLeft ? visible.minX + cornerInset : visible.maxX - cornerInset - cardSize.width
+        let minX = visible.minX + edgePad
+        let maxX = max(minX, visible.maxX - edgePad - cardSize.width)
+        let x = min(max(rawX, minX), maxX)
+
+        var rawY = visible.minY + cornerInset
+        if let cardsFrame, visible.intersects(cardsFrame), cardsFrame.maxY + 12 + cardSize.height <= visible.maxY - edgePad {
+            rawY = max(rawY, cardsFrame.maxY + 12)
+        }
+        let minY = visible.minY + edgePad
+        let maxY = max(minY, visible.maxY - edgePad - cardSize.height)
+        let y = min(max(rawY, minY), maxY)
+
+        let frame = CGRect(origin: CGPoint(x: x - Self.margin, y: y - Self.margin), size: size)
+        panel.setFrame(frame.integral, display: true)
+        panel.alphaValue = 1
+        panel.orderFrontRegardless()
+        if windowLease == nil { windowLease = ActiveResources.shared.acquire(.window) }
+        scheduleDismissal()
+    }
+
+    func hide(notifyDismiss: Bool) {
+        dismissal?.cancel()
+        dismissal = nil
+        hovered = false
+        let dismissCallback = onDismiss
+        onDismiss = nil
+        panel?.orderOut(nil)
+        panel = nil
+        windowLease?.end()
+        windowLease = nil
+        if notifyDismiss { dismissCallback?() }
+    }
+
+    private func setHovered(_ inside: Bool) {
+        guard hovered != inside else { return }
+        hovered = inside
+        if inside {
+            dismissal?.cancel()
+            dismissal = nil
+        } else {
+            scheduleDismissal()
+        }
+    }
+
+    private func scheduleDismissal() {
+        dismissal?.cancel()
+        let delay = NSWorkspace.shared.isVoiceOverEnabled ? Self.voiceOverDuration : Self.displayDuration
+        dismissal = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(delay))
+            guard !Task.isCancelled, let self, !self.hovered else { return }
+            self.fadeOut()
+        }
+    }
+
+    private func fadeOut() {
+        guard let panel else { return }
+        let duration = NSWorkspace.shared.accessibilityDisplayShouldReduceMotion ? 0 : Theme.Motion.fade
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = duration
+            panel.animator().alphaValue = 0
+        }
+        dismissal = Task { [weak self] in
+            if duration > 0 { try? await Task.sleep(for: .seconds(duration)) }
+            guard !Task.isCancelled else { return }
+            self?.hide(notifyDismiss: true)
+        }
+    }
+}
+
+private final class UploadFailurePanel: NSPanel {
+    init() {
+        super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = false
+        level = .floating
+        collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle, .transient]
+        hidesOnDeactivate = false
+        becomesKeyOnlyIfNeeded = true
+        isMovable = false
+        isReleasedWhenClosed = false
+        animationBehavior = .none
+    }
+
+    @available(*, unavailable)
+    required init?(coder: NSCoder) {
+        fatalError("init(coder:) is not supported")
+    }
+}
+
+private struct UploadFailureCard: View {
+    let title: String
+    let message: String
+    let retryTitle: String?
+    let margin: CGFloat
+    let onRetry: (() -> Void)?
+    let onClose: () -> Void
+    let onHover: (Bool) -> Void
+
+    @Environment(\.colorScheme) private var colorScheme
+    @Environment(\.colorSchemeContrast) private var contrast
+
+    var body: some View {
+        let shape = RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+        HStack(alignment: .top, spacing: 10) {
+            Image(systemName: "exclamationmark.triangle.fill")
+                .font(.system(size: 15))
+                .foregroundStyle(.orange)
+                .padding(.top, 1)
+                .accessibilityHidden(true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(verbatim: title)
+                    .font(.system(size: 13, weight: .semibold))
+                    .foregroundStyle(.primary)
+                    .fixedSize(horizontal: false, vertical: true)
+                Text(verbatim: message)
+                    .font(.callout)
+                    .foregroundStyle(.secondary)
+                    .lineLimit(4)
+                    .fixedSize(horizontal: false, vertical: true)
+                if let retryTitle, let onRetry {
+                    Button(action: onRetry) {
+                        Text(verbatim: retryTitle)
+                    }
+                    .controlSize(.small)
+                    .padding(.top, 4)
+                }
+            }
+            Spacer(minLength: 4)
+            Button(action: onClose) {
+                Image(systemName: "xmark")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(.secondary)
+                    .frame(width: 20, height: 20)
+                    .contentShape(Circle())
+            }
+            .buttonStyle(.plain)
+            .accessibilityLabel(Text("Dismiss"))
+        }
+        .padding(14)
+        .frame(width: 320, alignment: .leading)
+        .background {
+            shape.fill(Color(cgColor: Theme.Material.cardFill(dark: colorScheme == .dark)))
+                .shadow(color: .black.opacity(Double(Theme.Shadow.opacity)), radius: Theme.Shadow.radius, y: Theme.Shadow.drop)
+        }
+        .overlay {
+            shape.strokeBorder(
+                Color(cgColor: Theme.Material.edge(dark: colorScheme == .dark, contrast: contrast == .increased)),
+                lineWidth: Theme.Material.edgeWidth(contrast: contrast == .increased)
+            )
+        }
+        .onHover(perform: onHover)
+        .padding(margin)
     }
 }

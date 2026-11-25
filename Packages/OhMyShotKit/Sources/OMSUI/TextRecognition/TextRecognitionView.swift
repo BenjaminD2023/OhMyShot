@@ -1,8 +1,14 @@
+import AppKit
+import Foundation
+import OMSCore
+import OMSDesign
 import OMSOCR
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct TextRecognitionView: View {
     @Bindable var model: TextRecognitionModel
+    @State private var isDropTargeted = false
 
     var body: some View {
         Group {
@@ -19,12 +25,71 @@ struct TextRecognitionView: View {
             }
         }
         .frame(minWidth: 760, minHeight: 460)
+        .overlay {
+            if isDropTargeted {
+                RoundedRectangle(cornerRadius: Theme.Radius.card, style: .continuous)
+                    .strokeBorder(Color.accentColor, lineWidth: 2.5)
+                    .padding(6)
+                    .allowsHitTesting(false)
+            }
+        }
+        .onDrop(of: [.fileURL, .image], isTargeted: $isDropTargeted) { providers in
+            handleDrop(providers)
+        }
         .toolbar { toolbar }
+    }
+
+    private func handleDrop(_ providers: [NSItemProvider]) -> Bool {
+        let model = model
+        if let fileProvider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.fileURL.identifier) }) {
+            fileProvider.loadItem(forTypeIdentifier: UTType.fileURL.identifier, options: nil) { item, _ in
+                let url: URL? = if let data = item as? Data {
+                    URL(dataRepresentation: data, relativeTo: nil)
+                } else if let direct = item as? URL {
+                    direct
+                } else if let nsurl = item as? NSURL {
+                    nsurl as URL
+                } else {
+                    nil
+                }
+                guard let url else { return }
+                Task { @MainActor in
+                    _ = model.openDroppedFile(at: url)
+                }
+            }
+            return true
+        }
+        if let imageProvider = providers.first(where: { $0.hasItemConformingToTypeIdentifier(UTType.image.identifier) }) {
+            let source = String(localized: "Dropped Image", bundle: .module)
+            imageProvider.loadDataRepresentation(forTypeIdentifier: UTType.image.identifier) { data, _ in
+                guard let data else { return }
+                Task { @MainActor in
+                    model.openDroppedImageData(data, source: source)
+                }
+            }
+            return true
+        }
+        return false
     }
 
     /// The text side's controls, together over it: what to show, how lines break (text only), Translate
     /// and the language it goes into, and one Copy that is always last.
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
+        ToolbarItem(placement: .navigation) {
+            Button {
+                if !model.pasteImage() {
+                    NSSound.beep()
+                }
+            } label: {
+                Label {
+                    Text("Paste Image", bundle: .module)
+                } icon: {
+                    Image(systemName: "doc.on.clipboard")
+                }
+                .labelStyle(.iconOnly)
+            }
+            .help(Text("Paste an image from the clipboard to recognize its text", bundle: .module))
+        }
         let panes = model.panes
         if !panes.isEmpty {
             ToolbarItem(placement: .primaryAction) {
@@ -108,6 +173,29 @@ struct TextRecognitionView: View {
                 .fixedSize()
                 .help(Text("The language to translate into", bundle: .module))
                 .accessibilityLabel(Text("Translate Into", bundle: .module))
+                if model.translatedImage != nil {
+                    Menu {
+                        Button { model.copyTranslatedImage() } label: {
+                            Label { Text("Copy Translated Image", bundle: .module) } icon: { Image(systemName: "doc.on.doc") }
+                        }
+                        Button { model.saveTranslatedImage() } label: {
+                            Label { Text("Save Translated Image…", bundle: .module) } icon: { Image(systemName: "square.and.arrow.down") }
+                        }
+                        if model.canPinImage {
+                            Button { model.pinTranslatedImage() } label: {
+                                Label { Text("Pin Translated Image", bundle: .module) } icon: { Image(systemName: "pin") }
+                            }
+                        }
+                    } label: {
+                        Label {
+                            Text("Translated Image", bundle: .module)
+                        } icon: {
+                            Image(systemName: "photo")
+                        }
+                        .labelStyle(.iconOnly)
+                    }
+                    .help(Text("Copy, save, or pin the translated image", bundle: .module))
+                }
             }
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)

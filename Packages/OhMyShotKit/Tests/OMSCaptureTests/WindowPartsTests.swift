@@ -70,5 +70,54 @@ struct WindowPartsTests {
         #expect(view.pickedElement == nil)
         #expect(view.debugSizeReading.contains("Accessibility"))
     }
+
+    @Test func pressingReturnWithAPickedElementSelectsThatElementInsteadOfTheWholeWindow() async throws {
+        final class ElementDelegate: OverlayViewDelegate {
+            var selectedElements: [CGRect] = []
+            var selectedWindows: [WindowTarget] = []
+            func overlayView(_ view: OverlayView, didPressAt point: CGPoint) {}
+            func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) {}
+            func overlayView(_ view: OverlayView, didReleaseWith modifiers: NSEvent.ModifierFlags) {}
+            func overlayView(_ view: OverlayView, didChangeModifiers modifiers: NSEvent.ModifierFlags) {}
+            func overlayView(_ view: OverlayView, didMovePointerTo point: CGPoint) {}
+            func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool) {}
+            func overlayViewDidReleaseSpace(_ view: OverlayView) {}
+            func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) {}
+            func overlayView(_ view: OverlayView, didSelectElement rect: CGRect, modifiers: NSEvent.ModifierFlags) {
+                selectedElements.append(rect)
+            }
+            func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
+                selectedWindows.append(target)
+            }
+            func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) {}
+            func overlayViewDidCancel(_ view: OverlayView) {}
+            func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool) {}
+            func overlayView(_ view: OverlayView, didNudge pixels: CGVector) {}
+            func overlayViewDidRequestSizing(_ view: OverlayView) {}
+            func overlayView(_ view: OverlayView, didCopyMeasurement text: String, ending: Bool) {}
+            func overlayView(_ view: OverlayView, didCaptureMeasurement measurement: RulerMeasurement, of frame: CapturedFrame) {}
+            func overlayView(_ view: OverlayView, didChangeUnit unit: MeasureUnit) {}
+            func overlayView(_ view: OverlayView, didChangeTolerance tolerance: MeasureTolerance) {}
+            func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice) {}
+            func overlayViewDidRequestMeasure(_ view: OverlayView) {}
+        }
+
+        let view = view(allowed: true)
+        defer { view.clear() }
+        let delegate = ElementDelegate()
+        view.delegate = delegate
+        view.scrollWheel(with: try notch(try inward()))
+        for _ in 0..<100 where view.pickedElement == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(view.pickedElement == chain[1])
+        let pressReturn = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
+        ))
+        view.keyDown(with: pressReturn)
+        #expect(delegate.selectedElements == [chain[1].frame])
+        #expect(delegate.selectedWindows.isEmpty)
+    }
 }
 #endif

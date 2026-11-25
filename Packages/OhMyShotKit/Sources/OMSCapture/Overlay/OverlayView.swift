@@ -22,14 +22,20 @@ protocol OverlayViewDelegate: AnyObject {
     /// The whole display, chosen with the All-In-One bar.
     func overlayViewDidRequestDisplayCapture(_ view: OverlayView)
     func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags)
+    /// A part of a window chosen with the scroll wheel, in global points.
+    func overlayView(_ view: OverlayView, didSelectElement rect: CGRect, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags)
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags)
+    /// Multi-window selection changed on one display; the controller mirrors it across all displays.
+    func overlayView(_ view: OverlayView, didChangeSelectedWindows targets: [WindowTarget])
     func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode)
     func overlayViewDidRequestWindowPicker(_ view: OverlayView)
     func overlayViewDidCancel(_ view: OverlayView)
     /// A color taken at a point in global space (a click, Return, or C), with the keys held then; `keyboard`
     /// says it was a key, so what follows can take the keyboard too.
     func overlayView(_ view: OverlayView, didPickColorAt point: CGPoint, modifiers: NSEvent.ModifierFlags, keyboard: Bool)
+    /// Tab cycled the color notation while picking a color.
+    func overlayView(_ view: OverlayView, didChangeColorFormat format: ColorFormat)
     /// The arrow keys moved the crosshair by whole pixels, down positive: the corner being dragged, when an area is
     /// being dragged out.
     func overlayView(_ view: OverlayView, didNudge pixels: CGVector)
@@ -49,6 +55,8 @@ protocol OverlayViewDelegate: AnyObject {
     func overlayView(_ view: OverlayView, didChooseMode choice: AllInOneChoice)
     /// All-In-One's Measure (M): the overlay turns into Measure, on the screen as it is held.
     func overlayViewDidRequestMeasure(_ view: OverlayView)
+    /// The user switched the temporary Self-Timer delay from the overlay's delay bar or keyboard shortcuts.
+    func overlayView(_ view: OverlayView, didChangeSelfTimerDelay seconds: Int)
     /// ?: the keys of the overlay's purpose show by the edge of the display under the pointer, or go when they show.
     func overlayViewDidToggleKeys(_ view: OverlayView)
     /// A key other than ?: the keys go wherever they show. True when they showed.
@@ -59,14 +67,20 @@ extension OverlayViewDelegate {
     func overlayViewDidRequestDisplayCapture(_ view: OverlayView) {
         overlayView(view, didSelect: view.display.frame, modifiers: [])
     }
+    func overlayView(_ view: OverlayView, didSelectElement rect: CGRect, modifiers: NSEvent.ModifierFlags) {
+        overlayView(view, didSelect: rect, modifiers: modifiers)
+    }
     func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
         if let first = targets.first {
             overlayView(view, didSelectWindow: first, modifiers: modifiers)
         }
     }
+    func overlayView(_ view: OverlayView, didChangeSelectedWindows targets: [WindowTarget]) {}
+    func overlayView(_ view: OverlayView, didChangeColorFormat format: ColorFormat) {}
     func overlayViewDidRequestWindowPicker(_ view: OverlayView) {}
     func overlayViewDidRequestLastArea(_ view: OverlayView) {}
     func overlayViewDidResetDrag(_ view: OverlayView) {}
+    func overlayView(_ view: OverlayView, didChangeSelfTimerDelay seconds: Int) {}
     func overlayViewDidToggleKeys(_ view: OverlayView) { view.toggleKeys(view.keyHelp) }
     func overlayViewDidPutKeysAway(_ view: OverlayView) -> Bool { view.putKeysAway() }
 }
@@ -126,6 +140,10 @@ final class OverlayView: NSView {
     private var showsReading = false
     private var capturedFrame: CapturedFrame?
     private var pointer: CGPoint?
+    /// Where the pointer currently sits in this view's coordinates; nil when it is off this display.
+    var currentPointer: CGPoint? { pointer }
+    /// Whether the user is actively dragging a Measure box on this display.
+    private(set) var isDraggingMeasureBox = false
     /// Every display receives the first area press, even before the selection has any size. Once it
     /// begins, the actual-size lens stays out of the way, the crosshair staying, until a click with no drag
     /// leaves no selection or a new capture session resets the view.
@@ -149,7 +167,14 @@ final class OverlayView: NSView {
     private let border = CAShapeLayer()
     /// The edges of the selection that snapped to text, drawn over `border` in the accent.
     private let snapEdges = CAShapeLayer()
+    /// Outlines for locked windows during Shift-click multi-selection, distinct from the hovered window.
+    private let lockedOutline = CAShapeLayer()
+    private let lockedBorder = CAShapeLayer()
+    /// Numbered order badges (1, 2, …) shown at the top-left of each locked window on this display.
+    private var lockedBadges: [ReadingCapsule] = []
     private let sizePill = ReadingCapsule()
+    /// Subtle bottom-center shortcut hint shown in Pick Color and Window modes.
+    private let hintPill = ReadingCapsule()
     /// The keys of what is being chosen, a sentence a line, shown by ? near the display's edge.
     private let keyList = ReadingCapsule()
     private let crosshairOutline = CAShapeLayer()
@@ -166,6 +191,10 @@ final class OverlayView: NSView {
     private let loupeRim = CAShapeLayer()
     private let loupePill = ReadingCapsule(showsSwatch: true)
     private let toolbar = AllInOneBar()
+    private let selfTimerBar = SelfTimerDelayBar()
+    /// Active Self-Timer delay for this session (seconds), or nil when the session is not a Self-Timer capture.
+    private var selfTimerDelay: Int?
+    private var showsSelfTimerBar = false
     /// Copying text gets a lighter overlay than a screenshot: no dimming, no magnifier or readings, the
     /// system crosshair, and a selection drawn like selected text.
     private var purpose: OverlayController.Purpose = .screenshot
@@ -186,6 +215,9 @@ final class OverlayView: NSView {
         toolbar.onSelect = { [weak self] choice in self?.toolbarChose(choice) }
         toolbar.isHidden = true
         addSubview(toolbar)
+        selfTimerBar.onSelect = { [weak self] seconds in self?.chooseSelfTimerDelay(seconds) }
+        selfTimerBar.isHidden = true
+        addSubview(selfTimerBar)
         setAccessibilityElement(true)
         setAccessibilityRole(.layoutArea)
         setAccessibilityLabel(String(localized: "Capture overlay", bundle: .module))
@@ -211,7 +243,7 @@ final class OverlayView: NSView {
         purpose: OverlayController.Purpose = .screenshot, colorFormat: ColorFormat = .hex,
         captureLoupeStyle: CaptureLoupeStyle = .magnified, captureLoupeSize: CaptureLoupeSize = .small, measureUnit: MeasureUnit = .points,
         measureTolerance: MeasureTolerance = .medium, measureSnapsToContent: Bool = true,
-        allInOne: Bool = false, snapsToText: Bool = false
+        allInOne: Bool = false, snapsToText: Bool = false, selfTimerDelay: Int? = nil
     ) {
         clearTransientContent()
         self.mode = mode
@@ -224,6 +256,7 @@ final class OverlayView: NSView {
         showsReading = false
         isSimulated = false
         isAnnotating = false
+        isDraggingMeasureBox = false
         capturedFrame = nil
         increasedContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         self.purpose = purpose
@@ -249,7 +282,7 @@ final class OverlayView: NSView {
             measure?.layer.removeFromSuperlayer()
             measure = nil
         }
-        // The bar first: the size reading below steers clear of it.
+        // The bars first: the size reading and hint pill steer clear of them.
         toolbar.isHidden = !showsToolbar
         toolbar.alphaValue = 1
         toolbar.showModes(isAllInOne)
@@ -257,7 +290,16 @@ final class OverlayView: NSView {
         toolbar.usesWindowPreview(takesW, takesW: takesW)
         toolbar.markPurpose(nil)
         toolbar.select(mode == .area ? .area : .window)
+        let normalizedDelay = selfTimerDelay.map { max($0, 1) }
+        self.selfTimerDelay = normalizedDelay
+        showsSelfTimerBar = showsToolbar && normalizedDelay != nil
+        if let normalizedDelay {
+            selfTimerBar.configure(selected: normalizedDelay)
+        }
+        selfTimerBar.isHidden = !showsSelfTimerBar
+        selfTimerBar.alphaValue = 1
         layoutToolbar()
+        layoutSelfTimerBar()
         window?.invalidateCursorRects(for: self)
         updateHelp()
         putKeysAway()
@@ -267,32 +309,44 @@ final class OverlayView: NSView {
             // The panels are reused: the edges in-place annotation hid come back with a new session, and a lens
             // raised over its frame while an edge was dragged goes back under the bar.
             border.isHidden = false
+            border.lineDashPattern = nil
             snapEdges.isHidden = false
+            lockedOutline.isHidden = false
+            lockedBorder.isHidden = false
             for layer in [loupeShadow, loupe, loupeRim, loupePill.layer] { layer.zPosition = 0 }
             backdrop.contents = nil
             loupeImage.contents = nil
             updateSelectionLayers()
             updatePointer(showsPointer && display.frame.contains(globalPointer) ? local(globalPointer) : nil)
+            updateHintPill()
         }
     }
 
     /// The keys of what is being chosen, for VoiceOver's help and for ? to show: the purpose's while an area is chosen, and
     /// choosing a window's (after Space, or for Capture Window) outside All-In-One, which says both in one.
     private func updateHelp() {
+        var help: String
         if mode == .window, !isAllInOne {
-            return setAccessibilityHelp(String(localized: "Click a window to choose it, or press Tab to go through the windows and Return to choose one. Press Space to drag over an area instead. Press Escape to cancel.", bundle: .module))
+            help = String(localized: "Click a window to choose it, or press Tab to go through the windows and Return to choose one. Press Space to drag over an area instead. Press Escape to cancel.", bundle: .module)
+        } else {
+            help = switch purpose {
+            case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
+            case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.", bundle: .module)
+            case .screenshot where isAllInOne: String(localized: "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, R to record, or M to measure. Press Escape to cancel.", bundle: .module)
+            case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
+            case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. Press Tab to switch notations. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
+            case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, F captures the screen with the measurement on it, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
+            case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
+            case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
+            }
+            if snapsToText {
+                help = Sentences.joined(help, String(localized: "The selection’s edges snap to text; hold Command to place them freely.", bundle: .module))
+            }
         }
-        let help = switch purpose {
-        case .text: String(localized: "Drag over text to copy it. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
-        case .annotate: String(localized: "Drag over an area to mark it up. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to choose a window instead. Press Escape to cancel.", bundle: .module)
-        case .screenshot where isAllInOne: String(localized: "Click a window or drag over an area, then choose what to do with it. Press W or Space to capture a window, F the whole screen, O to copy text, S for a scrolling capture, R to record, or M to measure. Press Escape to cancel.", bundle: .module)
-        case .screenshot: String(localized: "Drag to capture an area. The arrow keys move the corner a pixel, ten with Shift. Hold Shift to keep its shape. Press Tab to type a size, or Space to capture a window instead. Press Escape to cancel.", bundle: .module)
-        case .color: String(localized: "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.", bundle: .module)
-        case .measure: String(localized: "Point at something to measure it, or drag a box around it. Command-C copies the measurement, Return copies it and closes, F captures the screen with the measurement on it, and Tab switches between points and pixels. T cycles edge tolerance; plus and minus adjust it. The arrow keys move a pixel. Press Escape to cancel.", bundle: .module)
-        case .record: String(localized: "Drag over an area to record it, or click to record the whole screen. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
-        case .scroll: String(localized: "Drag over the part that scrolls to capture all of it as one long picture. Press Space to choose a window instead. Press Escape to cancel.", bundle: .module)
+        if selfTimerDelay != nil {
+            help = Sentences.joined(help, String(localized: "Press D or 1–5 to change the Self-Timer delay for this capture.", bundle: .module))
         }
-        setAccessibilityHelp(snapsToText ? Sentences.joined(help, String(localized: "The selection’s edges snap to text; hold Command to place them freely.", bundle: .module)) : help)
+        setAccessibilityHelp(help)
     }
 
     /// Hands the view this display's captured frame, which the magnifier enlarges. In freeze mode the
@@ -363,7 +417,29 @@ final class OverlayView: NSView {
         withoutAnimation {
             updateSelectionLayers()
             updatePointer(pointer)
+            updateHintPill()
         }
+    }
+
+    /// Updates the color format shown in the magnifier reading (Tab in Pick Color mode).
+    func setColorFormat(_ format: ColorFormat) {
+        guard colorFormat != format else { return }
+        colorFormat = format
+        withoutAnimation {
+            updatePointer(pointer)
+            updateHintPill()
+        }
+        if purpose == .color { announceValue() }
+    }
+
+    /// Updates the active temporary Self-Timer delay from the controller so every display stays in sync.
+    func setSelfTimerDelay(_ seconds: Int) {
+        guard selfTimerDelay != nil else { return }
+        let clamped = max(seconds, 1)
+        selfTimerDelay = clamped
+        selfTimerBar.select(clamped)
+        layoutSelfTimerBar()
+        window?.invalidateCursorRects(for: self)
     }
 
     /// Drops the frame so its memory is released while the overlay is hidden, and takes away any
@@ -375,13 +451,21 @@ final class OverlayView: NSView {
         highlightedWindow = nil
         measure?.clear()
         isAnnotating = false
+        isDraggingMeasureBox = false
+        selfTimerDelay = nil
+        showsSelfTimerBar = false
+        selfTimerBar.isHidden = true
         putKeysAway()
-        for subview in subviews where subview !== toolbar {
+        for subview in subviews where subview !== toolbar && subview !== selfTimerBar {
             subview.removeFromSuperview()
         }
         withoutAnimation {
             backdrop.contents = nil
             loupeImage.contents = nil
+            hintPill.layer.isHidden = true
+            lockedOutline.path = nil
+            lockedBorder.path = nil
+            for badge in lockedBadges { badge.layer.isHidden = true }
         }
     }
 
@@ -419,6 +503,16 @@ final class OverlayView: NSView {
 
     var debugToolbarFrame: CGRect { toolbar.frame }
 
+    var debugSelfTimerBarFrame: CGRect? {
+        (!selfTimerBar.isHidden && selfTimerBar.alphaValue > 0) ? selfTimerBar.frame : nil
+    }
+
+    var debugSelfTimerDelay: Int? {
+        selfTimerDelay
+    }
+
+    var debugSelfTimerBar: SelfTimerDelayBar { selfTimerBar }
+
     var debugPointerLayers: (crosshair: Bool, loupe: CGRect?, colorReading: CGRect?) {
         (!crosshair.isHidden, loupe.isHidden ? nil : loupe.frame,
          loupePill.layer.isHidden ? nil : loupePill.layer.frame)
@@ -426,6 +520,35 @@ final class OverlayView: NSView {
 
     /// What the size reading under the selection says.
     var debugSizeReading: String { sizePill.text }
+
+    /// Visible locked-window order badge texts on this display, for tests.
+    var debugSelectedWindowBadges: [String] {
+        lockedBadges.filter { !$0.layer.isHidden }.map(\.text)
+    }
+
+    /// Whether distinct locked-window outline paths are drawn on this display, for tests.
+    var debugHasLockedWindowPaths: Bool {
+        lockedBorder.path != nil && lockedOutline.path != nil
+    }
+
+    /// Whether a separate hovered-window outline path is drawn on this display, for tests.
+    var debugHasHoveredWindowPath: Bool {
+        border.path != nil
+    }
+
+    /// Whether the hovered window border is dashed (indicating unlocked candidate while multi-selecting).
+    var debugHoveredBorderDashed: Bool {
+        border.lineDashPattern != nil
+    }
+
+    /// Visible bottom-center shortcut hint text and frame, for tests.
+    var debugHintText: String? {
+        hintPill.layer.isHidden ? nil : hintPill.text
+    }
+
+    var debugHintFrame: CGRect? {
+        hintPill.layer.isHidden ? nil : hintPill.layer.frame
+    }
 
     var debugLoupeCenterColors: (stroke: CGColor?, outline: CGColor?, outlineVisible: Bool) {
         (loupeCenter.strokeColor, loupeCenterOutline.strokeColor, !loupeCenterOutline.isHidden)
@@ -478,22 +601,89 @@ final class OverlayView: NSView {
         isAnnotating = true
         putKeysAway()
         toolbar.isHidden = true
+        selfTimerBar.isHidden = true
         withoutAnimation {
-            for layer in [room, outline, border, snapEdges, crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer] {
+            for layer in [room, outline, border, snapEdges, lockedOutline, lockedBorder, crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, hintPill.layer, sizePill.layer, loupePill.layer] {
                 layer.isHidden = true
             }
+            for badge in lockedBadges { badge.layer.isHidden = true }
         }
+    }
+
+    /// Returns the display from a hosted setup view (such as All-In-One's framed area) back to the
+    /// selection overlay, keeping its captured frame and frozen backdrop intact.
+    func leaveAnnotation(mode: Mode, windows: [WindowTarget], showsToolbar: Bool, pointer globalPointer: CGPoint) {
+        isAnnotating = false
+        isDraggingMeasureBox = false
+        putKeysAway()
+        for subview in subviews where subview !== toolbar && subview !== selfTimerBar {
+            subview.removeFromSuperview()
+        }
+        self.mode = mode
+        self.windows = windows
+        hoveredWindow = nil
+        leaveElements()
+        selectedWindows = []
+        highlightedWindow = nil
+        selection.reset()
+        hasStartedAreaSelection = false
+        showsReading = false
+        isDraggingSelection = false
+        transientContent.isHidden = mode != .area
+        toolbar.isHidden = !showsToolbar
+        toolbar.alphaValue = 1
+        toolbar.select(mode == .area ? .area : .window)
+        showsSelfTimerBar = showsToolbar && selfTimerDelay != nil
+        selfTimerBar.isHidden = !showsSelfTimerBar
+        selfTimerBar.alphaValue = 1
+        layoutToolbar()
+        layoutSelfTimerBar()
+        updateHelp()
+        window?.invalidateCursorRects(for: self)
+        withoutAnimation {
+            layoutLoupe()
+            applyAppearance()
+            border.isHidden = false
+            border.lineDashPattern = nil
+            snapEdges.isHidden = false
+            lockedOutline.isHidden = false
+            lockedBorder.isHidden = false
+            for layer in [loupeShadow, loupe, loupeRim, loupePill.layer] { layer.zPosition = 0 }
+            updateSelectionLayers()
+        }
+        movePointer(to: globalPointer)
     }
 
     /// Puts the crosshair and magnifier where the pointer is now, for an overlay that appears a moment
     /// after its session began.
     ///
     /// The crosshair and magnifier show only on the display the pointer is over; window mode highlights
-    /// the window under it on every display the window reaches.
+    /// the window under it on every display the window reaches, clearing stale pointer and hover state on
+    /// displays the window does not intersect.
     func movePointer(to globalPointer: CGPoint) {
         guard !isSimulated, !isAnnotating else { return }
-        let here = mode == .window || display.frame.contains(globalPointer)
-        withoutAnimation { updatePointer(here ? local(globalPointer) : nil) }
+        if display.frame.contains(globalPointer) {
+            withoutAnimation { updatePointer(local(globalPointer)) }
+        } else if mode == .window {
+            let hovered = WindowCatalog.target(at: globalPointer, in: windows)
+            let spanning = hovered.flatMap { !$0.frame.intersection(display.frame).isEmpty ? $0 : nil }
+            withoutAnimation {
+                let hadElement = pickedElement != nil || showsElementHint
+                let hadPointer = pointer != nil
+                pointer = nil
+                leaveElements()
+                if hoveredWindow != spanning || hadElement || (hadPointer && !selectedWindows.isEmpty) {
+                    hoveredWindow = spanning
+                    updateSelectionLayers()
+                }
+                for layer in [crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, loupePill.layer] {
+                    layer.isHidden = true
+                }
+                updateHintPill()
+            }
+        } else {
+            withoutAnimation { updatePointer(nil) }
+        }
     }
 
     /// Shows the magnifier on `point` (this view's points) while a corner or edge of a selection that was handed
@@ -635,19 +825,27 @@ final class OverlayView: NSView {
         if hidesPicker { hasStartedAreaSelection = true }
         if restoresPicker { hasStartedAreaSelection = false }
         let toolbarAlpha: CGFloat = isDragging && selection.rect != nil ? 0 : 1
-        // The bar fading or coming back under the pointer hands the pointer between the arrow and the crosshair.
-        let toolbarFades = !toolbar.isHidden && toolbar.alphaValue != toolbarAlpha
+        let selfTimerAlpha: CGFloat = isDragging ? 0 : 1
+        // The bars fading or coming back under the pointer hand the pointer between the arrow and the crosshair.
+        let toolbarFades = (!toolbar.isHidden && toolbar.alphaValue != toolbarAlpha)
+            || (!selfTimerBar.isHidden && selfTimerBar.alphaValue != selfTimerAlpha)
         if !toolbar.isHidden { toolbar.alphaValue = toolbarAlpha }
+        if !selfTimerBar.isHidden { selfTimerBar.alphaValue = selfTimerAlpha }
         withoutAnimation {
             updateSelectionLayers()
             if hidesPicker || restoresPicker || toolbarFades { updatePointer(pointer) }
+            updateHintPill()
         }
     }
 
-    /// Whether the pointer is over the bar, where the system's arrow shows and the crosshair and magnifier don't: the
-    /// bar would cover them, and the pointer would be nowhere to be seen.
+    /// Whether the pointer is over a floating bar, where the system's arrow shows and the crosshair and magnifier
+    /// don't: the bar would cover them, and the pointer would be nowhere to be seen.
     func wantsSystemCursor(at globalPoint: CGPoint) -> Bool {
-        !isAnnotating && !toolbar.isHidden && toolbar.alphaValue > 0 && toolbar.frame.contains(local(globalPoint))
+        guard !isAnnotating else { return false }
+        let point = local(globalPoint)
+        if !toolbar.isHidden && toolbar.alphaValue > 0 && toolbar.frame.contains(point) { return true }
+        if !selfTimerBar.isHidden && selfTimerBar.alphaValue > 0 && selfTimerBar.frame.contains(point) { return true }
+        return false
     }
 
     /// Puts the pointer somewhere without mouse input, for scripted checks; the real (hidden) pointer
@@ -660,6 +858,8 @@ final class OverlayView: NSView {
     override func layout() {
         super.layout()
         layoutToolbar()
+        layoutSelfTimerBar()
+        withoutAnimation { updateHintPill() }
     }
 
     /// Copying text keeps the system crosshair; a screenshot draws its own crosshair and magnifier.
@@ -709,7 +909,7 @@ final class OverlayView: NSView {
     }
 
     override func mouseExited(with event: NSEvent) {
-        guard !isSimulated, !isAnnotating else { return }
+        guard !isSimulated, !isAnnotating, pointer != nil else { return }
         withoutAnimation { updatePointer(nil) }
     }
 
@@ -724,6 +924,7 @@ final class OverlayView: NSView {
         case .color:
             break
         case .measure:
+            isDraggingMeasureBox = true
             measure?.beginBox(at: point)
         case .screenshot, .text, .annotate, .record, .scroll:
             delegate?.overlayView(self, didPressAt: global(point))
@@ -755,25 +956,28 @@ final class OverlayView: NSView {
         announceValue()
     }
 
+    private func toggleSelectedWindow(_ window: WindowTarget) {
+        if let index = selectedWindows.firstIndex(of: window) {
+            selectedWindows.remove(at: index)
+        } else {
+            selectedWindows.append(window)
+        }
+        if !selectedWindows.isEmpty { leaveElements() }
+        withoutAnimation { updateSelectionLayers() }
+        announceValue()
+        delegate?.overlayView(self, didChangeSelectedWindows: selectedWindows)
+    }
+
     override func mouseUp(with event: NSEvent) {
         guard !isAnnotating else { return }
         if mode == .window {
             let allowsMultiple = purpose.choosesSeveralWindows
             if allowsMultiple, event.modifierFlags.contains(.shift), let hoveredWindow {
-                if let index = selectedWindows.firstIndex(of: hoveredWindow) {
-                    selectedWindows.remove(at: index)
-                } else {
-                    selectedWindows.append(hoveredWindow)
-                }
-                withoutAnimation { updateSelectionLayers() }
-                announceValue()
+                toggleSelectedWindow(hoveredWindow)
                 return
             }
             if !selectedWindows.isEmpty {
-                var targets = selectedWindows
-                if let hoveredWindow, !targets.contains(hoveredWindow) {
-                    targets.append(hoveredWindow)
-                }
+                let targets = selectedWindows
                 if targets.count == 1 {
                     delegate?.overlayView(self, didSelectWindow: targets[0], modifiers: event.modifierFlags)
                 } else {
@@ -783,7 +987,7 @@ final class OverlayView: NSView {
             }
             // A part of the window the wheel went into is taken as an area.
             if let element = pickedElement {
-                delegate?.overlayView(self, didSelect: element.frame, modifiers: event.modifierFlags)
+                delegate?.overlayView(self, didSelectElement: element.frame, modifiers: event.modifierFlags)
                 return
             }
             if let hoveredWindow { delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags) }
@@ -793,6 +997,8 @@ final class OverlayView: NSView {
         case .color:
             delegate?.overlayView(self, didPickColorAt: global(convert(event.locationInWindow, from: nil)), modifiers: event.modifierFlags, keyboard: false)
         case .measure:
+            guard isDraggingMeasureBox else { return }
+            isDraggingMeasureBox = false
             let bypassSnap = !event.modifierFlags.intersection([.command, .shift, .option, .control]).isEmpty
             measure?.endBox(snapping: !bypassSnap)
             setAccessibilityValue(measure?.accessibilityValue)
@@ -805,6 +1011,12 @@ final class OverlayView: NSView {
     override func rightMouseDown(with event: NSEvent) {
         guard !isAnnotating else {
             super.rightMouseDown(with: event)
+            return
+        }
+        if purpose == .measure, isDraggingMeasureBox {
+            isDraggingMeasureBox = false
+            measure?.cancelBox()
+            setAccessibilityValue(measure?.accessibilityValue)
             return
         }
         if isDraggingSelection {
@@ -834,6 +1046,22 @@ final class OverlayView: NSView {
         }
         if delegate?.overlayViewDidPutKeysAway(self) == true, event.keyCode == 53 { return }
         let character = event.charactersIgnoringModifiers?.lowercased()
+        if selfTimerDelay != nil, !isDraggingSelection,
+           event.modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty,
+           let character {
+            if character == "d" {
+                if !event.isARepeat {
+                    let next = selfTimerBar.cycleNext()
+                    chooseSelfTimerDelay(next)
+                }
+                return
+            }
+            if let digit = Int(character), (1...9).contains(digit),
+               let next = selfTimerBar.delay(atPresetIndex: digit - 1) {
+                chooseSelfTimerDelay(next)
+                return
+            }
+        }
         if character == "w", event.modifierFlags.intersection([.shift, .command, .control, .option]).isEmpty,
            !isDraggingSelection, purpose == .screenshot || purpose == .record {
             delegate?.overlayViewDidRequestWindowPicker(self)
@@ -855,6 +1083,12 @@ final class OverlayView: NSView {
         }
         switch event.keyCode {
         case 53: // Escape
+            if purpose == .measure, isDraggingMeasureBox {
+                isDraggingMeasureBox = false
+                measure?.cancelBox()
+                setAccessibilityValue(measure?.accessibilityValue)
+                return
+            }
             delegate?.overlayViewDidCancel(self)
         case 51 where isDraggingSelection && mode == .area, 117 where isDraggingSelection && mode == .area:
             delegate?.overlayViewDidResetDrag(self)
@@ -884,13 +1118,20 @@ final class OverlayView: NSView {
                 return
             }
             if mode == .window {
-                var targets = selectedWindows
-                if targets.isEmpty, let hoveredWindow { targets = [hoveredWindow] }
-                if targets.count == 1 {
-                    delegate?.overlayView(self, didSelectWindow: targets[0], modifiers: event.modifierFlags.subtracting(.shift))
+                if !selectedWindows.isEmpty {
+                    if selectedWindows.count == 1 {
+                        delegate?.overlayView(self, didSelectWindow: selectedWindows[0], modifiers: event.modifierFlags)
+                    } else {
+                        delegate?.overlayView(self, didSelectWindows: selectedWindows, modifiers: event.modifierFlags)
+                    }
                     return
-                } else if targets.count > 1 {
-                    delegate?.overlayView(self, didSelectWindows: targets, modifiers: event.modifierFlags.subtracting(.shift))
+                }
+                if let element = pickedElement {
+                    delegate?.overlayView(self, didSelectElement: element.frame, modifiers: event.modifierFlags)
+                    return
+                }
+                if let hoveredWindow {
+                    delegate?.overlayView(self, didSelectWindow: hoveredWindow, modifiers: event.modifierFlags)
                     return
                 }
             }
@@ -901,6 +1142,13 @@ final class OverlayView: NSView {
                 if let text = measure?.measurement { delegate?.overlayView(self, didCopyMeasurement: text, ending: true) }
             case .screenshot, .text, .annotate, .record, .scroll:
                 super.keyDown(with: event)
+            }
+        case 48 where purpose == .color:
+            let all = ColorFormat.allCases
+            if let index = all.firstIndex(of: colorFormat) {
+                let step = event.modifierFlags.contains(.shift) ? -1 : 1
+                let next = all[(index + step + all.count) % all.count]
+                delegate?.overlayView(self, didChangeColorFormat: next)
             }
         case 48 where purpose == .measure:
             if let measure { delegate?.overlayView(self, didChangeUnit: measure.unit.toggled) }
@@ -923,7 +1171,7 @@ final class OverlayView: NSView {
                 // All-In-One's letters, before an area is chosen: A, W, and F, O, S, R, and M, as the bar has them.
                 toolbarChose(choice)
             } else if character == "l", !event.modifierFlags.contains(.command), mode == .area, !isDraggingSelection,
-                      purpose.takesPicture {
+                      purpose.recallsLastArea {
                 delegate?.overlayViewDidRequestLastArea(self)
             } else if character == "c", !event.modifierFlags.contains(.command), mode == .area, purpose.picksColorWithC, let pointer, capturedFrame != nil {
                 // C takes the color under the crosshair, as in Snipaste: from the magnifier while capturing. With
@@ -966,9 +1214,17 @@ final class OverlayView: NSView {
         withoutAnimation {
             keyList.maximumTextWidth = max(bounds.width - 2 * Self.keysInset - 22, 160)
             keyList.text = lines.joined(separator: "\n")
+            var avoidingBar: CGRect?
+            for rect in [
+                (!toolbar.isHidden && toolbar.alphaValue > 0) ? toolbar.frame : nil,
+                (!selfTimerBar.isHidden && selfTimerBar.alphaValue > 0) ? selfTimerBar.frame : nil,
+                !hintPill.layer.isHidden ? hintPill.layer.frame : nil,
+            ].compactMap(\.self) {
+                avoidingBar = avoidingBar.map { $0.union(rect) } ?? rect
+            }
             keyList.layer.frame = Self.keysFrame(
                 size: keyList.layer.bounds.size, pointer: display.frame.contains(mouse) ? local(mouse) : pointer, in: bounds,
-                avoiding: toolbar.isHidden ? nil : toolbar.frame
+                avoiding: avoidingBar
             )
             keyList.layer.isHidden = false
         }
@@ -1023,6 +1279,21 @@ final class OverlayView: NSView {
         let takesW = purpose == .screenshot || purpose == .record
         toolbar.usesWindowPreview(takesW && choice != .text && choice != .scroll, takesW: takesW)
         layoutToolbar()
+        layoutSelfTimerBar()
+    }
+
+    private func chooseSelfTimerDelay(_ seconds: Int) {
+        guard selfTimerDelay != nil else { return }
+        let clamped = max(seconds, 1)
+        let changed = clamped != selfTimerDelay
+        selfTimerDelay = clamped
+        selfTimerBar.select(clamped)
+        layoutSelfTimerBar()
+        window?.invalidateCursorRects(for: self)
+        if changed {
+            VoiceOver.announce(String(localized: "Self-Timer: \(clamped) seconds", bundle: .module), from: self)
+            delegate?.overlayView(self, didChangeSelfTimerDelay: clamped)
+        }
     }
 
     /// Highlights All-In-One's window under the pointer on this display, or nil for none.
@@ -1032,10 +1303,12 @@ final class OverlayView: NSView {
         withoutAnimation { updateSelectionLayers() }
     }
 
-    /// Keeps the windows selected by All-In-One's area-mode Shift-clicks visible on every display.
+    /// Keeps multi-window selections (All-In-One area-mode Shift-clicks or window-mode cross-display
+    /// Shift-clicks) visible and synchronized across every display.
     func setSelectedWindows(_ windows: [WindowTarget]) {
         guard selectedWindows != windows else { return }
         selectedWindows = windows
+        if !selectedWindows.isEmpty { leaveElements() }
         withoutAnimation { updateSelectionLayers() }
     }
 
@@ -1113,6 +1386,11 @@ final class OverlayView: NSView {
         }
         snapEdges.fillColor = nil
         snapEdges.lineCap = .round
+        for line in [lockedOutline, lockedBorder] {
+            line.fillColor = nil
+            line.lineJoin = .round
+            line.lineCap = .round
+        }
 
         layoutLoupe()
         loupe.masksToBounds = true
@@ -1140,12 +1418,13 @@ final class OverlayView: NSView {
         loupeRim.lineWidth = Theme.Loupe.rimWidth
 
         sizePill.setScale(display.backingScale)
+        hintPill.setScale(display.backingScale)
         loupePill.setScale(display.backingScale)
         keyList.setScale(display.backingScale)
         // Over what a frame set up for its next step draws on this view (its views lie over this view's own layers),
         // and over the lens raised there.
         keyList.layer.zPosition = 2
-        for sublayer in [backdrop, transientContent, room, outline, border, snapEdges, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, sizePill.layer, loupePill.layer, keyList.layer] {
+        for sublayer in [backdrop, transientContent, room, outline, border, snapEdges, lockedOutline, lockedBorder, crosshairOutline, crosshair, loupeShadow, loupe, loupeRim, hintPill.layer, sizePill.layer, loupePill.layer, keyList.layer] {
             root.addSublayer(sublayer)
         }
         withoutAnimation {
@@ -1199,8 +1478,10 @@ final class OverlayView: NSView {
         updateLoupeCenter(for: pointer.flatMap { color(at: global($0)) })
         let isDark = effectiveAppearance.isDark
         sizePill.applyAppearance(dark: isDark, contrast: increasedContrast)
+        hintPill.applyAppearance(dark: isDark, contrast: increasedContrast)
         loupePill.applyAppearance(dark: isDark, contrast: increasedContrast)
         keyList.applyAppearance(dark: isDark, contrast: increasedContrast)
+        for badge in lockedBadges { badge.applyAppearance(dark: isDark, contrast: increasedContrast) }
         // Text: the selection reads as selected text (the system's selection color, lightly filled,
         // edged in the accent), over an undimmed screen. Screenshot: a white edge over a soft outline.
         let text = purpose == .text
@@ -1208,9 +1489,10 @@ final class OverlayView: NSView {
         let undimmed = !purpose.dimsScreen
         room.isHidden = undimmed
         outline.isHidden = undimmed
-        measure?.applyAppearance(dark: isDark, contrast: increasedContrast, accent: Theme.cgColor(.controlAccentColor, for: effectiveAppearance))
+        let accent = Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
+        measure?.applyAppearance(dark: isDark, contrast: increasedContrast, accent: accent)
         border.lineWidth = text ? Self.textSelectionEdge(increasedContrast: increasedContrast) : Theme.Overlay.borderWidth
-        border.strokeColor = text ? Theme.cgColor(.controlAccentColor, for: effectiveAppearance) : .white
+        border.strokeColor = text ? accent : .white
         // Resolved for this appearance before the alpha is applied: applying it first fixes the
         // dynamic color to its light value.
         border.fillColor = text
@@ -1218,18 +1500,53 @@ final class OverlayView: NSView {
             : nil
         // An edge that snapped is the accent and a half point heavier than the others (a point heavier on the
         // text selection's thin edge), so it reads without the color.
-        snapEdges.strokeColor = Theme.cgColor(.controlAccentColor, for: effectiveAppearance)
+        snapEdges.strokeColor = accent
         snapEdges.lineWidth = border.lineWidth + (text ? 1 : 0.5)
+        // Locked windows in multi-select wear an accent outline over a white contrast stroke so they stand
+        // clearly apart from the hovered window.
+        lockedOutline.strokeColor = CGColor(gray: 1, alpha: increasedContrast ? 1 : 0.85)
+        lockedOutline.lineWidth = increasedContrast ? 5.5 : 4.5
+        lockedBorder.strokeColor = accent
+        lockedBorder.lineWidth = increasedContrast ? 3 : 2.5
+    }
+
+    private func hideLockedVisuals() {
+        lockedOutline.path = nil
+        lockedBorder.path = nil
+        border.lineDashPattern = nil
+        for badge in lockedBadges { badge.layer.isHidden = true }
+    }
+
+    private func positionSizePill(under rect: CGRect) {
+        let pillSize = sizePill.layer.bounds.size
+        var origin = CGPoint(x: rect.midX - pillSize.width / 2, y: rect.minY - pillSize.height - 10)
+        if origin.y < 6 { origin.y = rect.minY + 10 }
+        origin.x = max(6, min(origin.x, max(6, bounds.maxX - pillSize.width - 6)))
+        let obstacles: [CGRect] = [
+            (!toolbar.isHidden && toolbar.alphaValue > 0) ? toolbar.frame : nil,
+            (!selfTimerBar.isHidden && selfTimerBar.alphaValue > 0) ? selfTimerBar.frame : nil,
+            !hintPill.layer.isHidden ? hintPill.layer.frame : nil,
+        ].compactMap(\.self)
+        for _ in 0..<obstacles.count {
+            var shifted = false
+            for obstacle in obstacles where CGRect(origin: origin, size: pillSize).intersects(obstacle.insetBy(dx: -8, dy: -8)) {
+                origin.y = max(origin.y, obstacle.maxY + 10)
+                shifted = true
+            }
+            if !shifted { break }
+        }
+        origin.y = min(max(origin.y, 6), max(6, bounds.maxY - pillSize.height - 6))
+        sizePill.layer.frame.origin = origin
     }
 
     private func updateSelectionLayers() {
+        if mode == .window, !selectedWindows.isEmpty {
+            updateMultiWindowSelectionLayers()
+            return
+        }
+        hideLockedVisuals()
         let roomPath = CGMutablePath()
         roomPath.addRect(bounds)
-        var activeWindows = selectedWindows
-        if let hoveredWindow, !activeWindows.contains(hoveredWindow) {
-            activeWindows.append(hoveredWindow)
-        }
-        let windowBounds = activeWindows.dropFirst().reduce(activeWindows.first?.frame) { $0?.union($1.frame) }
         let element = mode == .window ? pickedElement : nil
         // All-In-One's window under the pointer stands for the selection until a drag makes one.
         let highlighted = mode == .area && selection.isTooSmall ? highlightedWindow : nil
@@ -1246,7 +1563,7 @@ final class OverlayView: NSView {
         }
         let selectedBounds = roundedWindows.dropFirst().reduce(roundedWindows.first) { $0?.union($1) }
         let target = mode == .window
-            ? (element?.frame ?? windowBounds)?.intersection(display.frame)
+            ? (element?.frame ?? hoveredWindow?.frame)?.intersection(display.frame)
             : (selection.isTooSmall ? selectedBounds : selection.rect)
         guard let globalRect = target, !globalRect.isNull, !globalRect.isEmpty else {
             room.path = roomPath
@@ -1277,17 +1594,11 @@ final class OverlayView: NSView {
             text = element.name.map { "\($0)  ·  \(size)" } ?? size
         } else if mode == .window, showsElementHint {
             text = String(localized: "Allow OhMyShot in Privacy & Security › Accessibility to pick parts of windows", bundle: .module)
-        } else if mode == .window, let windowBounds {
+        } else if mode == .window, let win = hoveredWindow {
             let scale = display.pixelsPerPoint
-            let width = Int((windowBounds.width * scale).rounded())
-            let height = Int((windowBounds.height * scale).rounded())
-            if activeWindows.count > 1 {
-                text = String(localized: "\(activeWindows.count) windows  ·  \(width) × \(height)", bundle: .module)
-            } else if let win = activeWindows.first {
-                text = win.ownerName.isEmpty ? "\(width) × \(height)" : "\(win.ownerName)  ·  \(width) × \(height)"
-            } else {
-                text = "\(width) × \(height)"
-            }
+            let width = Int((win.frame.width * scale).rounded())
+            let height = Int((win.frame.height * scale).rounded())
+            text = win.ownerName.isEmpty ? "\(width) × \(height)" : "\(win.ownerName)  ·  \(width) × \(height)"
         } else if mode == .area, selection.isTooSmall, !roundedWindows.isEmpty {
             let scale = display.pixelsPerPoint
             let width = Int((globalRect.width * scale).rounded())
@@ -1308,17 +1619,162 @@ final class OverlayView: NSView {
         sizePill.layer.isHidden = purpose == .text || (mode == .area && !showsReading && roundedWindows.isEmpty)
         // Text mode has no readings; a hovered window is named, without its size.
         setAccessibilityValue(purpose == .text ? (mode == .window ? hoveredWindow?.ownerName : nil) : text)
-        // Centered under the selection; tucked inside when there is no room below, and lifted above the
-        // All-In-One bar rather than covered by it (a window that fills the screen puts it right there).
-        let pillSize = sizePill.layer.bounds.size
-        var origin = CGPoint(x: rect.midX - pillSize.width / 2, y: rect.minY - pillSize.height - 10)
-        if origin.y < 6 { origin.y = rect.minY + 10 }
-        origin.x = max(6, min(origin.x, bounds.maxX - pillSize.width - 6))
-        if !toolbar.isHidden, toolbar.alphaValue > 0,
-           CGRect(origin: origin, size: pillSize).intersects(toolbar.frame.insetBy(dx: -8, dy: -8)) {
-            origin.y = toolbar.frame.maxY + 10
+        positionSizePill(under: rect)
+    }
+
+    /// Draws locked windows in `selectedWindows` with distinct accent outlines and numbered order badges,
+    /// keeping any separate unshifted hovered window in a dashed white outline so the user always sees what
+    /// is locked versus merely hovered.
+    private func updateMultiWindowSelectionLayers() {
+        let lockedOnDisplay: [(index: Int, window: WindowTarget, rect: CGRect)] = selectedWindows.enumerated().compactMap { index, win in
+            let intersection = win.frame.intersection(display.frame)
+            guard !intersection.isNull, !intersection.isEmpty else { return nil }
+            return (index, win, local(intersection))
         }
-        sizePill.layer.frame.origin = origin
+        let hoveredRect: CGRect? = hoveredWindow.flatMap { hovered in
+            guard !selectedWindows.contains(hovered) else { return nil }
+            let intersection = hovered.frame.intersection(display.frame)
+            guard !intersection.isNull, !intersection.isEmpty else { return nil }
+            return local(intersection)
+        }
+
+        // Punch out every locked window and any hovered candidate without dark even-odd overlaps.
+        var cutout: CGPath?
+        for item in lockedOnDisplay {
+            let piece = CGPath(rect: item.rect, transform: nil)
+            cutout = cutout.map { $0.union(piece) } ?? piece
+        }
+        if let hoveredRect {
+            let piece = CGPath(rect: hoveredRect, transform: nil)
+            cutout = cutout.map { $0.union(piece) } ?? piece
+        }
+        let fullBounds = CGPath(rect: bounds, transform: nil)
+        room.path = cutout.map { fullBounds.subtracting($0) } ?? fullBounds
+
+        // Locked window outlines (solid accent over white contrast stroke).
+        if lockedOnDisplay.isEmpty {
+            lockedOutline.path = nil
+            lockedBorder.path = nil
+        } else {
+            let lockedPath = CGMutablePath()
+            for item in lockedOnDisplay { lockedPath.addRect(item.rect) }
+            lockedOutline.path = lockedPath
+            lockedBorder.path = lockedPath
+        }
+
+        // Order badges (1, 2, …) at the top-left of each locked window on this display.
+        let isDark = effectiveAppearance.isDark
+        while lockedBadges.count < lockedOnDisplay.count {
+            let badge = ReadingCapsule()
+            badge.setScale(display.backingScale)
+            badge.applyAppearance(dark: isDark, contrast: increasedContrast)
+            layer?.insertSublayer(badge.layer, above: lockedBorder)
+            lockedBadges.append(badge)
+        }
+        for (slot, item) in lockedOnDisplay.enumerated() {
+            let badge = lockedBadges[slot]
+            badge.text = "\(item.index + 1)"
+            let badgeSize = badge.layer.bounds.size
+            let x = min(max(item.rect.minX + 8, 6), max(6, bounds.maxX - badgeSize.width - 6))
+            let y = min(max(item.rect.maxY - badgeSize.height - 8, 6), max(6, bounds.maxY - badgeSize.height - 6))
+            badge.layer.frame.origin = CGPoint(x: x, y: y)
+            badge.layer.isHidden = false
+        }
+        for slot in lockedOnDisplay.count..<lockedBadges.count {
+            lockedBadges[slot].layer.isHidden = true
+        }
+
+        // Candidate hovered window (not in `selectedWindows`): distinct dashed white outline.
+        if let hoveredRect {
+            let hoverEdge = CGPath(rect: hoveredRect, transform: nil)
+            let inset = Self.textSelectionEdge(increasedContrast: increasedContrast) / 2
+            let drawn = purpose == .text ? hoveredRect.integral.insetBy(dx: inset, dy: inset) : hoveredRect
+            outline.path = hoverEdge
+            border.path = purpose == .text ? CGPath(rect: drawn, transform: nil) : hoverEdge
+            border.lineDashPattern = [6, 4]
+        } else {
+            outline.path = nil
+            border.path = nil
+            border.lineDashPattern = nil
+        }
+        snapEdges.path = nil
+
+        // Size reading reflects only the locked windows that will actually be captured.
+        let lockedUnion = selectedWindows.dropFirst().reduce(selectedWindows[0].frame) { $0.union($1.frame) }
+        let scale = display.pixelsPerPoint
+        let width = Int((lockedUnion.width * scale).rounded())
+        let height = Int((lockedUnion.height * scale).rounded())
+        let text: String
+        if selectedWindows.count > 1 {
+            text = String(localized: "\(selectedWindows.count) windows  ·  \(width) × \(height)", bundle: .module)
+        } else {
+            let win = selectedWindows[0]
+            text = win.ownerName.isEmpty ? "\(width) × \(height)" : "\(win.ownerName)  ·  \(width) × \(height)"
+        }
+        sizePill.text = text
+        setAccessibilityValue(purpose == .text ? selectedWindows.map(\.ownerName).joined(separator: ", ") : text)
+
+        let anchorRect: CGRect? = if let firstLocked = lockedOnDisplay.first?.rect {
+            lockedOnDisplay.dropFirst().reduce(firstLocked) { $0.union($1.rect) }
+        } else {
+            hoveredRect
+        }
+        if purpose == .text || pointer == nil {
+            sizePill.layer.isHidden = true
+        } else {
+            sizePill.layer.isHidden = false
+            positionSizePill(under: anchorRect ?? CGRect(x: bounds.midX, y: bounds.midY, width: 0, height: 0))
+        }
+    }
+
+    /// Shows a compact, non-intrusive shortcut hint capsule at bottom-center in Pick Color and Window modes,
+    /// hidden while dragging, annotating, or when the pointer is on another display.
+    private func updateHintPill() {
+        let text: String? = if isAnnotating || isDraggingSelection || pointer == nil {
+            nil
+        } else if mode == .window {
+            if purpose.takesPicture && purpose.choosesSeveralWindows {
+                String(localized: "Scroll Element · Tab Cycle · ⇧ Click Multi-select", bundle: .module)
+            } else if purpose.choosesSeveralWindows {
+                String(localized: "Tab Cycle · ⇧ Click Multi-select", bundle: .module)
+            } else {
+                String(localized: "Tab Cycle", bundle: .module)
+            }
+        } else if purpose == .color {
+            String(localized: "⌥ Click for details · Tab Format", bundle: .module)
+        } else {
+            nil
+        }
+        guard let text else {
+            hintPill.layer.isHidden = true
+            return
+        }
+        hintPill.text = text
+        let pillSize = hintPill.layer.bounds.size
+        let toolbarVisible = !toolbar.isHidden && toolbar.alphaValue > 0
+        let selfTimerVisible = !selfTimerBar.isHidden && selfTimerBar.alphaValue > 0
+        var y: CGFloat = 18
+        if toolbarVisible {
+            let below = toolbar.frame.minY - pillSize.height - 8
+            if below >= 6 {
+                y = below
+            } else {
+                y = selfTimerVisible ? max(toolbar.frame.maxY, selfTimerBar.frame.maxY) + 8 : toolbar.frame.maxY + 8
+            }
+        } else if selfTimerVisible {
+            let below = selfTimerBar.frame.minY - pillSize.height - 8
+            y = below >= 6 ? below : selfTimerBar.frame.maxY + 8
+        }
+        let maxX = max(6, bounds.maxX - pillSize.width - 6)
+        let maxY = max(6, bounds.maxY - pillSize.height - 6)
+        let x = min(max((bounds.width - pillSize.width) / 2, 6), maxX)
+        y = min(max(y, 6), maxY)
+        if selfTimerVisible,
+           CGRect(x: x, y: y, width: pillSize.width, height: pillSize.height).intersects(selfTimerBar.frame.insetBy(dx: -4, dy: -4)) {
+            y = min(selfTimerBar.frame.maxY + 8, maxY)
+        }
+        hintPill.layer.frame.origin = CGPoint(x: x, y: y)
+        hintPill.layer.isHidden = false
     }
 
     /// The sides of `rect` that snapped, as lines (the view's y is up, as the selection's is).
@@ -1353,7 +1809,9 @@ final class OverlayView: NSView {
     }
 
     private func updatePointer(_ point: CGPoint?) {
+        let hadPointer = pointer != nil
         pointer = point
+        updateHintPill()
         let pointerLayers: [CALayer] = [crosshair, crosshairOutline, loupeShadow, loupe, loupeRim, loupePill.layer]
         if let point, wantsSystemCursor(at: global(point)) {
             pointerLayers.forEach { $0.isHidden = true }
@@ -1366,7 +1824,7 @@ final class OverlayView: NSView {
         }
         if mode == .window {
             let hovered = point.flatMap { WindowCatalog.target(at: global($0), in: windows) }
-            if hovered != hoveredWindow {
+            if hovered != hoveredWindow || (hadPointer != (point != nil) && !selectedWindows.isEmpty) {
                 hoveredWindow = hovered
                 updateSelectionLayers()
             } else if let point, !elementChain.isEmpty {
@@ -1461,6 +1919,13 @@ final class OverlayView: NSView {
     private func layoutToolbar() {
         let size = toolbar.fittingSize
         toolbar.frame = CGRect(x: (bounds.width - size.width) / 2, y: 40, width: size.width, height: size.height)
+    }
+
+    private func layoutSelfTimerBar() {
+        let size = selfTimerBar.fittingSize
+        let y: CGFloat = !toolbar.isHidden ? toolbar.frame.maxY + 10 : 40
+        let x = ((bounds.width - size.width) / 2).rounded()
+        selfTimerBar.frame = CGRect(x: x, y: y, width: size.width, height: size.height)
     }
 
     /// The captured pixel under a point, counted from the display's top-left corner.

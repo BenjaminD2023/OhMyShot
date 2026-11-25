@@ -21,6 +21,7 @@ final class UpdateController: NSObject {
     private var fallbackTask: Task<Void, Never>?
     private static let pendingKey = "updates.pending"
     private static let seenBuildKey = "updates.seenBuild"
+    private static let skippedVersionKey = "updates.skippedVersion"
     private var canCheckObservation: NSKeyValueObservation?
     /// The feed a debug hook points the updater at, in place of the build's.
     private let feedOverride: URL?
@@ -46,7 +47,9 @@ final class UpdateController: NSObject {
         if feedOverride == nil, let pending = UserDefaults.standard.dictionary(forKey: Self.pendingKey),
            let build = pending["build"] as? String, let version = pending["version"] as? String,
            build.compare(currentBuild, options: .numeric) == .orderedDescending {
-            status.waiting = version
+            if UserDefaults.standard.string(forKey: Self.skippedVersionKey) != version {
+                status.waiting = version
+            }
         } else if feedOverride == nil {
             UserDefaults.standard.removeObject(forKey: Self.pendingKey)
         }
@@ -96,6 +99,8 @@ final class UpdateController: NSObject {
 
     /// The person asked: Sparkle's windows say what it found, or bring back the version waiting in the menu.
     func checkNow() {
+        fallbackTask?.cancel()
+        fallbackTask = nil
         userInitiated = true
         usingFallback = false
         updater.checkForUpdates()
@@ -113,6 +118,8 @@ final class UpdateController: NSObject {
             Log.updates.notice("updates.background skipped: a session is in progress")
             return
         }
+        fallbackTask?.cancel()
+        fallbackTask = nil
         usingFallback = false
         userInitiated = false
         Log.updates.notice("updates.background checking")
@@ -121,9 +128,20 @@ final class UpdateController: NSObject {
 
     private var currentBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0" }
 
+    var isShowingReleaseNotes: Bool { releaseWindow != nil }
+
     func showReleaseNotes(preview: Bool = false) {
-        releaseWindow = makeReleaseNotesWindow(preview: preview)
-        releaseWindow?.present()
+        if let existing = releaseWindow, !preview {
+            existing.present()
+            return
+        }
+        releaseWindow?.close()
+        let controller = makeReleaseNotesWindow(preview: preview)
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
+            if self?.releaseWindow === controller { self?.releaseWindow = nil }
+        }
+        releaseWindow = controller
+        controller.present()
     }
 
     #if DEBUG
@@ -131,6 +149,9 @@ final class UpdateController: NSObject {
     func renderReleaseNotes(dark: Bool) -> NSWindow? {
         releaseWindow?.close()
         let controller = makeReleaseNotesWindow(preview: true)
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
+            if self?.releaseWindow === controller { self?.releaseWindow = nil }
+        }
         releaseWindow = controller
         controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         controller.showBehindWallpaper()
@@ -155,16 +176,19 @@ final class UpdateController: NSObject {
         return ReleaseNotesWindowController(version: preview ? "0.2.0" : version, markdown: notes, banner: NSImage(named: "ReleaseBanner"))
     }
 
-    func showReleaseNotesAfterUpdate() {
+    func showReleaseNotesAfterUpdate(onboardingPending: Bool = false) {
         guard feedOverride == nil else { return }
         let previous = UserDefaults.standard.string(forKey: Self.seenBuildKey)
-        if ReleaseNotes.shouldShow(previousBuild: previous, currentBuild: currentBuild) { showReleaseNotes() }
+        if ReleaseNotes.shouldShow(previousBuild: previous, currentBuild: currentBuild, onboardingPending: onboardingPending) {
+            showReleaseNotes()
+        }
         UserDefaults.standard.set(currentBuild, forKey: Self.seenBuildKey)
     }
 
-    /// Called when an update arrives and when the person returns to the app. Snooze for a day, never forget it.
+    /// Called when an update arrives and when the person returns to the app. Snooze for a day, or skip this version.
     func presentReminderIfNeeded(preview: Bool = false) {
         guard (!alwaysGentle || preview), let version = status.waiting, reminder == nil, canPresentReminder() else { return }
+        if !preview, UserDefaults.standard.string(forKey: Self.skippedVersionKey) == version { return }
         let key = "updates.reminded." + version
         if !preview, let last = UserDefaults.standard.object(forKey: key) as? Date, Date.now.timeIntervalSince(last) < 86400 { return }
         if !preview { UserDefaults.standard.set(Date.now, forKey: key) }
@@ -174,11 +198,23 @@ final class UpdateController: NSObject {
         alert.informativeText = String(localized: "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe.")
         alert.addButton(withTitle: String(localized: "Update Now"))
         alert.addButton(withTitle: String(localized: "Remind Me Tomorrow"))
+        alert.addButton(withTitle: String(localized: "Skip This Version"))
         reminder = alert
         NSApp.activate(ignoringOtherApps: true)
         let answer = alert.runModal()
         reminder = nil
-        if answer == .alertFirstButtonReturn { checkNow() }
+        switch answer {
+        case .alertFirstButtonReturn:
+            checkNow()
+        case .alertThirdButtonReturn:
+            if !preview {
+                UserDefaults.standard.set(version, forKey: Self.skippedVersionKey)
+                status.waiting = nil
+                if feedOverride == nil { UserDefaults.standard.removeObject(forKey: Self.pendingKey) }
+            }
+        default:
+            break
+        }
     }
 
     func updater(_ updater: SPUUpdater, willDownloadUpdate item: SUAppcastItem, with request: NSMutableURLRequest) {
@@ -204,26 +240,37 @@ extension UpdateController: SPUUpdaterDelegate {
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         status.lastCheck = updater.lastUpdateCheckDate
-        status.waiting = item.displayVersionString
-        if feedOverride == nil {
-            UserDefaults.standard.set(["build": item.versionString, "version": item.displayVersionString], forKey: Self.pendingKey)
+        let skipped = UserDefaults.standard.string(forKey: Self.skippedVersionKey) == item.displayVersionString
+        if userInitiated || !skipped {
+            status.waiting = item.displayVersionString
+            if feedOverride == nil, !skipped {
+                UserDefaults.standard.set(["build": item.versionString, "version": item.displayVersionString], forKey: Self.pendingKey)
+            }
         }
         Log.updates.notice("updates.found \(item.displayVersionString, privacy: .public) (\(item.versionString, privacy: .public))")
     }
 
     func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
         status.lastCheck = updater.lastUpdateCheckDate
+        if fallbackTask == nil {
+            status.waiting = nil
+            if feedOverride == nil {
+                UserDefaults.standard.removeObject(forKey: Self.pendingKey)
+            }
+        }
         Log.updates.notice("updates.none newer")
     }
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
         status.lastCheck = updater.lastUpdateCheckDate
         if let error = error as NSError?, error.domain != SUSparkleErrorDomain || error.code != Int(SUError.noUpdateError.rawValue) {
-            // Retry transport failures only. A bad signature must never turn into a different trust path.
-            if feedOverride == nil, !usingFallback,
+            // Retry transport failures only, and skip switching mirrors when offline (switching hosts
+            // cannot fix being disconnected and would trigger a duplicate error alert for manual checks).
+            if feedOverride == nil, !usingFallback, !Self.isOfflineError(error),
                error.domain == NSURLErrorDomain || (error.domain == SUSparkleErrorDomain && [Int(SUError.appcastError.rawValue), Int(SUError.downloadError.rawValue)].contains(error.code)) {
                 usingFallback = true
                 fallbackTask = Task { @MainActor [weak self] in
+                    defer { self?.fallbackTask = nil }
                     await Task.yield()
                     guard let self, !Task.isCancelled else { return }
                     if self.userInitiated { self.updater.checkForUpdates() }
@@ -232,6 +279,25 @@ extension UpdateController: SPUUpdaterDelegate {
             }
             Log.updates.error("updates.cycle ended: \(error.domain, privacy: .public) \(error.code, privacy: .public) \(error.localizedDescription, privacy: .public)")
         }
+    }
+
+    /// Walks `NSUnderlyingErrorKey` because Sparkle wraps URL transport errors inside `SUError.appcastError` / `.downloadError`.
+    private static func isOfflineError(_ error: NSError) -> Bool {
+        let offlineCodes: Set<Int> = [
+            URLError.notConnectedToInternet.rawValue,
+            URLError.networkConnectionLost.rawValue,
+            URLError.cannotFindHost.rawValue,
+            URLError.dataNotAllowed.rawValue,
+            URLError.internationalRoamingOff.rawValue,
+        ]
+        var current: NSError? = error
+        var depth = 0
+        while let err = current, depth < 5 {
+            if err.domain == NSURLErrorDomain, offlineCodes.contains(err.code) { return true }
+            current = err.userInfo[NSUnderlyingErrorKey] as? NSError
+            depth += 1
+        }
+        return false
     }
 }
 
@@ -243,8 +309,12 @@ extension UpdateController: SPUStandardUserDriverDelegate {
     }
 
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-        status.waiting = update.displayVersionString
-        if !state.userInitiated { presentReminderIfNeeded() }
+        if state.userInitiated {
+            status.waiting = update.displayVersionString
+        } else if UserDefaults.standard.string(forKey: Self.skippedVersionKey) != update.displayVersionString {
+            status.waiting = update.displayVersionString
+            presentReminderIfNeeded()
+        }
     }
 
     func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {}

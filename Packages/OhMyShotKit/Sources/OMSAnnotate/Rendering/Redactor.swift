@@ -50,7 +50,7 @@ nonisolated enum Redactor {
     /// leave it, so one over a solid redaction blurs the solid, never what the solid hides.
     static func coverage(
         for redaction: Redaction, id: UUID, source: Source, scale: CGFloat, covered: [CGRect] = [], canvas: CGRect? = nil,
-        beneath: [(item: Annotation, coverage: Coverage?)] = [], filter: Filter = apply
+        beneath: [(item: Annotation, coverage: Coverage?)] = [], filter: Filter? = nil
     ) -> Coverage? {
         guard redaction.method != .solid else { return nil }
         var rect = redaction.rect.standardized.integral.intersection(source.bounds)
@@ -62,7 +62,7 @@ nonisolated enum Redactor {
             // What it reads (its area, and for a blur as far around it as its passes spread), with the redactions beneath
             // it drawn on as they are drawn on the picture. An erasure needs none of this: it reads nothing any redaction
             // lies over.
-            let reach = redaction.method == .blur ? blurPasses(over: rect, scale: scale).reach : 0
+            let reach = redaction.method == .blur ? blurPasses(over: rect, scale: scale, strength: redaction.strength).reach : 0
             let area = rect.insetBy(dx: -reach, dy: -reach).intersection(source.bounds).integral
             let under = beneath.filter { $0.item.bounds(scale: scale).intersects(area) }
             if !under.isEmpty {
@@ -92,17 +92,23 @@ nonisolated enum Redactor {
                 local, of: image, scale: scale, avoiding: covered.map { $0.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY) },
                 within: kept?.offsetBy(dx: -source.bounds.minX, dy: -source.bounds.minY)
             )
-        } else {
+        } else if let filter {
             filter(redaction.method, local, image, scale, id)
+        } else {
+            apply(redaction.method, strength: redaction.strength, to: local, of: image, scale: scale, seed: id)
         }
         guard let pixels else { return .opaque(rect) }
         return .filtered(pixels, rect)
     }
 
     static func apply(_ method: Redaction.Method, to rect: CGRect, of base: CGImage, scale: CGFloat, seed: UUID) -> CGImage? {
+        apply(method, strength: Redaction.Strength.medium.rawValue, to: rect, of: base, scale: scale, seed: seed)
+    }
+
+    static func apply(_ method: Redaction.Method, strength: Double, to rect: CGRect, of base: CGImage, scale: CGFloat, seed: UUID) -> CGImage? {
         switch method {
-        case .blur: blurred(rect, of: base, scale: scale)
-        case .pixelate: pixelated(rect, of: base, scale: scale, seed: seed)
+        case .blur: blurred(rect, of: base, scale: scale, strength: strength)
+        case .pixelate: pixelated(rect, of: base, scale: scale, strength: strength, seed: seed)
         // A solid redaction draws itself, and an erasure is made by `coverage`, which knows what else is covered.
         case .solid, .erase: nil
         }
@@ -270,9 +276,13 @@ nonisolated enum Redactor {
         }
     }
 
-    /// The side of a pixelation block: never under 12 px, larger for large areas.
-    static func blockSize(for rect: CGRect, scale: CGFloat) -> Int {
-        max(12, Int(max(lineRadius(for: rect, scale: scale), max(rect.width, rect.height) / 28).rounded()))
+    /// The side of a pixelation block: never under 12 px at medium strength (6 px at low), larger for large areas
+    /// and scaled by `strength` (Low 0.5, Medium 1.0, High 1.6).
+    static func blockSize(for rect: CGRect, scale: CGFloat, strength: Double = 1.0) -> Int {
+        let base = max(12, Int(max(lineRadius(for: rect, scale: scale), max(rect.width, rect.height) / 28).rounded()))
+        let factor = max(strength, 0.25)
+        let scaled = Int((Double(base) * factor).rounded())
+        return max(strength >= 1.0 ? 12 : 6, scaled)
     }
 
     /// Allow room around a line: keep the 6 pt UI radius for selections up to 24 pt high,
@@ -284,15 +294,16 @@ nonisolated enum Redactor {
     /// A blur over `rect`: how much smaller its working bitmap is, the side of each box pass on it, and how far past
     /// `rect` the passes read the picture. Three box passes approximate a Gaussian. The short side estimates the height
     /// of a covered line; large selections get a proportionally wider blur on a smaller working bitmap.
-    private static func blurPasses(over rect: CGRect, scale: CGFloat) -> (stride: Int, box: Int, reach: CGFloat) {
-        let sigma = lineRadius(for: rect, scale: scale)
+    private static func blurPasses(over rect: CGRect, scale: CGFloat, strength: Double = 1.0) -> (stride: Int, box: Int, reach: CGFloat) {
+        let factor = CGFloat(max(strength, 0.25))
+        let sigma = max(lineRadius(for: rect, scale: scale) * factor, 2)
         let stride = max(1, Int(sigma / 12))
-        let box = Int(sigma * 2 / CGFloat(stride)) | 1
+        let box = max(3, Int(sigma * 2 / CGFloat(stride)) | 1)
         return (stride, box, CGFloat((box / 2) * 3 * stride))
     }
 
-    private static func blurred(_ rect: CGRect, of base: CGImage, scale: CGFloat) -> CGImage? {
-        let (stride, box, padding) = blurPasses(over: rect, scale: scale)
+    private static func blurred(_ rect: CGRect, of base: CGImage, scale: CGFloat, strength: Double) -> CGImage? {
+        let (stride, box, padding) = blurPasses(over: rect, scale: scale, strength: strength)
         let bounds = CGRect(x: 0, y: 0, width: base.width, height: base.height)
         let source = rect.insetBy(dx: -padding, dy: -padding).intersection(bounds).integral
         guard var buffer = Bitmap(base, crop: source, downsampleBy: stride) else { return nil }
@@ -313,9 +324,9 @@ nonisolated enum Redactor {
 
     /// Averages blocks anchored at the rect's corner, then moves each block's color by a little seeded
     /// noise: plain block averages of known type can be matched back to the text they came from.
-    private static func pixelated(_ rect: CGRect, of base: CGImage, scale: CGFloat, seed: UUID) -> CGImage? {
+    private static func pixelated(_ rect: CGRect, of base: CGImage, scale: CGFloat, strength: Double, seed: UUID) -> CGImage? {
         guard var bitmap = Bitmap(base, crop: rect) else { return nil }
-        let block = blockSize(for: rect, scale: scale)
+        let block = blockSize(for: rect, scale: scale, strength: strength)
         var generator = SeededGenerator(seed: seed)
         let width = bitmap.width
         let height = bitmap.height

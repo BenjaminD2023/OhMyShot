@@ -44,7 +44,7 @@ struct LaserTrailTests {
         let arrow = try #require(SketchView.shape(.arrow, from: CGPoint(x: 10, y: 10), to: CGPoint(x: 200, y: 120), constrained: false, color: .red))
         guard case .arrow(let shape) = arrow.shape else { Issue.record("not an arrow"); return }
         #expect(shape.start == CGPoint(x: 10, y: 10) && shape.end == CGPoint(x: 200, y: 120))
-        #expect(arrow.style.color == .red && arrow.style.lineWidth == ScreenSketchController.lineWidth)
+        #expect(arrow.style.color == .red && arrow.style.lineWidth == ScreenSketchController.LineWidth.medium.value)
         let square = try #require(SketchView.shape(.rectangle, from: .zero, to: CGPoint(x: 80, y: 40), constrained: true, color: .blue))
         guard case .rectangle(let box) = square.shape else { Issue.record("not a box"); return }
         #expect(box.rect.width == box.rect.height)

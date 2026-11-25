@@ -58,15 +58,23 @@ public struct HistoryText: Codable, Equatable, Sendable {
 /// a phrase across lines, and reads "›" as "，"; folded, "软件更新" finds "軟體 更新" read over a line break.
 /// Each word typed must appear, in the capture's text or in the name of the app it was taken in.
 public enum HistorySearch {
-    /// A capture's text and app name, ready to be searched.
+    /// A capture's text, app name, window title, and file name, ready to be searched.
     public struct Entry: Sendable {
         let text: String
         let key: String
         /// Where in `text` each character of `key` came from.
         let origins: [String.Index]
         let appKey: String
+        let windowTitleKey: String
+        let fileNameKey: String
 
-        public init(text: String, appName: String?, folding: inout Folding) {
+        public init(
+            text: String,
+            appName: String?,
+            windowTitle: String? = nil,
+            fileName: String? = nil,
+            folding: inout Folding
+        ) {
             self.text = text
             var key = "", origins: [String.Index] = []
             key.reserveCapacity(text.utf8.count)
@@ -83,6 +91,8 @@ public enum HistorySearch {
             self.key = key
             self.origins = origins
             appKey = folding.fold(appName ?? "")
+            windowTitleKey = folding.fold(windowTitle ?? "")
+            fileNameKey = folding.fold(fileName ?? "")
         }
     }
 
@@ -119,7 +129,9 @@ public enum HistorySearch {
             let options: String.CompareOptions = term.utf8.allSatisfy { $0 < 0x80 } ? .literal : []
             if let found = entry.key.range(of: term, options: options) {
                 if firstFound == nil { firstFound = found }
-            } else if entry.appKey.range(of: term, options: options) == nil {
+            } else if entry.appKey.range(of: term, options: options) == nil,
+                      entry.windowTitleKey.range(of: term, options: options) == nil,
+                      entry.fileNameKey.range(of: term, options: options) == nil {
                 return nil
             }
         }

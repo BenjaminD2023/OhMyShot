@@ -8,6 +8,8 @@ import SwiftUI
 /// is moving.
 struct StudioZoomAim: View {
     @Bindable var document: StudioDocument
+    /// Reports when the aim view gains or loses keyboard focus so window-level arrow seeking yields to aim nudging.
+    var onFocusChange: ((Bool) -> Void)? = nil
     @FocusState private var focused: Bool
     /// What the camera showed when the drag under way began; nil while none is aiming.
     @State private var aiming: StudioRenderer.View?
@@ -65,6 +67,12 @@ struct StudioZoomAim: View {
         .onChange(of: document.selectedZoom) { _, chosen in
             if chosen == nil { focused = false }
         }
+        .onChange(of: focused) { _, isFocused in
+            onFocusChange?(isFocused)
+        }
+        .onDisappear {
+            onFocusChange?(false)
+        }
         .allowsHitTesting(chosen != nil)
         .modifier(AimAccessibility(document: document, isActive: chosen != nil) { id, x, y in nudge(id, x: x, y: y) })
     }
@@ -76,10 +84,15 @@ struct StudioZoomAim: View {
         let line = contrast == .increased ? 2.0 : 1.5
         let outline = contrast == .increased ? 4.0 : 3.0
         let edge = Color.white.opacity(contrast == .increased ? 1 : 0.9)
-        let center = Self.viewPoint(renderer.moviePoint(of: target, in: view), canvas: canvas, movie: movie)
+        let crop = renderer.project.effectiveCrop
+        let displayed = StudioProject.Zoom.Spot(
+            x: min(max(target.x, Double(crop.minX)), Double(crop.maxX)),
+            y: min(max(target.y, Double(crop.minY)), Double(crop.maxY))
+        )
+        let center = Self.viewPoint(renderer.moviePoint(of: displayed, in: view), canvas: canvas, movie: movie)
         // Outside the zoom, still coming in, or under a stronger one, the picture isn't what the zoom shows.
         if !document.isFullyIn(zoom) {
-            let corners = renderer.shown(around: target, scale: zoom.scale)
+            let corners = renderer.shown(around: displayed, scale: zoom.scale)
             let topLeft = Self.viewPoint(renderer.moviePoint(of: corners.topLeft, in: view), canvas: canvas, movie: movie)
             let bottomRight = Self.viewPoint(renderer.moviePoint(of: corners.bottomRight, in: view), canvas: canvas, movie: movie)
             let region = CGRect(x: topLeft.x, y: topLeft.y, width: bottomRight.x - topLeft.x, height: bottomRight.y - topLeft.y)
@@ -112,7 +125,13 @@ struct StudioZoomAim: View {
         }
         guard let aiming else { return }
         let point = Self.moviePoint(value.location, canvas: renderer.layout.canvas, movie: movie)
-        document.setZoomTarget(zoom.id, renderer.spot(atMovie: point, in: aiming))
+        let raw = renderer.spot(atMovie: point, in: aiming)
+        let crop = renderer.project.effectiveCrop
+        let clamped = StudioProject.Zoom.Spot(
+            x: min(max(raw.x, Double(crop.minX)), Double(crop.maxX)),
+            y: min(max(raw.y, Double(crop.minY)), Double(crop.maxY))
+        )
+        document.setZoomTarget(zoom.id, clamped)
     }
 
     private func dragEnded() {
@@ -123,8 +142,13 @@ struct StudioZoomAim: View {
 
     /// Moves the chosen zoom's spot; one that follows the pointer is held where it looks now, and moved from there.
     private func nudge(_ id: UUID, x: Double = 0, y: Double = 0) {
+        let crop = document.project.effectiveCrop
         let spot = document.aim(of: id)
-        document.setZoomTarget(id, .init(x: spot.x + x, y: spot.y + y))
+        let moved = StudioProject.Zoom.Spot(
+            x: min(max(spot.x + x * Double(crop.width), Double(crop.minX)), Double(crop.maxX)),
+            y: min(max(spot.y + y * Double(crop.height), Double(crop.minY)), Double(crop.maxY))
+        )
+        document.setZoomTarget(id, moved)
     }
 
     // MARK: Geometry

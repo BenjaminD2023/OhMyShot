@@ -37,6 +37,17 @@ struct ReleaseNotesTests {
         #expect(!ReleaseNotes.shouldShow(previousBuild: "10", currentBuild: "2"))
     }
 
+    @Test func freshInstallWithOnboardingSuppressesReleaseNotesWhileUpdatesStillShow() {
+        // Fresh install with onboarding pending suppresses What's New so two welcome windows never stack.
+        #expect(!ReleaseNotes.shouldShow(previousBuild: nil, currentBuild: "2", onboardingPending: true))
+        // Existing users upgrading from a pre-seenBuild release still see What's New once.
+        #expect(ReleaseNotes.shouldShow(previousBuild: nil, currentBuild: "2", onboardingPending: false))
+        // Updates from an older build still show What's New.
+        #expect(ReleaseNotes.shouldShow(previousBuild: "2", currentBuild: "10", onboardingPending: true))
+        #expect(ReleaseNotes.shouldShow(previousBuild: "2", currentBuild: "10", onboardingPending: false))
+        #expect(!ReleaseNotes.shouldShow(previousBuild: "10", currentBuild: "10", onboardingPending: false))
+    }
+
     @Test func mirrorOnlyKnownReleaseArchives() {
         #expect(UpdateTransport.feed.absoluteString == "https://www.ohmyshot.org/updates/appcast")
         let url = URL(string: "https://github.com/MMFoundation/OhMyShot/releases/download/v0.2.0/OhMyShot-0.2.0.zip")!

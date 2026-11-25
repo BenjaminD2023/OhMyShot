@@ -4,15 +4,20 @@ import OMSCore
 import OMSDesign
 import SwiftUI
 
-public final class ReleaseNotesWindowController: NSWindowController {
+public final class ReleaseNotesWindowController: NSWindowController, NSWindowDelegate {
+    public var onClose: (() -> Void)?
+
+    private var windowLease: ActiveResources.Lease?
+
     public init(version: String, markdown: String, banner: NSImage? = nil) {
-        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 720),
-                              styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
+        let window = ReleaseNotesWindow(contentRect: NSRect(x: 0, y: 0, width: 640, height: 720),
+                                        styleMask: [.titled, .closable, .miniaturizable, .resizable], backing: .buffered, defer: false)
         window.title = String(localized: "What’s New in OhMyShot", bundle: .module)
         window.minSize = NSSize(width: 540, height: 540)
         window.isReleasedWhenClosed = false
         super.init(window: window)
         window.contentView = NSHostingView(rootView: ReleaseNotesView(version: version, markdown: markdown, banner: banner) { [weak self] in self?.close() })
+        window.delegate = self
         window.center()
     }
 
@@ -20,20 +25,39 @@ public final class ReleaseNotesWindowController: NSWindowController {
     required init?(coder: NSCoder) { fatalError("init(coder:) is not supported") }
 
     public func present() {
+        if windowLease == nil {
+            windowLease = ActiveResources.shared.acquire(.window)
+        }
         showWindow(nil)
-        NSApp.activate(ignoringOtherApps: true)
-        window?.makeKeyAndOrderFront(nil)
+        AppActivation.bringForward(window)
+    }
+
+    public func windowWillClose(_ notification: Notification) {
+        windowLease?.end()
+        windowLease = nil
+        AppActivation.windowWillClose(window)
+        onClose?()
     }
 
     #if DEBUG
     /// For scripted captures: the window as it is shown, but behind the desktop picture, never in front of anyone.
     public func showBehindWallpaper() {
         guard let window else { return }
+        if windowLease == nil {
+            windowLease = ActiveResources.shared.acquire(.window)
+        }
         window.level = NSWindow.Level(rawValue: Int(CGWindowLevelForKey(.desktopWindow)) - 1)
         window.center()
         window.orderFront(nil)
     }
     #endif
+}
+
+/// Closes on Escape when no control handles it.
+private final class ReleaseNotesWindow: NSWindow {
+    override func cancelOperation(_ sender: Any?) {
+        close()
+    }
 }
 
 private struct ReleaseNotesView: View {

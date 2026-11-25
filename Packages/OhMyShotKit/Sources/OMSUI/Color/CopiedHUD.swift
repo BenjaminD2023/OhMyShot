@@ -2,9 +2,9 @@ import AppKit
 import OMSCore
 import OMSDesign
 
-/// What was just copied, in a reading capsule by the point it came from, for a moment: a picked color with
-/// its swatch, or a measurement. It takes no clicks and no focus and goes by itself, as a pin's reading
-/// does: it shows at once, stays 0.9 s, and fades over 0.12 s.
+/// What was just copied or noticed, in a reading capsule by the point it came from, for a moment: a picked
+/// color with its swatch, a measurement, or a short status notice. It takes no clicks and no focus and goes
+/// by itself, scaling its hold duration with message length before fading over 0.12 s.
 public final class CopiedHUD {
     private var panel: NSPanel?
     private let reading = ReadingCapsule(showsSwatch: true)
@@ -15,8 +15,32 @@ public final class CopiedHUD {
 
     public init() {}
 
+    /// Default visibility duration scaled to text length: short readings (~0.9 s), medium notices (~2.5 s),
+    /// and longer notices (~3.2 s).
+    public static func defaultDuration(for text: String) -> Duration {
+        switch text.count {
+        case ...20: .milliseconds(900)
+        case ...50: .milliseconds(2500)
+        default: .milliseconds(3200)
+        }
+    }
+
+    /// Places a capsule of `size` below and right of `point`, flipping away from `visible`'s edges and
+    /// clamping inside `visible.insetBy(dx: 6, dy: 6)` so long messages never clip off-screen.
+    public static func origin(for size: CGSize, near point: CGPoint, in visible: CGRect) -> CGPoint {
+        let safe = visible.insetBy(dx: 6, dy: 6)
+        var origin = CGPoint(x: point.x + 14, y: point.y - 14 - size.height)
+        if origin.x + size.width > safe.maxX { origin.x = point.x - 14 - size.width }
+        if origin.y < safe.minY { origin.y = point.y + 14 }
+        let maxX = max(safe.minX, safe.maxX - size.width)
+        let maxY = max(safe.minY, safe.maxY - size.height)
+        origin.x = min(max(origin.x, safe.minX), maxX)
+        origin.y = min(max(origin.y, safe.minY), maxY)
+        return origin
+    }
+
     /// Shows `text`, led by `swatch` for a color, by `point` in AppKit's global coordinates.
-    public func show(_ text: String, swatch: CGColor? = nil, near point: CGPoint) {
+    public func show(_ text: String, swatch: CGColor? = nil, near point: CGPoint, duration: Duration? = nil) {
         let panel = self.panel ?? makePanel()
         self.panel = panel
         let screen = NSScreen.screens.first { $0.frame.contains(point) } ?? NSScreen.main
@@ -30,12 +54,10 @@ public final class CopiedHUD {
         reading.layer.isHidden = false
         reading.layer.frame.origin = CGPoint(x: Self.margin, y: Self.margin)
         CATransaction.commit()
-        // Below and right of the point, where the magnifier's reading was, turned away from the screen's edges.
+        // Below and right of the point, where the magnifier's reading was, turned away from and clamped to the screen's edges.
         let size = reading.layer.bounds.size
         let visible = screen?.visibleFrame ?? CGRect(origin: point, size: .zero).insetBy(dx: -500, dy: -500)
-        var origin = CGPoint(x: point.x + 14, y: point.y - 14 - size.height)
-        if origin.x + size.width > visible.maxX - 6 { origin.x = point.x - 14 - size.width }
-        if origin.y < visible.minY + 6 { origin.y = point.y + 14 }
+        let origin = Self.origin(for: size, near: point, in: visible)
         let frame = CGRect(x: origin.x, y: origin.y, width: size.width, height: size.height).insetBy(dx: -Self.margin, dy: -Self.margin)
         panel.setFrame(frame.integral, display: false)
         fade?.cancel()
@@ -45,8 +67,9 @@ public final class CopiedHUD {
         if let view = panel.contentView {
             VoiceOver.announce(text, from: view)
         }
+        let hold = duration ?? Self.defaultDuration(for: text)
         fade = Task { [weak self] in
-            try? await Task.sleep(for: .milliseconds(900))
+            try? await Task.sleep(for: hold)
             guard !Task.isCancelled else { return }
             self?.fadeOut()
         }

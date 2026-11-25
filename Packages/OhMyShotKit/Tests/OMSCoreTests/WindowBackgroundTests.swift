@@ -4,15 +4,17 @@ import Testing
 @testable import OMSCore
 
 struct WindowBackgroundTests {
-    @Test func eachChoiceAndShiftTheOtherWayRound() {
-        #expect(WindowBackground.asScreenshots.resolved(automaticPreset: true, shiftHeld: false) == .preset)
-        #expect(WindowBackground.asScreenshots.resolved(automaticPreset: false, shiftHeld: false) == .none)
-        #expect(WindowBackground.transparent.resolved(automaticPreset: true, shiftHeld: false) == .none)
-        #expect(WindowBackground.desktopWallpaper.resolved(automaticPreset: false, shiftHeld: false) == .wallpaper)
-        // Shift: none where there would be one, the desktop picture where there would be none.
-        #expect(WindowBackground.asScreenshots.resolved(automaticPreset: true, shiftHeld: true) == .none)
-        #expect(WindowBackground.transparent.resolved(automaticPreset: false, shiftHeld: true) == .wallpaper)
-        #expect(WindowBackground.desktopWallpaper.resolved(automaticPreset: false, shiftHeld: true) == .none)
+    @Test func eachChoiceAndOptionTheOtherWayRound() {
+        #expect(WindowBackground.asScreenshots.resolved(automaticPreset: true, optionHeld: false) == .preset)
+        #expect(WindowBackground.asScreenshots.resolved(automaticPreset: false, optionHeld: false) == .none)
+        #expect(WindowBackground.transparent.resolved(automaticPreset: true, optionHeld: false) == .none)
+        #expect(WindowBackground.desktopWallpaper.resolved(automaticPreset: false, optionHeld: false) == .wallpaper)
+        // Option: none where there would be one, the desktop picture where there would be none.
+        #expect(WindowBackground.asScreenshots.resolved(automaticPreset: true, optionHeld: true) == .none)
+        #expect(WindowBackground.asScreenshots.resolved(automaticPreset: false, optionHeld: true) == .wallpaper)
+        #expect(WindowBackground.transparent.resolved(automaticPreset: false, optionHeld: true) == .wallpaper)
+        #expect(WindowBackground.transparent.resolved(automaticPreset: true, optionHeld: true) == .wallpaper)
+        #expect(WindowBackground.desktopWallpaper.resolved(automaticPreset: false, optionHeld: true) == .none)
     }
 
     @MainActor @Test func settingsDefaultToTheShadowAndScreenshotsBackground() {

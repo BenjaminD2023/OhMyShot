@@ -5,6 +5,7 @@ import OMSCore
 import Testing
 @testable import OMSRecording
 
+@Suite(.serialized)
 struct RecordingEditsTests {
     @Test func aTrimKeepsThePartAndItsSound() async throws {
         let movie = try await Self.recording(seconds: 4, audio: true)

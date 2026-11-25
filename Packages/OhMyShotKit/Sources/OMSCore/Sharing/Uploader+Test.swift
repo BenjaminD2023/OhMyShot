@@ -3,13 +3,27 @@ import Foundation
 
 extension Uploader {
     /// What Settings' Test Upload sends to a destination: the test picture, written to a temporary file, uploaded as
-    /// "OhMyShot test.png", and the file removed however it went. What the destination keeps stays there.
+    /// "OhMyShot test.png", and the local file removed however it went. For S3 and WebDAV destinations, the uploaded
+    /// test object is deleted afterward on a best-effort basis so test uploads leave no clutter behind.
     /// - Throws: what `upload` throws, or the error writing the file.
     public func testUpload(to destination: UploadDestination) async throws -> UploadResult {
         let file = FileManager.default.temporaryDirectory.appending(path: "OhMyShot-test-\(UUID().uuidString).png")
         defer { try? FileManager.default.removeItem(at: file) }
         try Self.testPicture().write(to: file)
-        return try await upload(fileAt: file, to: destination, originalName: "OhMyShot test.png")
+        let result = try await upload(fileAt: file, to: destination, originalName: "OhMyShot test.png")
+        switch destination.configuration {
+        case .s3, .webDAV:
+            if result.remoteKey != nil {
+                let record = UploadRecord(
+                    captureID: nil, date: .now, fileName: result.fileName,
+                    destination: destination, result: result
+                )
+                try? await delete(record, from: destination)
+            }
+        case .customHTTP:
+            break
+        }
+        return result
     }
 
     /// The small picture a test upload sends: a soft gradient with a rounded card on it, about a kilobyte.

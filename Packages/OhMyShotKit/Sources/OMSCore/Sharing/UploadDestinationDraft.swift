@@ -200,13 +200,36 @@ public struct UploadDestinationDraft: Equatable, Identifiable, Sendable {
         if !(address.lowercased().hasPrefix("http://") || address.lowercased().hasPrefix("https://")) || address.count < 9 {
             return String(localized: "Enter the upload address, starting with http:// or https://.", bundle: .module)
         }
+        do {
+            _ = try ShareXTemplate(address, scope: .request)
+        } catch {
+            return error.localizedDescription
+        }
         if fileFormName.trimmed.isEmpty, bodyType == .multipartFormData { return String(localized: "Enter the name of the form field the file goes in.", bundle: .module) }
         for rows in [parameters, headers, arguments] {
             let names = rows.map { $0.name.trimmed }
             if names.contains("") { return String(localized: "Fill in or remove the empty row.", bundle: .module) }
             if Set(names).count != names.count { return String(localized: "Two rows have the same name.", bundle: .module) }
-            for row in rows where row.value.isEmpty && !row.isStored {
-                return String(localized: "Enter a value for \(row.name.trimmed).", bundle: .module)
+            for row in rows {
+                if row.value.isEmpty && !row.isStored {
+                    return String(localized: "Enter a value for \(row.name.trimmed).", bundle: .module)
+                }
+                if !row.value.isEmpty {
+                    do {
+                        _ = try ShareXTemplate(row.value, scope: .request)
+                    } catch {
+                        return error.localizedDescription
+                    }
+                }
+            }
+        }
+        for template in [urlTemplate, deletionURLTemplate, thumbnailURLTemplate, errorMessageTemplate] {
+            let trimmed = template.trimmed
+            guard !trimmed.isEmpty else { continue }
+            do {
+                _ = try ShareXTemplate(trimmed, scope: .response)
+            } catch {
+                return error.localizedDescription
             }
         }
         return nil

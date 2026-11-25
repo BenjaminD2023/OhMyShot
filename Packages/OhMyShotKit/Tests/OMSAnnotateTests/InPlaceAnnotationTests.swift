@@ -313,4 +313,34 @@ struct InPlaceAnnotationTests {
         annotator.simulateKey("q", keyCode: 12)
         #expect(annotator.codeChips.isShowingCard && !annotator.codeChips.debugCardOffersOpen)
     }
+
+    @Test func blankDoubleClickDoesNotCopyWithMarksAndCommandEOpensInEditor() {
+        var copied = 0
+        var opened = 0
+        let annotator = InPlaceAnnotationView(
+            frame: frame(), scale: 2, size: CGSize(width: 400, height: 300), selection: CGRect(x: 80, y: 40, width: 100, height: 60),
+            actions: .init(copy: { _ in copied += 1 }, save: { _ in }, openInEditor: { _ in opened += 1 }, cancel: {})
+        )
+        let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 300), styleMask: [.borderless], backing: .buffered, defer: true)
+        window.isReleasedWhenClosed = false
+        window.contentView = annotator
+        defer { window.close() }
+        annotator.layoutSubtreeIfNeeded()
+        annotator.begin()
+
+        // Add a mark so the session has annotations to protect.
+        let mark = Annotation(shape: .rectangle(Box(rect: CGRect(x: 250, y: 140, width: 30, height: 30))), style: Style())
+        var document = annotator.session.document
+        document.items = [mark]
+        annotator.session.commit(document, actionName: "Add")
+        annotator.session.tool = .select
+
+        // Double-clicking blank canvas with marks drawn must not close & copy.
+        annotator.simulateDrag(from: CGPoint(x: 95, y: 55), to: CGPoint(x: 95, y: 55), steps: 1, clickCount: 2)
+        #expect(copied == 0)
+
+        // ⌘E opens the marked selection in the editor.
+        annotator.simulateKey("e", keyCode: 14, modifiers: .command)
+        #expect(opened == 1)
+    }
 }

@@ -210,7 +210,7 @@ private struct SwitchDrawing: View {
 /// The practice in two frames: the area being chosen (the overlay's dim, white edge, size reading, and crosshair) and
 /// then its Quick Access card in the corner it comes to. The capture's subject is the app's own mark.
 struct FirstCapturePreview: View {
-    let cardsOnLeft: Bool
+    let cardCorner: QuickAccessCorner
     @Environment(\.colorScheme) private var scheme
     @Environment(\.colorSchemeContrast) private var contrast
     private static let screen = CGSize(width: 176, height: 110)
@@ -277,7 +277,10 @@ struct FirstCapturePreview: View {
                     // The card's picture border (white 0.16 / black 0.10), so it holds its edge on a dark screen too.
                     .overlay(card.strokeBorder(scheme == .dark ? Color.white.opacity(0.16) : Color.black.opacity(0.1), lineWidth: 0.5))
                     .shadow(color: .black.opacity(Double(Theme.Shadow.opacity)), radius: 6, y: 3)
-                    .position(x: cardsOnLeft ? 8 + 26 : Self.screen.width - 8 - 26, y: Self.screen.height - 8 - 18)
+                    .position(
+                        x: cardCorner.slidesFromLeft ? 8 + 26 : Self.screen.width - 8 - 26,
+                        y: cardCorner.isTop ? 8 + 18 : Self.screen.height - 8 - 18
+                    )
             }
         }
     }

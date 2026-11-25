@@ -82,13 +82,32 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
         set { model.onTextRecognized = newValue }
     }
 
+    /// Optional hook wired by the app to open a newly pasted or dropped image with full coordinator setup.
+    public var onOpenImage: ((CGImage, CGFloat, String) -> Void)? {
+        get { model.onOpenImage }
+        set { model.onOpenImage = newValue }
+    }
+
+    /// Optional hook wired by the app to build a fresh analyzer after rotating or cropping the displayed image.
+    public var freshAnalyzer: (() -> (@Sendable (CGImage) async throws -> TextAnalysis))? {
+        get { model.freshAnalyzer }
+        set { model.freshAnalyzer = newValue }
+    }
+
+    /// Returns the delimiter used to wrap copied LaTeX formulas.
+    public var formulaDelimiter: () -> FormulaDelimiter {
+        get { model.formulaDelimiter }
+        set { model.formulaDelimiter = newValue }
+    }
+
     private let model: TextRecognitionModel
     private var windowLease: ActiveResources.Lease?
 
     /// `translator` is shared, so a language pair's model, slow to load, stays ready from image to image.
     public init(settings: SettingsStore, translator: Translator, cloud: Cloud? = nil) {
-        model = TextRecognitionModel(settings: settings, translator: translator, cloud: cloud)
-        let window = NSWindow(
+        let model = TextRecognitionModel(settings: settings, translator: translator, cloud: cloud)
+        self.model = model
+        let window = TextRecognitionWindow(
             contentRect: CGRect(x: 0, y: 0, width: 1040, height: 660),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -97,6 +116,9 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
         window.title = String(localized: "Recognized Text", bundle: .module)
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
+        window.onPasteImage = { [weak model] in
+            model?.pasteImage() ?? false
+        }
         super.init(window: window)
         let content = NSHostingController(rootView: TextRecognitionView(model: model))
         content.sceneBridgingOptions = [.toolbars]
@@ -148,6 +170,12 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
         AppActivation.bringForward(window)
     }
 
+    @objc public func paste(_ sender: Any?) {
+        if !model.pasteImage() {
+            NSSound.beep()
+        }
+    }
+
     public func windowWillClose(_ notification: Notification) {
         model.unload()
         windowLease?.end()
@@ -184,4 +212,21 @@ public final class TextRecognitionWindowController: NSWindowController, NSWindow
         }
     }
     #endif
+}
+
+/// Routes ⌘V to image paste when the text editor is not focused and the clipboard holds an image.
+private final class TextRecognitionWindow: NSWindow {
+    var onPasteImage: (() -> Bool)?
+
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if modifiers == .command,
+           event.charactersIgnoringModifiers?.lowercased() == "v",
+           !(firstResponder is NSTextView),
+           PasteboardImage.mayHoldImage(.general),
+           onPasteImage?() == true {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
+    }
 }

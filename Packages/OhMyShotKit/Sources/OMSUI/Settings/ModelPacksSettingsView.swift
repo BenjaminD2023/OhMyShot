@@ -9,11 +9,21 @@ import SwiftUI
 /// going on with a paused or failed one doesn't ask again. An installed pack's license can be read again.
 struct ModelPacksRow: View {
     let center: ModelPackCenter
+    @Bindable var settings: SettingsStore
     /// Its group's help, which it holds as the group's first row.
     var help: [HelpTopic] = []
     @State private var consenting: ModelPack?
     @State private var reading: ModelPack?
     @State private var removing: ModelPack?
+
+    private var secondReadingActive: Bool {
+        guard case .installed = center.state(of: ModelPackCatalog.ppocrV6Small) else { return false }
+        return settings.isModelPackEnabled(ModelPackCatalog.ppocrV6Small.id)
+    }
+
+    private var activeMirror: String? {
+        settings.modelPackMirrorURL.isEmpty ? nil : settings.modelPackMirrorURL
+    }
 
     var body: some View {
         SettingsRow(String(localized: "Model packs", bundle: .module), help: help) {
@@ -22,9 +32,14 @@ struct ModelPacksRow: View {
                     ForEach(Array(center.packs.enumerated()), id: \.element.id) { index, pack in
                         if index > 0 { Divider() }
                         ModelPackRow(
-                            pack: pack, state: center.state(of: pack),
+                            pack: pack,
+                            state: center.state(of: pack),
+                            isEnabled: Binding(
+                                get: { settings.isModelPackEnabled(pack.id) },
+                                set: { settings.setModelPackEnabled($0, for: pack.id) }
+                            ),
                             download: {
-                                if case .available = center.state(of: pack) { consenting = pack } else { center.download(pack) }
+                                if case .available = center.state(of: pack) { consenting = pack } else { center.download(pack, customMirror: activeMirror) }
                             },
                             pause: { center.pause(pack) },
                             cancel: { center.cancel(pack) },
@@ -35,11 +50,17 @@ struct ModelPacksRow: View {
                 }
                 .frame(minWidth: 280, maxWidth: 360)
                 .settingsWell()
+                if secondReadingActive {
+                    Toggle(isOn: $settings.usesSecondReadingInCaptureText) {
+                        Text("Use \(ModelPackCatalog.ppocrV6Small.name) in Capture Text", bundle: .module)
+                    }
+                    .help(Text("Refines low-confidence text lines in Capture Text with the on-device second-reading pack.", bundle: .module))
+                }
             }
         }
         .task { await center.refresh() }
         .sheet(item: $consenting) { pack in
-            ModelPackConsent(pack: pack, center: center) { consenting = nil }
+            ModelPackConsent(pack: pack, center: center, settings: settings) { consenting = nil }
         }
         .sheet(item: $reading) { pack in
             ModelPackLicense(pack: pack, center: center) { reading = nil }
@@ -86,10 +107,11 @@ struct ModelPacksRow: View {
     }
 }
 
-/// One pack in the list: its name, where it stands, and what can be done with it now.
+/// One pack in the list: its name, what it does, where it stands, and what can be done with it now.
 private struct ModelPackRow: View {
     let pack: ModelPack
     let state: ModelPackCenter.State
+    @Binding var isEnabled: Bool
     let download: () -> Void
     let pause: () -> Void
     let cancel: () -> Void
@@ -117,7 +139,13 @@ private struct ModelPackRow: View {
                 Text(pack.name)
                     .fontWeight(.medium)
                     .lineLimit(1)
-                    .help(pack.summary)
+                if !pack.summary.isEmpty {
+                    Text(pack.summary)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .help(pack.summary)
+                }
                 if case .downloading(let done) = state {
                     ProgressView(value: Double(min(done, pack.size)), total: Double(pack.size))
                         .progressViewStyle(.linear)
@@ -127,14 +155,26 @@ private struct ModelPackRow: View {
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
+                } else if case .preparing = state {
+                    HStack(spacing: 6) {
+                        ProgressView().controlSize(.mini)
+                        Text("Preparing…", bundle: .module)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                    }
                 } else {
                     Text(subtitle)
                         .font(.caption)
                         .monospacedDigit()
                         .foregroundStyle(.secondary)
                         .lineLimit(1)
-                        .help(reason ?? "")
-                        .accessibilityValue(Text(verbatim: reason ?? ""))
+                    if let reason {
+                        Text(verbatim: reason)
+                            .font(.caption)
+                            .foregroundStyle(.orange)
+                            .lineLimit(2)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
                 }
             }
             Spacer(minLength: 8)
@@ -150,11 +190,21 @@ private struct ModelPackRow: View {
         case .available:
             Button(action: download) { Text("Download…", bundle: .module) }
                 .controlSize(.small)
+        case .updateAvailable:
+            Button(action: download) { Text("Update", bundle: .module) }
+                .controlSize(.small)
+            SettingsMoreMenu {
+                Button(action: cancel) { Text("Cancel Update", bundle: .module) }
+            }
         case .downloading:
             Button(action: pause) { Text("Pause", bundle: .module) }
                 .controlSize(.small)
             SettingsMoreMenu {
                 Button(action: cancel) { Text("Cancel Download", bundle: .module) }
+            }
+        case .preparing:
+            SettingsMoreMenu {
+                Button(role: .destructive, action: remove) { Text("Remove…", bundle: .module) }
             }
         case .paused, .failed:
             Button(action: download) { Text("Resume", bundle: .module) }
@@ -163,6 +213,13 @@ private struct ModelPackRow: View {
                 Button(action: cancel) { Text("Cancel Download", bundle: .module) }
             }
         case .installed:
+            Toggle(isOn: $isEnabled) {
+                Text("Enable \(pack.name)", bundle: .module)
+            }
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .labelsHidden()
+            .help(isEnabled ? Text("Enabled", bundle: .module) : Text("Disabled", bundle: .module))
             SettingsMoreMenu {
                 Button(action: readLicense) { Text("License…", bundle: .module) }
                 Divider()
@@ -175,13 +232,21 @@ private struct ModelPackRow: View {
         switch state {
         case .available:
             String(localized: "\(Self.size(pack.size)) · \(pack.license.name)", bundle: .module)
+        case .updateAvailable(_, let carried):
+            if carried > 0 {
+                String(localized: "Update available · \(Self.size(carried)) of \(Self.size(pack.size)) ready", bundle: .module)
+            } else {
+                String(localized: "Update available · \(Self.size(pack.size))", bundle: .module)
+            }
         case .paused(let done):
             String(localized: "Paused · \(Self.size(done)) of \(Self.size(pack.size))", bundle: .module)
         case .failed(_, let done):
             String(localized: "Couldn’t download · \(Self.size(done)) of \(Self.size(pack.size))", bundle: .module)
         case .installed:
-            String(localized: "Installed · \(Self.size(pack.size)) · \(pack.license.name)", bundle: .module)
-        case .downloading:
+            isEnabled
+                ? String(localized: "Installed · \(Self.size(pack.size)) · \(pack.license.name)", bundle: .module)
+                : String(localized: "Disabled · \(Self.size(pack.size)) · \(pack.license.name)", bundle: .module)
+        case .downloading, .preparing:
             ""
         }
     }
@@ -196,12 +261,125 @@ private struct ModelPackRow: View {
     }
 }
 
+/// Settings › Text › Download mirror: optional HTTPS mirror tried before Hugging Face (e.g. `hf-mirror.com`).
+struct ModelPackMirrorRow: View {
+    @Bindable var settings: SettingsStore
+    @State private var customMode = false
+    @State private var customText = ""
+
+    static let hfMirrorURL = "https://hf-mirror.com"
+
+    static var help: HelpTopic {
+        HelpTopic(
+            String(localized: "Download mirror", bundle: .module),
+            Text("Optional HTTPS mirror tried before Hugging Face when downloading model packs (such as https://hf-mirror.com). Every downloaded file is still verified by SHA-256.", bundle: .module)
+        )
+    }
+
+    enum Preset: String, CaseIterable, Identifiable {
+        case defaultHost
+        case hfMirror
+        case custom
+
+        var id: String { rawValue }
+
+        static func matching(_ raw: String) -> Preset {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            if trimmed.isEmpty { return .defaultHost }
+            if ModelPack.normalizedMirrorOrigin(trimmed)?.absoluteString == hfMirrorURL { return .hfMirror }
+            return .custom
+        }
+    }
+
+    private var selectedPreset: Preset {
+        if customMode { return .custom }
+        return Preset.matching(settings.modelPackMirrorURL)
+    }
+
+    private var customInvalid: Bool {
+        let trimmed = customText.trimmingCharacters(in: .whitespacesAndNewlines)
+        return !trimmed.isEmpty && ModelPack.normalizedMirrorOrigin(trimmed) == nil
+    }
+
+    var body: some View {
+        SettingsRow(String(localized: "Download mirror", bundle: .module)) {
+            VStack(alignment: .leading, spacing: 6) {
+                Picker(selection: Binding(get: { selectedPreset }, set: choose)) {
+                    Text("Default (Hugging Face)", bundle: .module).tag(Preset.defaultHost)
+                    Text(verbatim: "hf-mirror.com").tag(Preset.hfMirror)
+                    Divider()
+                    Text("Custom…", bundle: .module).tag(Preset.custom)
+                } label: {
+                    Text("Download mirror", bundle: .module)
+                }
+                .labelsHidden()
+                .fixedSize()
+
+                if selectedPreset == .custom {
+                    TextField(text: $customText, prompt: Text(verbatim: "https://hf-mirror.com")) {
+                        Text("Custom mirror URL", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .frame(width: 250)
+                    .onSubmit(commitCustom)
+                    .onChange(of: customText) { _, _ in commitCustom() }
+                    if customInvalid {
+                        SettingsWarning(Text("Enter a valid https:// mirror address, such as https://hf-mirror.com.", bundle: .module))
+                            .frame(maxWidth: 340, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+            }
+        }
+        .onAppear {
+            if Preset.matching(settings.modelPackMirrorURL) == .custom {
+                customMode = true
+                customText = settings.modelPackMirrorURL
+            }
+        }
+    }
+
+    private func choose(_ preset: Preset) {
+        switch preset {
+        case .defaultHost:
+            customMode = false
+            customText = ""
+            settings.modelPackMirrorURL = ""
+        case .hfMirror:
+            customMode = false
+            customText = ""
+            settings.modelPackMirrorURL = Self.hfMirrorURL
+        case .custom:
+            customMode = true
+            customText = settings.modelPackMirrorURL
+        }
+    }
+
+    private func commitCustom() {
+        settings.modelPackMirrorURL = customText.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+}
+
 /// What a pack's first download asks: what it is, where it comes from, how large it is, and its license to read.
 private struct ModelPackConsent: View {
     let pack: ModelPack
     let center: ModelPackCenter
+    let settings: SettingsStore
     let done: () -> Void
     @State private var license: Result<String, Error>?
+    @State private var isFallbackLicense = false
+
+    private var configuredMirror: String? {
+        settings.modelPackMirrorURL.isEmpty ? nil : settings.modelPackMirrorURL
+    }
+
+    private var sourceDescription: String {
+        if let mirrorHost = ModelPack.normalizedMirrorOrigin(configuredMirror)?.host(),
+           mirrorHost.lowercased() != "huggingface.co" {
+            return "\(mirrorHost) (\(pack.host))"
+        }
+        return pack.host
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -217,7 +395,7 @@ private struct ModelPackConsent: View {
                 }
                 GridRow {
                     Text("From", bundle: .module).foregroundStyle(.secondary)
-                    Text(verbatim: pack.host)
+                    Text(verbatim: sourceDescription)
                 }
                 GridRow {
                     Text("License", bundle: .module).foregroundStyle(.secondary)
@@ -236,6 +414,17 @@ private struct ModelPackConsent: View {
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
             LicenseWell(license: license) { Task { await load() } }
+            if isFallbackLicense {
+                HStack(spacing: 8) {
+                    Text("Showing offline license preview. The pack’s own license is still verified during download.", bundle: .module)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Spacer(minLength: 4)
+                    Button { Task { await load() } } label: { Text("Retry", bundle: .module) }
+                        .controlSize(.small)
+                }
+            }
             HStack {
                 Spacer()
                 Button(role: .cancel) {
@@ -247,7 +436,7 @@ private struct ModelPackConsent: View {
                 }
                 .keyboardShortcut(.cancelAction)
                 Button {
-                    center.download(pack)
+                    center.download(pack, customMirror: configuredMirror)
                     done()
                 } label: {
                     Text("Download", bundle: .module)
@@ -267,8 +456,11 @@ private struct ModelPackConsent: View {
 
     private func load() async {
         license = nil
+        isFallbackLicense = false
         do {
-            license = .success(try await center.license(of: pack))
+            let loaded = try await center.licenseOrFallback(of: pack, customMirror: configuredMirror)
+            license = .success(loaded.text)
+            isFallbackLicense = loaded.isFallback
         } catch is CancellationError {
         } catch {
             license = .failure(error)

@@ -25,11 +25,11 @@ extension TextCaptureCoordinator {
     }
 
     /// The formulas the formula pack reads and the tables and charts the VLM pack reads in `image`, in a run of the text
-    /// reader (Docs/ocr.md › Formulas among text, › The VLM pack), the VLM reading for `seconds` at most; none when it
-    /// can't, or in a picture too large to look in. `found` is told how many there are to read.
+    /// reader (Docs/ocr.md › Formulas among text, › The VLM pack), the VLM reading for `seconds` at most when requested;
+    /// none when it can't, or in a picture too large to look in. `found` is told how many there are to read.
     @concurrent
     nonisolated static func elements(
-        in image: CGImage, formulas: URL?, vlm: URL?, seconds: Double, helper: URL,
+        in image: CGImage, formulas: URL?, vlm: URL?, seconds: Double? = nil, helper: URL,
         found: (@Sendable (TextRecognitionWindowController.Elements.Counts) -> Void)? = nil
     ) async -> TextRecognitionWindowController.Elements.Found {
         guard formulas != nil || vlm != nil, LayoutFinder.finds(width: image.width, height: image.height),
@@ -46,7 +46,7 @@ extension TextCaptureCoordinator {
         #endif
         do {
             let read = try await TextReaderTool.elements(
-                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: seconds, pressure: pressure, helper: helper, found: counted
+                ofPictureAt: file, formulas: formulas, vlm: vlm, seconds: vlm != nil ? seconds : nil, pressure: pressure, helper: helper, found: counted
             )
             if read.tablesLeft > 0 {
                 Log.capture.notice("Left \(read.tablesLeft, privacy: .public) tables and charts as Vision read them: the system is short of memory for the VLM pack")

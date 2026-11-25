@@ -19,7 +19,7 @@ nonisolated public enum ProjectPicture {
     @concurrent
     public static func make(for project: AnnotationProject, from file: URL, in folder: URL = standardFolder) async throws -> URL {
         guard let image = await AnnotationRenderer.render(project.document, base: project.capture) else { throw CocoaError(.fileReadCorruptFile) }
-        let data = try await ImageExporter.encode(image, as: .png)
+        let data = try await ImageExporter.encode(image, as: .png, pixelsPerPoint: Double(project.document.scale))
         let directory = folder.appending(path: UUID().uuidString, directoryHint: .isDirectory)
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let picture = directory.appending(path: file.deletingPathExtension().lastPathComponent + ".png")

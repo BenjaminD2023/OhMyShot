@@ -1,3 +1,5 @@
+import AppKit
+import CoreGraphics
 import Foundation
 import OMSCore
 import SwiftUI
@@ -5,7 +7,17 @@ import SwiftUI
 struct RecordingSettingsView: View {
     @Bindable var settings: SettingsStore
     let destinations: UploadDestinationStore
+    var permissions: PermissionCenter? = nil
+    @State private var permissionTick = 0
     private var hasDestination: Bool { !destinations.destinations.isEmpty }
+
+    private var hasInputMonitoring: Bool {
+        _ = permissionTick
+        if let permissions {
+            return permissions.status(of: .inputMonitoring) == .granted
+        }
+        return CGPreflightListenEventAccess()
+    }
 
     var body: some View {
         SettingsPane {
@@ -81,8 +93,21 @@ struct RecordingSettingsView: View {
                 .fixedSize()
             }
             SettingsRow(String(localized: "Studio", bundle: .module)) {
-                Toggle(isOn: $settings.recordingKeepsKeysForStudio) {
-                    Text("Keep the keys pressed", bundle: .module)
+                VStack(alignment: .leading, spacing: 6) {
+                    Toggle(isOn: $settings.recordingKeepsKeysForStudio) {
+                        Text("Keep the keys pressed", bundle: .module)
+                    }
+                    if settings.recordingKeepsKeysForStudio, !hasInputMonitoring {
+                        HStack(alignment: .firstTextBaseline, spacing: 8) {
+                            SettingsWarning(Text("Needs Input Monitoring to keep pressed keys.", bundle: .module))
+                            Button(action: allowInputMonitoring) {
+                                (permissions?.hasAsked(.inputMonitoring) ?? false)
+                                    ? Text("Open System Settings", bundle: .module)
+                                    : Text("Allow…", bundle: .module)
+                            }
+                            .controlSize(.small)
+                        }
+                    }
                 }
             }
 
@@ -138,6 +163,36 @@ struct RecordingSettingsView: View {
                     keptInHistoryOnly: Text("Recordings go only to History.", bundle: .module)
                 )
             }
+        }
+        .onAppear { refreshInputMonitoring() }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            refreshInputMonitoring()
+        }
+    }
+
+    private func refreshInputMonitoring() {
+        permissions?.refresh([.inputMonitoring])
+        permissionTick += 1
+    }
+
+    private func allowInputMonitoring() {
+        if let permissions {
+            permissions.refresh([.inputMonitoring])
+            guard permissions.status(of: .inputMonitoring) != .granted else {
+                permissionTick += 1
+                return
+            }
+            if permissions.hasAsked(.inputMonitoring) {
+                permissions.openSystemSettings(for: .inputMonitoring)
+            } else {
+                Task {
+                    await permissions.request(.inputMonitoring)
+                    permissionTick += 1
+                }
+            }
+        } else {
+            _ = CGRequestListenEventAccess()
+            permissionTick += 1
         }
     }
 }

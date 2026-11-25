@@ -152,7 +152,7 @@ struct FormulaMergeTests {
         """)
         // Translated, a formula set apart is left as it is; a sentence with one in it is prose, its LaTeX kept.
         let units = TranslationUnits.group(lines)
-        #expect(units.map(\.skip) == [nil, .code, nil])
+        #expect(units.map(\.skip) == [nil, .formula, nil])
         #expect(units[2].text == #"and its gradient is $-\frac{2}{n}(y_{i}-\hat{y}_{i})$, which we use below."#)
         // A price is no formula.
         let price = OCRLine(text: "The ticket was $5 and the drink at the door was $3", box: CGRect(x: 0, y: 0, width: 400, height: 20), confidence: 1)

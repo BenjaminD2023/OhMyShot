@@ -5,6 +5,7 @@ import OMSCore
 import Testing
 @testable import OMSRecording
 
+@Suite(.serialized)
 struct RecordingRecoveryTests {
     @Test func draftsLeftBehindAreFoundOldestFirst() throws {
         let drafts = RecordingDrafts(directory: FileManager.default.temporaryDirectory.appending(path: "RecordingDrafts-\(UUID().uuidString)"))
@@ -244,5 +245,45 @@ struct RecordingRecoveryTests {
         // At or above 500 MiB free (or when disk space can't be measured): allow restart.
         #expect(drafts.restartDecision { _ in RecordingDrafts.minimumFreeBytesToStart } == .restart)
         #expect(drafts.restartDecision { _ in nil } == .restart)
+    }
+
+    @Test func leftoversCleansOrphanedSidecarsWhoseMovieIsMissing() throws {
+        let drafts = RecordingDrafts(directory: FileManager.default.temporaryDirectory.appending(path: "RecordingDrafts-\(UUID().uuidString)"))
+        defer { try? FileManager.default.removeItem(at: drafts.directory) }
+
+        // 1. Draft record without a movie and without keptHistoryID, plus orphaned camera & telemetry sidecars.
+        let abandoned = try drafts.create(.init(startedAt: .now, appName: "Xcode", output: .studio))
+        try Data("camera".utf8).write(to: abandoned.cameraURL)
+        try Data("{\"telemetry\":true}".utf8).write(to: abandoned.telemetryURL)
+
+        // 2. Completely orphaned sidecars (no .json and no .mov at all).
+        let ghostID = UUID()
+        let ghostCamera = drafts.directory.appending(path: "\(ghostID.uuidString).camera.mov")
+        let ghostTelemetry = drafts.directory.appending(path: "\(ghostID.uuidString).telemetry.json")
+        try Data("camera".utf8).write(to: ghostCamera)
+        try Data("{\"telemetry\":true}".utf8).write(to: ghostTelemetry)
+
+        // 3. Running recording (excluded) whose .mov hasn't landed yet: sidecars must NOT be deleted.
+        let running = try drafts.create(.init(startedAt: .now, appName: "Safari", output: .studio))
+        try Data("camera".utf8).write(to: running.cameraURL)
+        try Data("{\"telemetry\":true}".utf8).write(to: running.telemetryURL)
+
+        // 4. Kept-in-History Studio draft whose .mov was removed: sidecars MUST stay for recovery.
+        let keptRaw = try drafts.create(.init(startedAt: .now, appName: "Notes", output: .studio))
+        try Data("movie".utf8).write(to: keptRaw.movieURL)
+        try Data("camera".utf8).write(to: keptRaw.cameraURL)
+        try Data("{\"telemetry\":true}".utf8).write(to: keptRaw.telemetryURL)
+        let kept = try drafts.markKeptInHistory(keptRaw, historyID: UUID())
+
+        let found = drafts.leftovers(excluding: [running.id])
+        #expect(found.map(\.id) == [kept.id])
+        #expect(!FileManager.default.fileExists(atPath: abandoned.cameraURL.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: abandoned.telemetryURL.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: ghostCamera.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: ghostTelemetry.path(percentEncoded: false)))
+        #expect(FileManager.default.fileExists(atPath: running.cameraURL.path(percentEncoded: false)))
+        #expect(FileManager.default.fileExists(atPath: running.telemetryURL.path(percentEncoded: false)))
+        #expect(FileManager.default.fileExists(atPath: kept.cameraURL.path(percentEncoded: false)))
+        #expect(FileManager.default.fileExists(atPath: kept.telemetryURL.path(percentEncoded: false)))
     }
 }

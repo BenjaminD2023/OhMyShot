@@ -74,16 +74,18 @@ struct OnboardingTests {
         #expect(model.menuEntries[1].keys == nil)
     }
 
-    @Test func hintFitsBesideEitherCornerOnItsOwnDisplay() {
+    @Test func hintFitsBesideAllFourCornersOnItsOwnDisplay() {
         // A secondary display left of the main one, so clamping must not assume an origin of zero.
         let visible = CGRect(x: -1440, y: 40, width: 1440, height: 860)
         let size = CGSize(width: 320, height: 260)
         for x in [visible.minX + 18, visible.maxX - 238] {
-            let card = CGRect(x: x, y: 58, width: 220, height: 165)
-            let hint = FirstCaptureHintPlacement.frame(size: size, card: card, visible: visible)
-            #expect(visible.contains(hint))
-            #expect(!hint.intersects(card))
-            #expect(hint.size == size)
+            for y in [visible.minY + 18, visible.maxY - 183] {
+                let card = CGRect(x: x, y: y, width: 220, height: 165)
+                let hint = FirstCaptureHintPlacement.frame(size: size, card: card, visible: visible)
+                #expect(visible.contains(hint))
+                #expect(!hint.intersects(card))
+                #expect(hint.size == size)
+            }
         }
     }
 
@@ -129,5 +131,33 @@ struct OnboardingTests {
         schedule.hold(.onboarding, for: practice, if: false, at: 100)
         #expect(schedule.takeDue(at: 103).isEmpty)
         #expect(schedule.takeDue(at: 104) == [practice])
+    }
+
+    @Test func relaunchWithGrantedPermissionAutoAdvancesAndSuppressesStaleRelaunchHint() async {
+        let access = AccessState()
+        access.granted = true
+        access.asked = true
+        var steps: [OnboardingProgress.Step] = []
+
+        // Resuming onboarding after relaunch with Screen Recording already granted auto-advances to Shortcuts.
+        let resumed = OnboardingModel(
+            step: .permission, mode: .tour, access: access.access, autoAdvanceGrantedPermission: true,
+            readHotKeys: { nil }, bindings: { [] }, stepChanged: { steps.append($0) }
+        )
+        #expect(resumed.step == .shortcuts)
+        #expect(steps == [.shortcuts])
+        #expect(!resumed.askedInThisSession)
+
+        // When staying on `.permission` after a relaunch, `askedInThisSession` is false so no stale relaunch warning appears.
+        let stayed = OnboardingModel(
+            step: .permission, mode: .tour, access: access.access, autoAdvanceGrantedPermission: false,
+            readHotKeys: { nil }, bindings: { [] }, stepChanged: { _ in }
+        )
+        #expect(stayed.step == .permission)
+        #expect(!stayed.askedInThisSession)
+
+        // Requesting access in the current session marks `askedInThisSession` true.
+        await stayed.requestAccess()
+        #expect(stayed.askedInThisSession)
     }
 }

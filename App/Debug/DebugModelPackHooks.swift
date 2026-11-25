@@ -162,8 +162,10 @@ struct DebugModelPackHooks {
     private func state(of pack: ModelPack) -> String {
         switch center().state(of: pack) {
         case .available: "available"
+        case .updateAvailable(let from, let carried): "updateAvailable \(from) \(carried)"
         case .paused(let done): "paused \(done)"
         case .downloading(let done): "downloading \(done)"
+        case .preparing(let receipt): "preparing \(receipt.version) \(receipt.size)"
         case .installed(let receipt): "installed \(receipt.version) \(receipt.size)"
         case .failed(let message, let done): "failed \(done): \(message)"
         }

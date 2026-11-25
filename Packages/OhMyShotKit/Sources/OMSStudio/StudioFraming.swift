@@ -1,3 +1,4 @@
+import CoreGraphics
 import Foundation
 
 /// Where the camera looks while a Studio recording is zoomed, worked out once the whole cursor path is known, as
@@ -68,41 +69,56 @@ nonisolated enum StudioFraming {
     }
 
     /// Sets where the camera looks in each of `frames`, sampled `rate` times a second with their zoom, cursor, and
-    /// opacity set. `steady` says of each whether a zoom is fully in then; `events` are in order.
+    /// opacity set. `steady` says of each whether a zoom is fully in then; `events` are in order. `crop` is an
+    /// optional normalized `0...1` crop rectangle (top-left origin) restricting unzoomed centers and zoomed views
+    /// strictly inside the cropped region.
     static func place(
         _ frames: inout [StudioTrack.Frame], steady: [Bool], zooms: [StudioProject.Zoom], events: [AutoZoom.Event],
-        width: Double, height: Double, rate: Double, checkCancellation: () throws -> Void
+        width: Double, height: Double, crop: CGRect? = nil, rate: Double, checkCancellation: () throws -> Void
     ) rethrows {
+        let normalizedCrop = StudioProject.normalizedCrop(crop)
+        let activeCrop = normalizedCrop ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        let cropRect = CGRect(
+            x: Double(activeCrop.minX) * width,
+            y: Double(activeCrop.minY) * height,
+            width: Double(activeCrop.width) * width,
+            height: Double(activeCrop.height) * height
+        )
         var index = 0
         while index < frames.count {
             guard frames[index].zoom > 1 else {
-                frames[index].centerX = width / 2
-                frames[index].centerY = height / 2
+                frames[index].centerX = Double(cropRect.midX)
+                frames[index].centerY = Double(cropRect.midY)
                 index += 1
                 continue
             }
             var end = index
             while end + 1 < frames.count, frames[end + 1].zoom > 1 { end += 1 }
             try checkCancellation()
-            frame(&frames, index...end, steady: steady, zooms: zooms, events: events, width: width, height: height, rate: rate)
+            frame(
+                &frames, index...end, steady: steady, zooms: zooms, events: events,
+                width: width, height: height, cropRect: cropRect, isCropped: normalizedCrop != nil, rate: rate
+            )
             index = end + 1
         }
     }
 
-    /// Frames one zoomed stretch.
+    /// Frames one zoomed stretch strictly inside `cropRect` (in recording points).
     private static func frame(
         _ frames: inout [StudioTrack.Frame], _ range: ClosedRange<Int>, steady: [Bool], zooms: [StudioProject.Zoom],
-        events: [AutoZoom.Event], width: Double, height: Double, rate: Double
+        events: [AutoZoom.Event], width: Double, height: Double, cropRect: CGRect, isCropped: Bool, rate: Double
     ) {
+        let minX = Double(cropRect.minX), maxX = Double(cropRect.maxX), cropW = Double(cropRect.width)
+        let minY = Double(cropRect.minY), maxY = Double(cropRect.maxY), cropH = Double(cropRect.height)
         let start = Double(range.lowerBound) / rate, end = Double(range.upperBound) / rate
         let scale = max(
             zooms.lazy.filter { $0.start <= end && $0.end >= start }.map(\.scale).max() ?? 1,
             frames[range].lazy.map(\.zoom).max() ?? 1
         )
-        // Half of what the camera shows at that scale, and the centers that keep it inside the recording.
-        let half = (x: width / scale / 2, y: height / scale / 2)
+        // Half of what the camera shows at that scale, and the centers that keep it inside the cropped recording.
+        let half = (x: cropW / scale / 2, y: cropH / scale / 2)
         func inside(_ point: Point) -> Point {
-            (min(max(point.x, half.x), width - half.x), min(max(point.y, half.y), height - half.y))
+            (min(max(point.x, minX + half.x), maxX - half.x), min(max(point.y, minY + half.y), maxY - half.y))
         }
 
         // The zooms aimed at a spot, each a shot held there from its start to its end, and the frames they hold.
@@ -115,20 +131,28 @@ nonisolated enum StudioFraming {
         var shots: [Shot] = []
         var run: [AutoZoom.Event] = []
         var nextAimed = 0
-        // An aimed zoom's spot, kept inside the recording at the zoom's own scale, as the center at the stretch's
-        // scale that gives the same pivot, so its spot is in the middle at its own scale beside a stronger zoom too.
+        // An aimed zoom's spot, kept inside the cropped recording at the zoom's own scale, as the center at the
+        // stretch's scale that gives the same pivot, so its spot is in the middle at its own scale beside a stronger zoom too.
         func aimedShot(_ zoom: StudioProject.Zoom) -> Shot {
-            let target = zoom.target ?? .init(x: 0.5, y: 0.5)
-            func center(_ spot: Double, length: Double) -> Double {
-                guard zoom.scale > 1 else { return length / 2 }
+            let fallbackX = width > 0 ? Double(cropRect.midX) / width : 0.5
+            let fallbackY = height > 0 ? Double(cropRect.midY) / height : 0.5
+            let target = zoom.target ?? .init(x: fallbackX, y: fallbackY)
+            func center(_ spot: Double, origin: Double, length: Double, fullLength: Double) -> Double {
+                guard zoom.scale > 1 else { return origin + length / 2 }
                 let half = length / zoom.scale / 2
-                let shown = min(max(spot * length, half), length - half)
-                let pivot = (shown * zoom.scale - length / 2) / (zoom.scale - 1)
-                return (pivot * (scale - 1) + length / 2) / scale
+                let shown = min(max(spot * fullLength, origin + half), origin + length - half)
+                let localShown = shown - origin
+                let pivot = (localShown * zoom.scale - length / 2) / (zoom.scale - 1)
+                return origin + (pivot * (scale - 1) + length / 2) / scale
             }
-            return Shot(first: zoom.start, last: zoom.end, x: center(target.x, length: width), y: center(target.y, length: height))
+            return Shot(
+                first: zoom.start, last: zoom.end,
+                x: center(target.x, origin: minX, length: cropW, fullLength: width),
+                y: center(target.y, origin: minY, length: cropH, fullLength: height)
+            )
         }
-        for event in events[eventRange(events, from: start, to: end)] where !isAimed(event.time) {
+        for event in events[eventRange(events, from: start, to: end)]
+            where !isAimed(event.time) && (!isCropped || (event.x >= minX && event.x <= maxX && event.y >= minY && event.y <= maxY)) {
             while nextAimed < aimed.count, aimed[nextAimed].start <= event.time {
                 shots += Self.shots(run[...], half: half)
                 run = []
@@ -224,18 +248,18 @@ nonisolated enum StudioFraming {
             for offset in 0..<firstOffset { centers[offset] = centers[firstOffset] }
             for offset in (lastOffset + 1)..<count { centers[offset] = centers[lastOffset] }
         }
-        // Scaled about the pivot that gives each at the stretch's scale.
+        // Scaled about the pivot that gives each at the stretch's scale, staying strictly within the crop rectangle.
         for offset in 0..<count {
             let index = range.lowerBound + offset
             let zoom = frames[index].zoom
-            frames[index].centerX = scaled(centers[offset].x, length: width, scale: scale, zoom: zoom)
-            frames[index].centerY = scaled(centers[offset].y, length: height, scale: scale, zoom: zoom)
+            frames[index].centerX = minX + scaled(centers[offset].x - minX, length: cropW, scale: scale, zoom: zoom)
+            frames[index].centerY = minY + scaled(centers[offset].y - minY, length: cropH, scale: scale, zoom: zoom)
         }
 
-        // An aimed zoom fully in looks at its spot at the scale it is at, inside the recording. Coming in, going
-        // out, and from it to the zoom beside it, the camera zooms about the one point that takes it from where it
-        // looked to where it looks next, so a spot held by both ends is held all the way; from one aimed zoom to the
-        // next at the same scale, which no zoom takes it between, it pans over `quickestMove` across the handover.
+        // An aimed zoom fully in looks at its spot at the scale it is at, inside the cropped recording. Coming in,
+        // going out, and from it to the zoom beside it, the camera zooms about the one point that takes it from where
+        // it looked to where it looks next, so a spot held by both ends is held all the way; from one aimed zoom to
+        // the next at the same scale, which no zoom takes it between, it pans over `quickestMove` across the handover.
         guard !aimed.isEmpty else { return }
         var settled = range.map { steady[$0] }
         for (before, after) in zip(aimed, aimed.dropFirst()) where abs(before.end - after.start) < 1e-6 && before.target != after.target {
@@ -246,8 +270,9 @@ nonisolated enum StudioFraming {
             let time = Double(index) / rate
             guard let target = aimed.last(where: { time >= $0.start && time <= $0.end })?.target else { continue }
             let zoom = frames[index].zoom
-            frames[index].centerX = min(max(target.x * width, width / zoom / 2), width - width / zoom / 2)
-            frames[index].centerY = min(max(target.y * height, height / zoom / 2), height - height / zoom / 2)
+            let halfX = cropW / zoom / 2, halfY = cropH / zoom / 2
+            frames[index].centerX = min(max(target.x * width, minX + halfX), maxX - halfX)
+            frames[index].centerY = min(max(target.y * height, minY + halfY), maxY - halfY)
         }
         var first = 0
         while first < count {
@@ -260,18 +285,19 @@ nonisolated enum StudioFraming {
             let before = first > 0 ? first - 1 : nil, after = last + 1 < count ? last + 1 : nil
             if before.map({ held[$0] }) == true || after.map({ held[$0] }) == true {
                 let a = before.map { frames[range.lowerBound + $0] }, b = after.map { frames[range.lowerBound + $0] }
-                let from = (x: a?.centerX ?? width / 2, y: a?.centerY ?? height / 2, level: a?.zoom ?? 1)
-                let to = (x: b?.centerX ?? width / 2, y: b?.centerY ?? height / 2, level: b?.zoom ?? 1)
+                let from = (x: a?.centerX ?? Double(cropRect.midX), y: a?.centerY ?? Double(cropRect.midY), level: a?.zoom ?? 1)
+                let to = (x: b?.centerX ?? Double(cropRect.midX), y: b?.centerY ?? Double(cropRect.midY), level: b?.zoom ?? 1)
                 let lower = Double(before ?? first - 1), upper = Double(after ?? last + 1)
-                // Kept inside the recording at the zoom it is at, which two zooms overlapping can dip below both ends.
+                // Kept inside the cropped recording at the zoom it is at, which two zooms overlapping can dip below both ends.
                 for offset in first...last {
                     let index = range.lowerBound + offset
                     let share = (Double(offset) - lower) / (upper - lower)
                     let zoom = frames[index].zoom
                     let x = through((from.x, from.level), (to.x, to.level), zoom: zoom, share: share)
                     let y = through((from.y, from.level), (to.y, to.level), zoom: zoom, share: share)
-                    frames[index].centerX = min(max(x, width / zoom / 2), width - width / zoom / 2)
-                    frames[index].centerY = min(max(y, height / zoom / 2), height - height / zoom / 2)
+                    let halfX = cropW / zoom / 2, halfY = cropH / zoom / 2
+                    frames[index].centerX = min(max(x, minX + halfX), maxX - halfX)
+                    frames[index].centerY = min(max(y, minY + halfY), maxY - halfY)
                 }
             }
             first = last + 1

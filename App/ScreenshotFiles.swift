@@ -240,7 +240,14 @@ final class ScreenshotFiles {
 
     private func saveAs(_ source: Source, entry: HistoryItem?, scale: Double?, offering: ScreenshotOutput, sourceFormat: ImageExporter.Format?) async -> SaveOutcome {
         let offered = offeredName(for: entry, fileURL: source.fileURL)
-        guard let (chosen, output) = await SavePanel.askForPicture(name: offered.text, output: offering, directory: settings.exportDirectory) else {
+        let configuredWatermark = Watermark(
+            text: settings.watermarkText, tone: settings.watermarkTone,
+            opacity: settings.watermarkOpacity, size: settings.watermarkSize
+        )
+        let availableWatermark = configuredWatermark.isBlank ? nil : configuredWatermark
+        guard let (chosen, output) = await SavePanel.askForPicture(
+            name: offered.text, output: offering, directory: settings.exportDirectory, availableWatermark: availableWatermark
+        ) else {
             gaveUp(offered)
             return Self.logged(.cancelled, "Save As")
         }
@@ -394,7 +401,7 @@ final class ScreenshotFiles {
             shown = processed.image
             data = processed.png
         }
-        if data == nil { data = try? await ImageExporter.encode(shown, as: .png) }
+        if data == nil { data = try? await ImageExporter.encode(shown, as: .png, pixelsPerPoint: scale) }
         guard let data else { NSSound.beep(); return false }
         var file: URL?
         if withFile, settings.clipboardFormat == .fileAndPicture {

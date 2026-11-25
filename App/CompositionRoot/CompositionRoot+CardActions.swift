@@ -17,7 +17,6 @@ extension CompositionRoot {
     // MARK: Kept captures
 
     func didCapture(_ item: QuickAccessItem, forceQuickAccess: Bool = false) {
-        retryUpdateReminderAfterActivity()
         if forceQuickAccess || settings.afterCapture(for: item.kind).showsQuickAccess {
             quickAccess.add(item)
         } else {
@@ -144,8 +143,49 @@ extension CompositionRoot {
                 files.prepareHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
             }
             await thumbnail?.value
+            if pins.contains(captureID: entry.id) {
+                let fallback = scale(of: entry, orElse: 2)
+                if let loaded = await Self.loadImage(data: data, fallbackScale: fallback) {
+                    pins.update(captureID: entry.id, image: loaded.image, scale: loaded.scale)
+                }
+            }
             historyWindow?.reload(changed: [entry.id])
             readTextSoon(entry)
+        }
+    }
+
+    /// Decodes updated image bytes off the main actor when refreshing an open pin.
+    @concurrent private nonisolated static func loadImage(data: Data, fallbackScale: CGFloat) async -> ImageLoader.Loaded? {
+        ImageLoader.load(data: data, fallbackScale: fallbackScale)
+    }
+
+    /// Opens an exported handover copy in the default external app so edits in apps like Preview never modify
+    /// or corrupt OhMyShot's lossless History original or its editable annotations.
+    private func openInExternalApp(_ url: URL, scale: Double?, captureID: UUID? = nil) {
+        let handover: URL
+        switch files.fileToHandOver(url, scale: scale) {
+        case .success(let file):
+            if let captureID { quickAccess.clearHandOverFailure(for: captureID) }
+            handover = file
+        case .failure(let failure):
+            showSaveFailure(failure, onCardOf: captureID)
+            return
+        }
+        guard ExportedFiles.isPicture(url), handover.standardizedFileURL == url.standardizedFileURL else {
+            NSWorkspace.shared.open(handover)
+            return
+        }
+        let directory = ExportedFiles.standardFolder
+            .appending(path: "Open", directoryHint: .isDirectory)
+            .appending(path: UUID().uuidString, directoryHint: .isDirectory)
+        let copy = directory.appending(path: url.lastPathComponent)
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try FileManager.default.copyItem(at: url, to: copy)
+            NSWorkspace.shared.open(copy)
+        } catch {
+            Log.capture.error("Preparing external copy for \(url.lastPathComponent, privacy: .private) failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+            NSWorkspace.shared.open(handover)
         }
     }
 
@@ -162,7 +202,11 @@ extension CompositionRoot {
                 guard let self else { return .cancelled }
                 return countingFailure(await files.saveCaptureAs(fileAt: item.fileURL))
             },
-            open: { item in NSWorkspace.shared.open(item.fileURL) },
+            open: { [weak self] item in
+                guard let self else { return }
+                let pixelScale = history.item(id: item.id)?.pixelsPerPoint ?? displays.layout.display(id: item.displayID).map { Double($0.pixelsPerPoint) }
+                openInExternalApp(item.fileURL, scale: pixelScale, captureID: item.id)
+            },
             annotate: { [weak self] item in
                 guard let self, let entry = history.item(id: item.id) else { return }
                 // A recording opens in the recording window.
@@ -232,6 +276,23 @@ extension CompositionRoot {
         actions.pictureChangeOffer = { [weak self] item in self?.pictureChanges.offer(for: item) ?? .unsupported }
         actions.changePicture = { [weak self] item, change in self?.pictureChanges.apply(change, to: item) }
         actions.isBeingEdited = { [weak self] item in self?.annotations.openCaptureIDs.contains(item.id) ?? false }
+        actions.combineIntoCollage = { [weak self] items in
+            guard let self else { return }
+            let entries = items.compactMap { history.item(id: $0.id) }.filter { $0.kind == .screenshot }
+            guard entries.count >= 2 else { return }
+            combineIntoCollage(entries)
+        }
+        actions.exportAsPDF = { [weak self] items in
+            guard let self else { return }
+            let entries = items.compactMap { history.item(id: $0.id) }.filter { $0.kind == .screenshot }
+            guard entries.count >= 2 else { return }
+            exportPDF(entries)
+        }
+        actions.translate = { [weak self] item in
+            guard let self, item.kind == .screenshot else { return }
+            let scale = scale(of: item, orElse: 1)
+            Task { await self.textCapture.openPanel(forFileAt: item.fileURL, fallbackScale: scale, source: item.fileURL.lastPathComponent, translating: true) }
+        }
         actions.sharing = makeSharingActions()
         return actions
     }
@@ -253,6 +314,7 @@ extension CompositionRoot {
     }
 
     func makeHistoryWindow() -> HistoryWindowController {
+        let saveBatch = HistorySaveBatch()
         var historyActions = HistoryActions(
             restore: { [weak self] entry in Task { await self?.restore(entry) } },
             copy: { [weak self] entry in
@@ -261,19 +323,26 @@ extension CompositionRoot {
             },
             save: { [weak self] entry in
                 guard let self else { return }
-                Task {
-                    guard let item = await self.quickAccessItem(for: entry) else { return }
-                    if let url = self.savedOrSaidWhy(await self.files.saveCapture(fileAt: item.fileURL)) {
-                        // The capture's card shows it saved, and no longer says a copy couldn't be: closing by itself
-                        // saves no other. It is not the card's own copy, which the card's Move to Trash takes.
-                        self.quickAccess.markSaved(entry.id, at: url)
-                        NSWorkspace.shared.activateFileViewerSelecting([url])
+                saveBatch.enqueue(entry) { [weak self] batch in
+                    guard let self else { return }
+                    let asks = batch.count == 1
+                    var savedURLs: [URL] = []
+                    for item in batch {
+                        if let url = self.savedOrSaidWhy(await self.files.saveCapture(fileAt: self.history.fileURL(for: item), asks: asks)) {
+                            // The capture's card shows it saved, and no longer says a copy couldn't be: closing by itself
+                            // saves no other. It is not the card's own copy, which the card's Move to Trash takes.
+                            self.quickAccess.markSaved(item.id, at: url)
+                            savedURLs.append(url)
+                        }
+                    }
+                    if !savedURLs.isEmpty {
+                        NSWorkspace.shared.activateFileViewerSelecting(savedURLs)
                     }
                 }
             },
             open: { [weak self] entry in
                 guard let self else { return }
-                NSWorkspace.shared.open(history.fileURL(for: entry))
+                openInExternalApp(history.fileURL(for: entry), scale: entry.pixelsPerPoint)
             },
             annotate: { [weak self] entry in
                 guard let self else { return }
@@ -305,6 +374,27 @@ extension CompositionRoot {
         historyActions.copyText = { [weak self] entry in
             guard let self, entry.kind == .screenshot else { return .noText }
             return await textCopier.copyText(ofPictureAt: history.fileURL(for: entry))
+        }
+        historyActions.translate = { [weak self] entry in
+            guard let self, entry.kind == .screenshot else { return }
+            let scale = scale(of: entry, orElse: 1)
+            Task {
+                await self.textCapture.openPanel(
+                    forFileAt: self.history.fileURL(for: entry),
+                    fallbackScale: scale,
+                    source: entry.appName ?? entry.fileName,
+                    translating: true
+                )
+            }
+        }
+        historyActions.saveAs = { [weak self] entry in
+            guard let self else { return }
+            Task {
+                if let url = self.savedOrSaidWhy(await self.files.saveCaptureAs(fileAt: self.history.fileURL(for: entry))) {
+                    self.quickAccess.markSaved(entry.id, at: url)
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                }
+            }
         }
         historyActions.print = { [weak self] entry, window in
             guard let self, entry.kind == .screenshot else { return }
@@ -382,5 +472,24 @@ extension CompositionRoot {
     /// sharpest); `fallback` with no display.
     private func scale(of entry: HistoryItem, orElse fallback: CGFloat) -> CGFloat {
         entry.pixelsPerPoint.map { CGFloat($0) } ?? displays.layout.sharpestPixelsPerPoint ?? fallback
+    }
+}
+
+/// Coalesces synchronous Save calls from Capture History (such as Save N Captures or ⌘S on a multi-selection) so
+/// batch saves run sequentially without popping up N filename prompts or N Finder windows.
+private final class HistorySaveBatch {
+    private var pending: [HistoryItem] = []
+    private var flushTask: Task<Void, Never>?
+
+    func enqueue(_ entry: HistoryItem, perform: @escaping ([HistoryItem]) async -> Void) {
+        pending.append(entry)
+        guard flushTask == nil else { return }
+        flushTask = Task {
+            await Task.yield()
+            let batch = pending
+            pending.removeAll()
+            flushTask = nil
+            await perform(batch)
+        }
     }
 }

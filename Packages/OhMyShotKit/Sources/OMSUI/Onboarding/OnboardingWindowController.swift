@@ -60,6 +60,7 @@ public final class OnboardingWindowController: NSWindowController, NSWindowDeleg
         readHotKeys: @escaping () -> [String: Any]? = SystemScreenshotKeys.readHotKeys,
         bindings: @escaping @MainActor () -> [SystemScreenshotKeys.Binding] = SystemScreenshotKeys.currentBindings,
         access: Access? = nil,
+        autoAdvanceGrantedPermission: Bool = false,
         captureMessage: String? = nil,
         cardCorner: QuickAccessCorner = .bottomLeft,
         stepChanged: @escaping (Step) -> Void = { _ in },
@@ -68,7 +69,9 @@ public final class OnboardingWindowController: NSWindowController, NSWindowDeleg
         relaunch: @escaping () -> Void
     ) {
         model = OnboardingModel(
-            step: step, mode: mode, access: access ?? .live(permissions), readHotKeys: readHotKeys,
+            step: step, mode: mode, access: access ?? .live(permissions),
+            autoAdvanceGrantedPermission: autoAdvanceGrantedPermission,
+            readHotKeys: readHotKeys,
             bindings: bindings, stepChanged: stepChanged
         )
         let window = OnboardingWindow(
@@ -139,6 +142,9 @@ final class OnboardingModel {
     let mode: OnboardingWindowController.Mode
     private(set) var isGranted = false
     private(set) var hasAsked = false
+    /// Whether the user asked for Screen Recording during this process run (used so "relaunch once"
+    /// doesn't reappear after relaunching with Screen Recording already granted).
+    private(set) var askedInThisSession = false
     private(set) var isRequesting = false
     private(set) var clashes: [SystemScreenshotKeys.Clash] = []
     private(set) var shortcuts: [SystemScreenshotKeys.Binding] = []
@@ -162,6 +168,7 @@ final class OnboardingModel {
 
     init(
         step: Step, mode: OnboardingWindowController.Mode, access: OnboardingWindowController.Access,
+        autoAdvanceGrantedPermission: Bool = false,
         readHotKeys: @escaping () -> [String: Any]?, bindings: @escaping () -> [SystemScreenshotKeys.Binding],
         stepChanged: @escaping (Step) -> Void
     ) {
@@ -172,6 +179,9 @@ final class OnboardingModel {
         self.bindings = bindings
         self.stepChanged = stepChanged
         refresh()
+        if autoAdvanceGrantedPermission, self.step == .permission, mode == .tour, isGranted {
+            move(to: .shortcuts)
+        }
     }
 
     func refresh() {
@@ -202,6 +212,7 @@ final class OnboardingModel {
         guard !isRequesting else { return }
         isRequesting = true
         defer { isRequesting = false }
+        askedInThisSession = true
         if access.hasAsked() { access.openSettings() } else { await access.request() }
         refresh()
     }
@@ -378,7 +389,7 @@ private struct OnboardingView: View {
             if model.isGranted {
                 heading("Screen Recording Is On", message: "You’re ready to capture your screen.")
                     .padding(.bottom, 20)
-                if model.hasAsked {
+                if model.askedInThisSession {
                     aside("If captures come out blank, relaunch once.", action: "Relaunch", perform: relaunch)
                         .padding(.bottom, 20)
                 }
@@ -455,13 +466,11 @@ private struct OnboardingView: View {
 
     private var practice: some View {
         VStack(spacing: 0) {
-            FirstCapturePreview(cardsOnLeft: cardCorner.slidesFromLeft)
+            FirstCapturePreview(cardCorner: cardCorner)
                 .padding(.bottom, 24)
             heading("Take your first screenshot", message: "Drag over any part of the screen, then let go. Press Esc to cancel.")
                 .padding(.bottom, 20)
-            footnote(cardCorner.slidesFromLeft
-                ? "When you let go, a card with your screenshot appears in the bottom-left corner, ready to copy, save, or mark up."
-                : "When you let go, a card with your screenshot appears in the bottom-right corner, ready to copy, save, or mark up.")
+            footnote(practiceFootnote)
                 .padding(.bottom, 16)
             if let keys = model.shortcuts.first(where: { $0.shortcut == .captureArea })?.keys,
                !model.clashes.contains(where: { $0.shortcut == .captureArea && $0.takenByMacOS }) {
@@ -485,6 +494,19 @@ private struct OnboardingView: View {
                 // The guide's own well: the warning is the symbol's orange, never a tint behind the words.
                 .guideWell()
             }
+        }
+    }
+
+    private var practiceFootnote: LocalizedStringKey {
+        switch cardCorner {
+        case .bottomLeft:
+            "When you let go, a card with your screenshot appears in the bottom-left corner, ready to copy, save, or mark up."
+        case .bottomRight:
+            "When you let go, a card with your screenshot appears in the bottom-right corner, ready to copy, save, or mark up."
+        case .topLeft:
+            "When you let go, a card with your screenshot appears in the top-left corner, ready to copy, save, or mark up."
+        case .topRight:
+            "When you let go, a card with your screenshot appears in the top-right corner, ready to copy, save, or mark up."
         }
     }
 

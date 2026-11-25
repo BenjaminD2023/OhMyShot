@@ -23,7 +23,7 @@ struct EditorRow<Content: View>: View {
             HStack(spacing: 6) {
                 content
                 if let info {
-                    InfoButton(info)
+                    InfoButton(info, topic: label)
                 } else if fills {
                     Color.clear.frame(width: 24, height: 1)
                 }
@@ -321,11 +321,24 @@ struct UploadDestinationEditor: View {
     // MARK: Test
 
     private var testRow: some View {
-        SettingsTestRow(
+        let help = switch draft.kind {
+        case .amazonS3, .s3Compatible, .webDAV:
+            Text("Uploads a small test image to this destination and deletes it afterward.", bundle: .module)
+        case .customHTTP:
+            Text("Uploads a small test image to this destination. It stays there.", bundle: .module)
+        }
+        return SettingsTestRow(
             state: test, title: Text("Test Upload", bundle: .module),
-            help: Text("Uploads a small test image to this destination. It stays there.", bundle: .module), succeedsWithLink: true,
+            help: help, succeedsWithLink: true,
+            cancel: cancelTest,
             run: runTest
         )
+    }
+
+    private func cancelTest() {
+        testTask?.cancel()
+        testTask = nil
+        test = .idle
     }
 
     private func runTest() {
@@ -349,23 +362,57 @@ struct UploadDestinationEditor: View {
     }
 }
 
-/// The names and secret values of a custom uploader's query parameters, headers, or form fields.
+/// The names and values of a custom uploader's query parameters, headers, or form fields.
+/// Secret-looking keys default to masked; non-secret keys (such as `format`) default to plain text,
+/// and each row can toggle between plain and masked display.
 private struct ValueRows: View {
     @Binding var rows: [UploadDestinationDraft.Row]
     let addTitle: Text
+    @State private var revealedOverrides: [UUID: Bool] = [:]
+
+    private static let secretMarkers = ["token", "key", "auth", "secret", "pass", "bearer", "cookie", "sig", "credential"]
+
+    static func looksSecret(_ name: String) -> Bool {
+        let lower = name.lowercased()
+        return secretMarkers.contains { lower.contains($0) }
+    }
+
+    private func isMasked(_ row: UploadDestinationDraft.Row) -> Bool {
+        if let revealed = revealedOverrides[row.id] {
+            return !revealed
+        }
+        if row.isStored && row.value.isEmpty { return true }
+        return Self.looksSecret(row.name)
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 6) {
             ForEach($rows) { $row in
+                let masked = isMasked(row)
+                let prompt = row.isStored ? Text("Saved in Keychain", bundle: .module) : Text("Value", bundle: .module)
                 HStack(spacing: 6) {
                     TextField(text: $row.name, prompt: Text("Name", bundle: .module)) { Text("Name", bundle: .module) }
                         .labelsHidden()
                         .frame(width: 120)
                         // A renamed row is a new secret: what was stored under the old name no longer applies.
                         .onChange(of: row.name) { row.isStored = false }
-                    SecureField(text: $row.value, prompt: row.isStored ? Text("Saved in Keychain", bundle: .module) : Text("Value", bundle: .module)) { Text("Value", bundle: .module) }
-                        .labelsHidden()
+                    if masked {
+                        SecureField(text: $row.value, prompt: prompt) { Text("Value", bundle: .module) }
+                            .labelsHidden()
+                    } else {
+                        TextField(text: $row.value, prompt: prompt) { Text("Value", bundle: .module) }
+                            .labelsHidden()
+                    }
                     Button {
+                        revealedOverrides[row.id] = masked
+                    } label: {
+                        Image(systemName: masked ? "eye" : "eye.slash")
+                    }
+                    .buttonStyle(.borderless)
+                    .help(masked ? Text("Show value", bundle: .module) : Text("Hide value", bundle: .module))
+                    .accessibilityLabel(masked ? Text("Show value", bundle: .module) : Text("Hide value", bundle: .module))
+                    Button {
+                        revealedOverrides.removeValue(forKey: row.id)
                         rows.removeAll { $0.id == row.id }
                     } label: {
                         Image(systemName: "minus.circle")

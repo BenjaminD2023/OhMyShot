@@ -71,11 +71,27 @@ struct UploadDestinationStoreTests {
     }
 
     @Test func destinationsReorder() throws {
-        let (store, _, _, cleanup) = try makeStore()
+        let (store, defaults, secrets, cleanup) = try makeStore()
         defer { cleanup() }
         let list = ["A", "B", "C"].map(s3)
         for item in list { try store.save(item) }
         store.move(fromOffsets: IndexSet(integer: 0), toOffset: 3)
         #expect(store.destinations.map(\.name) == ["B", "C", "A"])
+
+        // Persists across relaunch and ignores out-of-bounds indices.
+        store.move(fromOffsets: IndexSet(integer: 99), toOffset: 0)
+        #expect(UploadDestinationStore(defaults: defaults, secrets: secrets).destinations.map(\.name) == ["B", "C", "A"])
+
+        // Stepwise move by id & direction with boundary guards and persistence.
+        let a = list[0], b = list[1]
+        #expect(!store.move(id: b.id, direction: .up))
+        #expect(!store.move(id: a.id, direction: .down))
+        #expect(!store.move(id: UUID(), direction: .up))
+
+        #expect(store.move(id: a.id, direction: .up))
+        #expect(store.destinations.map(\.name) == ["B", "A", "C"])
+        #expect(store.move(id: b.id, direction: .down))
+        #expect(store.destinations.map(\.name) == ["A", "B", "C"])
+        #expect(UploadDestinationStore(defaults: defaults, secrets: secrets).destinations.map(\.name) == ["A", "B", "C"])
     }
 }

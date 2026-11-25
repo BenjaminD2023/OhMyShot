@@ -16,9 +16,12 @@ public enum SavePanel {
 
     /// Asks where to save a screenshot and how: the panel holds the format, the quality, and what is done to the
     /// picture, starting from `output` (Settings'). A name typed with another format's extension saves in that format.
+    /// - Parameter availableWatermark: when non-blank, offers a per-save Watermark checkbox even if `output.watermark` is nil.
     /// - Returns: the place chosen and how to write the picture there, or nil when the person cancelled.
-    public static func askForPicture(name: String, output: ScreenshotOutput, directory: URL) async -> (url: URL, output: ScreenshotOutput)? {
-        await onRunLoop { runForPicture(name: name, output: output, directory: directory) }
+    public static func askForPicture(
+        name: String, output: ScreenshotOutput, directory: URL, availableWatermark: Watermark? = nil
+    ) async -> (url: URL, output: ScreenshotOutput)? {
+        await onRunLoop { runForPicture(name: name, output: output, directory: directory, availableWatermark: availableWatermark) }
     }
 
     /// Asks where to save a PDF of screenshots and how large its pages are, starting from `pageSize`.
@@ -43,14 +46,16 @@ public enum SavePanel {
         panel.nameFieldStringValue = defaultFileName(name: name, type: types.first)
         panel.directoryURL = directory
         panel.canCreateDirectories = true
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK else { return nil }
         return panel.url
     }
 
-    private static func runForPicture(name: String, output: ScreenshotOutput, directory: URL) -> (url: URL, output: ScreenshotOutput)? {
+    private static func runForPicture(
+        name: String, output: ScreenshotOutput, directory: URL, availableWatermark: Watermark? = nil
+    ) -> (url: URL, output: ScreenshotOutput)? {
         let panel = NSSavePanel()
-        let options = PictureSaveOptions(output: output)
+        let options = PictureSaveOptions(output: output, availableWatermark: availableWatermark)
         panel.allowedContentTypes = pictureTypes(preferring: output.format)
         panel.nameFieldStringValue = defaultFileName(name: name, type: output.format.type)
         panel.directoryURL = directory
@@ -64,7 +69,7 @@ public enum SavePanel {
         let accessory = PictureSaveOptionsView(options: options)
         accessory.setFrameSize(accessory.fittingSize)
         panel.accessoryView = accessory
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return (url, chosenOutput(for: url, options: options.output))
     }
@@ -78,7 +83,7 @@ public enum SavePanel {
         let accessory = PDFPageSizeView(pageSize: pageSize)
         accessory.setFrameSize(accessory.fittingSize)
         panel.accessoryView = accessory
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         guard panel.runModal() == .OK, let url = panel.url else { return nil }
         return (url, accessory.pageSize)
     }
@@ -117,11 +122,15 @@ final class PictureSaveOptions {
     var output: ScreenshotOutput {
         didSet { if output.format != oldValue.format { formatChanged?(output.format) } }
     }
+    /// The watermark this save panel can toggle on or off; nil when no non-blank watermark is configured.
+    let availableWatermark: Watermark?
 
     var formatChanged: ((ImageExporter.Format) -> Void)?
 
-    init(output: ScreenshotOutput) {
+    init(output: ScreenshotOutput, availableWatermark: Watermark? = nil) {
         self.output = output
+        let candidate = availableWatermark ?? output.watermark
+        self.availableWatermark = candidate.flatMap { $0.isBlank ? nil : $0 }
     }
 }
 
@@ -139,6 +148,7 @@ final class PictureSaveOptionsView: NSView {
     private let retina = NSButton(checkboxWithTitle: String(localized: "Save Retina screenshots at 1×", bundle: .module), target: nil, action: nil)
     private let srgb = NSButton(checkboxWithTitle: String(localized: "Convert to sRGB", bundle: .module), target: nil, action: nil)
     private let border = NSButton(checkboxWithTitle: String(localized: "Add a 1 px border", bundle: .module), target: nil, action: nil)
+    let watermark = NSButton(checkboxWithTitle: String(localized: "Watermark", bundle: .module), target: nil, action: nil)
 
     init(options: PictureSaveOptions) {
         self.options = options
@@ -159,10 +169,12 @@ final class PictureSaveOptionsView: NSView {
         qualityValue.alignment = .right
         qualityValue.widthAnchor.constraint(equalToConstant: 40).isActive = true
         for label in [qualityValue, lossless] { label.textColor = .secondaryLabelColor }
-        for box in [retina, srgb, border] {
+        for box in [retina, srgb, border, watermark] {
             box.target = self
             box.action = #selector(toggled)
         }
+        watermark.isHidden = options.availableWatermark == nil
+        watermark.toolTip = options.availableWatermark?.text
 
         // The slider's row and "Lossless" share a place, one hidden, so the panel keeps its size as the format changes.
         let slider = NSStackView(views: [qualityLabel, quality, qualityValue])
@@ -182,7 +194,9 @@ final class PictureSaveOptionsView: NSView {
         ])
         let formatRow = NSStackView(views: [format, place])
         formatRow.spacing = 8
-        let boxes = NSStackView(views: [retina, srgb, border])
+        var checkboxViews = [retina, srgb, border]
+        if options.availableWatermark != nil { checkboxViews.append(watermark) }
+        let boxes = NSStackView(views: checkboxViews)
         boxes.orientation = .vertical
         boxes.alignment = .leading
         boxes.spacing = 6
@@ -224,6 +238,7 @@ final class PictureSaveOptionsView: NSView {
         retina.state = output.retinaAtOneX ? .on : .off
         srgb.state = output.convertsToSRGB ? .on : .off
         border.state = output.addsBorder ? .on : .off
+        watermark.state = output.watermark != nil ? .on : .off
     }
 
     @objc private func formatChosen() {
@@ -242,6 +257,7 @@ final class PictureSaveOptionsView: NSView {
         options.output.retinaAtOneX = retina.state == .on
         options.output.convertsToSRGB = srgb.state == .on
         options.output.addsBorder = border.state == .on
+        options.output.watermark = watermark.state == .on ? options.availableWatermark : nil
         show()
     }
 }

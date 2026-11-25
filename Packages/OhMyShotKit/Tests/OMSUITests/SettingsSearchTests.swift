@@ -132,4 +132,62 @@ struct SettingsSearchTests {
             #expect(Set(titles).count == titles.count, "\(tab) has two rows of one title")
         }
     }
+
+    @Test func newSearchTermsFindWatermarkQROCRCloudR2VideoMirrorAndFormulaFormat() {
+        #expect(SettingsTab.screenshots.row(matching: "watermark") == "Pictures")
+        #expect(SettingsTab.screenshots.row(matching: "Reset Counter") == "File name")
+        #expect(SettingsTab.capture.row(matching: "QR") == "Selecting")
+        #expect(SettingsTab.capture.row(matching: "barcode") == "Selecting")
+        #expect(SettingsTab.capture.row(matching: "Hide desktop icons while capturing") == "Selecting")
+        #expect(SettingsTab.capture.row(matching: "desktop icons") == "Selecting")
+        #expect(SettingsTab.quickAccess.row(matching: "Top Left") == "Position")
+        #expect(SettingsTab.quickAccess.row(matching: "Close card after action") == "Close cards")
+        #expect(SettingsTab.text.row(matching: "Recognition languages") == "Recognition languages")
+        #expect(SettingsTab.text.row(matching: "Korean") == "Recognition languages")
+        #expect(SettingsTab.text.row(matching: "OCR") == "Capture Text")
+        #expect(SettingsTab.text.row(matching: "LaTeX") == "Model packs")
+        #expect(SettingsTab.text.row(matching: "Claude") == "Cloud reading")
+        #expect(SettingsTab.text.row(matching: "Ollama") == "Cloud reading")
+        #expect(SettingsTab.text.row(matching: "AppText") == "Text from apps")
+        #expect(SettingsTab.text.row(matching: "Formula format") == "Formula format")
+        #expect(SettingsTab.text.row(matching: "Plain LaTeX") == "Formula format")
+        #expect(SettingsTab.text.row(matching: "Download mirror") == "Download mirror")
+        #expect(SettingsTab.text.row(matching: "hf-mirror") == "Download mirror")
+        #expect(SettingsTab.sharing.row(matching: "R2") == "Destinations")
+        #expect(SettingsTab.sharing.row(matching: "Cloudflare") == "Destinations")
+        #expect(SettingsTab.recording.row(matching: "MP4") == "Video format")
+        #expect(SettingsTab.automation.row(matching: "Blocked apps") == "Blocked apps")
+    }
+
+    @Test func hiddenRowsOmitUnrenderedConditionalRows() throws {
+        let suite = "SettingsSearchTests-hidden-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let dependencies = SettingsDependencies(
+            settings: SettingsStore(defaults: defaults),
+            permissions: PermissionCenter(defaults: defaults),
+            urlScheme: "ohmyshot",
+            relaunch: {},
+            openHistory: {},
+            retentionPreview: { _ in RetentionPreviewCounts(count: 0, favorites: 0) },
+            destinations: UploadDestinationStore(defaults: defaults, secrets: InMemorySecretStore()),
+            uploadRecords: UploadRecordStore(fileURL: nil),
+            modelPacks: nil,
+            cloudModels: nil,
+            updates: nil,
+            acknowledgments: nil
+        )
+        let hidden = SettingsWindowController.hiddenRowTitles(for: dependencies)
+        #expect(hidden.contains("Updates"))
+        #expect(hidden.contains("Recent uploads"))
+        #expect(hidden.contains("Model packs"))
+        #expect(hidden.contains("Download mirror"))
+        #expect(hidden.contains("Formula format"))
+        #expect(hidden.contains("Cloud reading"))
+        #expect(hidden.contains("Acknowledgments"))
+        #expect(SettingsTab.text.row(matching: "Download mirror", hiding: hidden) == nil)
+        #expect(SettingsTab.text.row(matching: "Formula format", hiding: hidden) == nil)
+        #expect(SettingsTab.text.row(matching: "Cloud reading", hiding: hidden) == nil)
+        #expect(SettingsTab.general.row(matching: "Updates", hiding: hidden) == nil)
+    }
 }

@@ -391,11 +391,29 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         public var system: Level
         public var microphone: Level
         public var recorded: Level
+        /// Master level applied across every sound track (defaults to unmuted at 100%).
+        public var master: Level
+        /// Fade-in duration at the start of the movie in seconds (`0...maxFade`).
+        public var fadeIn: Double
+        /// Fade-out duration at the end of the movie in seconds (`0...maxFade`).
+        public var fadeOut: Double
 
-        public init(system: Level = Level(), microphone: Level = Level(), recorded: Level = Level()) {
+        public static let maxFade = 5.0
+
+        public init(
+            system: Level = Level(),
+            microphone: Level = Level(),
+            recorded: Level = Level(),
+            master: Level = Level(),
+            fadeIn: Double = 0,
+            fadeOut: Double = 0
+        ) {
             self.system = system
             self.microphone = microphone
             self.recorded = recorded
+            self.master = master
+            self.fadeIn = Self.clampedFade(fadeIn)
+            self.fadeOut = Self.clampedFade(fadeOut)
         }
 
         public subscript(sound: StudioSound) -> Level {
@@ -415,8 +433,18 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             }
         }
 
+        /// Effective gain for `sound` combining its own level and `master`.
+        public func effectiveGain(for sound: StudioSound) -> Double {
+            self[sound].gain * master.gain
+        }
+
+        public static func clampedFade(_ value: Double) -> Double {
+            guard value.isFinite else { return 0 }
+            return min(max(value, 0), maxFade)
+        }
+
         private enum CodingKeys: String, CodingKey {
-            case system, microphone, recorded
+            case system, microphone, recorded, master, fadeIn, fadeOut
         }
 
         public init(from decoder: any Decoder) throws {
@@ -424,6 +452,9 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
             system = try container.decodeIfPresent(Level.self, forKey: .system) ?? Level()
             microphone = try container.decodeIfPresent(Level.self, forKey: .microphone) ?? Level()
             recorded = try container.decodeIfPresent(Level.self, forKey: .recorded) ?? Level()
+            master = try container.decodeIfPresent(Level.self, forKey: .master) ?? Level()
+            fadeIn = Self.clampedFade(try container.decodeIfPresent(Double.self, forKey: .fadeIn) ?? 0)
+            fadeOut = Self.clampedFade(try container.decodeIfPresent(Double.self, forKey: .fadeOut) ?? 0)
         }
     }
 
@@ -473,18 +504,40 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
     public var motionBlur: Bool
     /// How closely the exported movie is encoded.
     public var quality: Quality
+    /// Longest side of the exported movie in pixels; nil exports at the recording's own size up to 4K.
+    public var outputMaxSide: Int?
+    /// Export frame rate in frames per second (e.g. 30 or 60); nil uses 60 fps.
+    public var framesPerSecond: Int?
     /// How loud each of the recording's sounds plays.
     public var audio: Audio
     /// Stretches of the recording played faster or slower, in its seconds: in order and apart once the project is
     /// opened (`normalizedSpeeds`). The cuts leave out what they cover of them.
     public var speeds: [Speed]
+    /// Normalized crop rectangle (`0...1`, top-left origin) in recording coordinates; nil uses the full recording.
+    public var crop: CGRect?
+
+    /// Effective export maximum side in pixels (`outputMaxSide` when set, otherwise `StudioRenderer.largestSide`).
+    public var resolvedOutputMaxSide: Double {
+        outputMaxSide.map { max(2, Double($0)) } ?? StudioRenderer.largestSide
+    }
+
+    /// Effective frame rate in frames per second (`framesPerSecond` when set, otherwise 60).
+    public var resolvedFramesPerSecond: Int {
+        min(max(framesPerSecond ?? 60, 1), 120)
+    }
+
+    /// Effective normalized crop rectangle (`0...1`, top-left origin), or `(0, 0, 1, 1)` when uncropped.
+    public var effectiveCrop: CGRect {
+        Self.normalizedCrop(crop) ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+    }
 
     /// The defaults are the annotation editor's background card's: the same padding, corners, and shadow.
     public init(
         background: Background = .gradient("sky"), padding: Double = 0.08, cornerRadius: Double = 12, shadow: Double = 0.5,
         aspect: Aspect = .auto, cursor: Cursor = Cursor(), zooms: [Zoom] = [], cuts: [ClosedRange<Double>] = [], showsKeys: Bool = true,
         keystrokeMode: KeystrokeMode = .all, automaticZooms: Bool = true, camera: Camera = Camera(), motionBlur: Bool = true,
-        quality: Quality = .standard, cameraSegments: [CameraSegment] = [], audio: Audio = Audio(), speeds: [Speed] = []
+        quality: Quality = .standard, cameraSegments: [CameraSegment] = [], outputMaxSide: Int? = nil, framesPerSecond: Int? = nil,
+        audio: Audio = Audio(), speeds: [Speed] = [], crop: CGRect? = nil
     ) {
         self.background = background
         self.padding = padding
@@ -501,13 +554,16 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         self.cameraSegments = cameraSegments
         self.motionBlur = motionBlur
         self.quality = quality
+        self.outputMaxSide = outputMaxSide
+        self.framesPerSecond = framesPerSecond
         self.audio = audio
         self.speeds = speeds
+        self.crop = Self.normalizedCrop(crop)
     }
 
     private enum CodingKeys: String, CodingKey {
         case background, padding, cornerRadius, shadow, aspect, cursor, zooms, cuts, showsKeys, keystrokeMode, automaticZooms, camera, cameraSegments, motionBlur, quality,
-            audio, speeds
+            outputMaxSide, framesPerSecond, audio, speeds, crop
     }
 
     /// A project saved before a setting existed takes its default.
@@ -530,8 +586,11 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         cameraSegments = try container.decodeIfPresent([CameraSegment].self, forKey: .cameraSegments) ?? []
         motionBlur = try container.decodeIfPresent(Bool.self, forKey: .motionBlur) ?? defaults.motionBlur
         quality = try container.decodeIfPresent(Quality.self, forKey: .quality) ?? defaults.quality
+        outputMaxSide = try container.decodeIfPresent(Int.self, forKey: .outputMaxSide)
+        framesPerSecond = try container.decodeIfPresent(Int.self, forKey: .framesPerSecond)
         audio = try container.decodeIfPresent(Audio.self, forKey: .audio) ?? defaults.audio
         speeds = try container.decodeIfPresent([Speed].self, forKey: .speeds) ?? []
+        crop = Self.normalizedCrop(try container.decodeIfPresent(CGRect.self, forKey: .crop))
     }
 
     /// Makes the times the camera filled what was recorded (`fills`, in the recording's seconds) stretches of
@@ -557,6 +616,7 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         var project = self
         project.cuts = Self.normalizedCuts(cuts, duration: duration)
         project.speeds = Self.normalizedSpeeds(speeds, duration: duration)
+        project.crop = Self.normalizedCrop(crop)
         if let camera = telemetry.camera { project.adoptRecordedFills(camera.fills, duration: duration) }
         return project
     }
@@ -607,9 +667,67 @@ nonisolated public struct StudioProject: Codable, Equatable, Sendable {
         }
     }
 
+    /// Clamps a normalized crop rectangle into `0...1` with at least `0.1` width and height, returning `nil`
+    /// when effectively uncropped (`x <= 0.001 && y <= 0.001 && width >= 0.999 && height >= 0.999`).
+    public static func normalizedCrop(_ rect: CGRect?) -> CGRect? {
+        guard let raw = rect,
+              raw.origin.x.isFinite, raw.origin.y.isFinite,
+              raw.size.width.isFinite, raw.size.height.isFinite else {
+            return nil
+        }
+        let r = raw.standardized
+        if r.origin.x >= 0, r.origin.y >= 0, r.size.width >= 0.1, r.size.height >= 0.1, r.maxX <= 1, r.maxY <= 1 {
+            if r.origin.x <= 0.001 && r.origin.y <= 0.001 && r.size.width >= 0.999 && r.size.height >= 0.999 {
+                return nil
+            }
+            return r
+        }
+        var minX = min(max(Double(r.minX), 0), 1)
+        var minY = min(max(Double(r.minY), 0), 1)
+        var maxX = min(max(Double(r.maxX), 0), 1)
+        var maxY = min(max(Double(r.maxY), 0), 1)
+        if maxX - minX < 0.1 {
+            maxX = min(1, minX + 0.1)
+            minX = max(0, maxX - 0.1)
+        }
+        if maxY - minY < 0.1 {
+            maxY = min(1, minY + 0.1)
+            minY = max(0, maxY - 0.1)
+        }
+        let width = maxX - minX
+        let height = maxY - minY
+        if minX <= 0.001 && minY <= 0.001 && width >= 0.999 && height >= 0.999 {
+            return nil
+        }
+        return CGRect(x: minX, y: minY, width: width, height: height)
+    }
+
+    /// Computes a centered normalized crop rectangle achieving `aspectRatio` (width / height) on `recordingSize`,
+    /// or `nil` when `recordingSize` already matches `aspectRatio`.
+    public static func centeredCrop(aspectRatio: Double, recordingSize: CGSize) -> CGRect? {
+        guard aspectRatio.isFinite, aspectRatio > 0,
+              recordingSize.width > 0, recordingSize.height > 0 else {
+            return nil
+        }
+        let sourceRatio = Double(recordingSize.width / recordingSize.height)
+        if abs(sourceRatio - aspectRatio) <= 0.001 { return nil }
+        let width: Double
+        let height: Double
+        if sourceRatio > aspectRatio {
+            height = 1.0
+            width = min(max(aspectRatio / sourceRatio, 0.1), 1.0)
+        } else {
+            width = 1.0
+            height = min(max(sourceRatio / aspectRatio, 0.1), 1.0)
+        }
+        return Self.normalizedCrop(CGRect(x: (1.0 - width) / 2, y: (1.0 - height) / 2, width: width, height: height))
+    }
+
     /// The shortest stretch of the timeline for the camera's layout, in seconds.
     public static let shortestSegment = 0.5
     /// The shortest zoom, in seconds: one dragged or typed shorter keeps this long, and an automatic one shorter is
     /// not placed.
     public static let shortestZoom = 0.3
+    /// The shortest stretch of the timeline for a new or resized speed change, in seconds.
+    public static let shortestSpeed = 0.05
 }

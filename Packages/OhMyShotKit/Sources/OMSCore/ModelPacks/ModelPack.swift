@@ -104,6 +104,121 @@ public struct ModelPack: Codable, Hashable, Identifiable, Sendable {
         return url
     }
 
+    /// Normalizes a user-supplied custom mirror base URL (must be `https://` with a non-empty host, no credentials,
+    /// query, fragment, or parent-directory traversal), stripping any trailing slash. Returns nil when empty or invalid.
+    public static func normalizedMirrorOrigin(_ raw: String?) -> URL? {
+        guard let raw else { return nil }
+        let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !trimmed.isEmpty, var components = URLComponents(string: trimmed) else { return nil }
+        guard components.scheme?.lowercased() == "https",
+              let host = components.host, !host.isEmpty,
+              components.user == nil, components.password == nil,
+              components.query == nil, components.fragment == nil
+        else { return nil }
+        components.scheme = "https"
+        components.host = host.lowercased()
+        var path = components.path
+        while path.hasSuffix("/") { path.removeLast() }
+        let segments = path.split(separator: "/")
+        guard !segments.contains(".."), !segments.contains(".") else { return nil }
+        components.path = path
+        return components.url
+    }
+
+    /// The mirror base URLs to try in order. When `customMirror` is a valid `https://` origin (such as
+    /// `https://hf-mirror.com`), any `https://huggingface.co/...` mirror is rewritten to try that mirror first,
+    /// falling back to the original mirror(s).
+    public func resolvedMirrors(customMirror: String?) -> [URL] {
+        guard let origin = Self.normalizedMirrorOrigin(customMirror),
+              let originComponents = URLComponents(url: origin, resolvingAgainstBaseURL: false)
+        else { return mirrors }
+        var resolved: [URL] = []
+        for mirror in mirrors {
+            guard mirror.scheme?.lowercased() == "https",
+                  mirror.host()?.lowercased() == "huggingface.co",
+                  var rewritten = URLComponents(url: mirror, resolvingAgainstBaseURL: false)
+            else { continue }
+            rewritten.scheme = originComponents.scheme
+            rewritten.host = originComponents.host
+            rewritten.port = originComponents.port
+            let mirrorPath = rewritten.path.hasPrefix("/") ? rewritten.path : "/" + rewritten.path
+            rewritten.path = originComponents.path + mirrorPath
+            if let url = rewritten.url, url != mirror, !resolved.contains(url) {
+                resolved.append(url)
+            }
+        }
+        for mirror in mirrors where !resolved.contains(mirror) {
+            resolved.append(mirror)
+        }
+        return resolved
+    }
+
+    /// Bundled fallback license text for offline or unreachable-host license preview before downloading.
+    /// The pack's own `LICENSE.txt` is still downloaded and verified by SHA-256 during installation.
+    public var fallbackLicenseText: String? {
+        guard license.name == "Apache-2.0" else { return nil }
+        let note = String(
+            localized: "Note: Could not fetch this pack’s LICENSE.txt right now. Below is the standard Apache License 2.0 text. The pack’s own LICENSE.txt (including any author notices and modification notes) will still be downloaded and verified by SHA-256 during download.",
+            bundle: .module
+        )
+        return note + "\n\n" + Self.apache2FallbackLicense
+    }
+
+    /// Standard Apache License, Version 2.0, bundled for offline preview when the pack's `LICENSE.txt` cannot be reached.
+    public static let apache2FallbackLicense = """
+    Apache License
+    Version 2.0, January 2004
+    https://www.apache.org/licenses/
+
+    TERMS AND CONDITIONS FOR USE, REPRODUCTION, AND DISTRIBUTION
+
+    1. Definitions.
+
+    "License" shall mean the terms and conditions for use, reproduction, and distribution as defined by Sections 1 through 9 of this document.
+
+    "Licensor" shall mean the copyright owner or entity authorized by the copyright owner that is granting the License.
+
+    "Legal Entity" shall mean the union of the acting entity and all other entities that control, are controlled by, or are under common control with that entity. For the purposes of this definition, "control" means (i) the power, direct or indirect, to cause the direction or management of such entity, whether by contract or otherwise, or (ii) ownership of fifty percent (50%) or more of the outstanding shares, or (iii) beneficial ownership of such entity.
+
+    "You" (or "Your") shall mean an individual or Legal Entity exercising permissions granted by this License.
+
+    "Source" form shall mean the preferred form for making modifications, including but not limited to software source code, documentation source, and configuration files.
+
+    "Object" form shall mean any form resulting from mechanical transformation or translation of a Source form, including but not limited to compiled object code, generated documentation, and conversions to other media types.
+
+    "Work" shall mean the work of authorship, whether in Source or Object form, made available under the License, as indicated by a copyright notice that is included in or attached to the work.
+
+    "Derivative Works" shall mean any work, whether in Source or Object form, that is based on (or derived from) the Work and for which the editorial revisions, annotations, elaborations, or other modifications represent, as a whole, an original work of authorship.
+
+    "Contribution" shall mean any work of authorship, including the original version of the Work and any modifications or additions to that Work or Derivative Works thereof, that is intentionally submitted to Licensor for inclusion in the Work by the copyright owner or by an individual or Legal Entity authorized to submit on behalf of the copyright owner.
+
+    "Contributor" shall mean Licensor and any individual or Legal Entity on behalf of whom a Contribution has been received by Licensor and subsequently incorporated within the Work.
+
+    2. Grant of Copyright License. Subject to the terms and conditions of this License, each Contributor hereby grants to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable copyright license to reproduce, prepare Derivative Works of, publicly display, publicly perform, sublicense, and distribute the Work and such Derivative Works in Source or Object form.
+
+    3. Grant of Patent License. Subject to the terms and conditions of this License, each Contributor hereby grants to You a perpetual, worldwide, non-exclusive, no-charge, royalty-free, irrevocable (except as stated in this section) patent license to make, have made, use, offer to sell, sell, import, and otherwise transfer the Work.
+
+    4. Redistribution. You may reproduce and distribute copies of the Work or Derivative Works thereof in any medium, with or without modifications, and in Source or Object form, provided that You meet the following conditions:
+
+    (a) You must give any other recipients of the Work or Derivative Works a copy of this License; and
+
+    (b) You must cause any modified files to carry prominent notices stating that You changed the files; and
+
+    (c) You must retain, in the Source form of any Derivative Works that You distribute, all copyright, patent, trademark, and attribution notices from the Source form of the Work, excluding those notices that do not pertain to any part of the Derivative Works; and
+
+    (d) If the Work includes a "NOTICE" text file as part of its distribution, then any Derivative Works that You distribute must include a readable copy of the attribution notices contained within such NOTICE file.
+
+    5. Submission of Contributions. Unless You explicitly state otherwise, any Contribution intentionally submitted for inclusion in the Work by You to the Licensor shall be under the terms and conditions of this License, without any additional terms or conditions.
+
+    6. Trademarks. This License does not grant permission to use the trade names, trademarks, service marks, or product names of the Licensor, except as required for reasonable and customary use in describing the origin of the Work and reproducing the content of the NOTICE file.
+
+    7. Disclaimer of Warranty. Unless required by applicable law or agreed to in writing, Licensor provides the Work (and each Contributor provides its Contributions) on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied, including, without limitation, any warranties or conditions of TITLE, NON-INFRINGEMENT, MERCHANTABILITY, or FITNESS FOR A PARTICULAR PURPOSE. You are solely responsible for determining the appropriateness of using or redistributing the Work and assume any risks associated with Your exercise of permissions under this License.
+
+    8. Limitation of Liability. In no event and under no legal theory, whether in tort (including negligence), contract, or otherwise, unless required by applicable law (such as deliberate and grossly negligent acts) or agreed to in writing, shall any Contributor be liable to You for damages, including any direct, indirect, special, incidental, or consequential damages of any character arising as a result of this License or out of the use or inability to use the Work.
+
+    9. Accepting Warranty or Additional Liability. While redistributing the Work or Derivative Works thereof, You may choose to offer, and charge a fee for, acceptance of support, warranty, indemnity, or other liability obligations and/or rights consistent with this License.
+    """
+
     /// Letters, digits, ".", "-", "_"; not "." or "..".
     static func isName(_ text: String) -> Bool {
         !text.isEmpty && text != "." && text != ".."

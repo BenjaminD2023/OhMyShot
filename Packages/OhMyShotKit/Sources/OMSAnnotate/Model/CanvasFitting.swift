@@ -43,10 +43,12 @@ nonisolated extension AnnotationDocument {
             let reach = fitted.union(marks)
             let margin = Self.canvasMargin * scale
             let limit = Self.canvasGrowthLimit * scale
-            let left = min(fitted.minX - reach.minX + margin, limit)
-            let top = min(fitted.minY - reach.minY + margin, limit)
-            let right = min(reach.maxX - fitted.maxX + margin, limit)
-            let bottom = min(reach.maxY - fitted.maxY + margin, limit)
+            // Expand only the edge(s) that a mark actually extends beyond, rather than symmetrically
+            // growing opposite edges that nothing crossed.
+            let left = reach.minX < fitted.minX ? min(fitted.minX - reach.minX + margin, limit) : 0
+            let top = reach.minY < fitted.minY ? min(fitted.minY - reach.minY + margin, limit) : 0
+            let right = reach.maxX > fitted.maxX ? min(reach.maxX - fitted.maxX + margin, limit) : 0
+            let bottom = reach.maxY > fitted.maxY ? min(reach.maxY - fitted.maxY + margin, limit) : 0
             fitted = CGRect(
                 x: fitted.minX - left, y: fitted.minY - top,
                 width: fitted.width + left + right, height: fitted.height + top + bottom

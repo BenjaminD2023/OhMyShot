@@ -2,11 +2,19 @@
 /// never which purposes they are, so a purpose added later is asked about each of them where it is declared.
 extension OverlayController.Purpose {
     /// What is chosen is taken as a picture of the screen: Capture Area and Annotate Area. Only these keep the pointer in
-    /// a frozen frame, show the actual-size lens when Settings choose it, and recall the last area with L.
+    /// a frozen frame and show the actual-size lens when Settings choose it.
     var takesPicture: Bool {
         switch self {
         case .screenshot, .annotate: true
         case .text, .color, .measure, .record, .scroll: false
+        }
+    }
+
+    /// L recalls the last area before a drag begins: Capture Area, Annotate Area, Record, and Scrolling Capture.
+    var recallsLastArea: Bool {
+        switch self {
+        case .screenshot, .annotate, .record, .scroll: true
+        case .text, .color, .measure: false
         }
     }
 

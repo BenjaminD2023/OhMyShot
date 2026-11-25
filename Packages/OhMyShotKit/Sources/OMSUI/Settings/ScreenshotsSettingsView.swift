@@ -134,12 +134,83 @@ struct ScreenshotsSettingsView: View {
                     }
                     .help(String(localized: "Tiles this text, faint, across every copy that leaves OhMyShot. The history keeps the capture as it was, and printing prints it so.", bundle: .module))
                     if settings.addsWatermark {
-                        TextField(text: $settings.watermarkText, prompt: Text("Watermark text", bundle: .module)) {
-                            Text("Watermark text", bundle: .module)
+                        VStack(alignment: .leading, spacing: 8) {
+                            TextField(text: $settings.watermarkText, prompt: Text("Watermark text", bundle: .module)) {
+                                Text("Watermark text", bundle: .module)
+                            }
+                            .labelsHidden()
+                            .textFieldStyle(.roundedBorder)
+                            .frame(maxWidth: 260)
+
+                            if settings.watermarkText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+                                Text("Enter watermark text above to apply it to exported screenshots.", bundle: .module)
+                                    .font(.callout)
+                                    .foregroundStyle(.secondary)
+                                    .fixedSize(horizontal: false, vertical: true)
+                            }
+
+                            Grid(alignment: .leading, horizontalSpacing: 8, verticalSpacing: 6) {
+                                GridRow {
+                                    Text("Tone", bundle: .module)
+                                        .foregroundStyle(.secondary)
+                                    Picker(selection: $settings.watermarkTone) {
+                                        Text("Dark", bundle: .module).tag(Watermark.Tone.dark)
+                                        Text("Light", bundle: .module).tag(Watermark.Tone.light)
+                                    } label: {
+                                        Text("Tone", bundle: .module)
+                                    }
+                                    .pickerStyle(.segmented)
+                                    .labelsHidden()
+                                    .frame(width: 140)
+                                }
+                                GridRow {
+                                    Text("Opacity", bundle: .module)
+                                        .foregroundStyle(.secondary)
+                                        .accessibilityHidden(true)
+                                    HStack(spacing: 8) {
+                                        Slider(value: Binding {
+                                            settings.watermarkOpacity
+                                        } set: {
+                                            let stepped = ($0 * 20).rounded() / 20
+                                            settings.watermarkOpacity = min(max(stepped, Watermark.opacityRange.lowerBound), Watermark.opacityRange.upperBound)
+                                        }, in: Watermark.opacityRange) {
+                                            Text("Opacity", bundle: .module)
+                                        }
+                                        .labelsHidden()
+                                        .frame(width: 130)
+                                        .accessibilityValue(Text(settings.watermarkOpacity, format: .percent.precision(.fractionLength(0))))
+                                        Text(settings.watermarkOpacity, format: .percent.precision(.fractionLength(0)))
+                                            .monospacedDigit()
+                                            .foregroundStyle(.secondary)
+                                            .frame(width: 40, alignment: .trailing)
+                                            .accessibilityHidden(true)
+                                    }
+                                }
+                                GridRow {
+                                    Text("Size", bundle: .module)
+                                        .foregroundStyle(.secondary)
+                                        .accessibilityHidden(true)
+                                    HStack(spacing: 6) {
+                                        Text("Small", bundle: .module)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .accessibilityHidden(true)
+                                        Slider(value: $settings.watermarkSize, in: Watermark.sizeRange) {
+                                            Text("Size", bundle: .module)
+                                        }
+                                        .labelsHidden()
+                                        .frame(width: 110)
+                                        .accessibilityValue(Text(watermarkSizeProgress, format: .percent.precision(.fractionLength(0))))
+                                        Text("Large", bundle: .module)
+                                            .font(.caption)
+                                            .foregroundStyle(.secondary)
+                                            .accessibilityHidden(true)
+                                    }
+                                }
+                            }
                         }
-                        .labelsHidden()
-                        .textFieldStyle(.roundedBorder)
-                        .frame(maxWidth: 260)
+                        .padding(.leading, 20)
+                        .padding(.top, 2)
                     }
                 }
             }
@@ -166,6 +237,12 @@ struct ScreenshotsSettingsView: View {
 }
 
 extension ScreenshotsSettingsView {
+    fileprivate var watermarkSizeProgress: Double {
+        let span = Watermark.sizeRange.upperBound - Watermark.sizeRange.lowerBound
+        guard span > 0 else { return 0 }
+        return min(max((settings.watermarkSize - Watermark.sizeRange.lowerBound) / span, 0), 1)
+    }
+
     fileprivate var exportPath: String {
         var path = settings.exportDirectory.path(percentEncoded: false)
         if path.count > 1, path.hasSuffix("/") { path.removeLast() }

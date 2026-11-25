@@ -98,8 +98,9 @@ public final class TextResultHUD {
 
     public func setPanelAction(_ action: (() -> Void)?, showsResult: Bool) {
         onOpenInPanel = showsResult ? action : nil
-        guard let card, let panel, card.canOpenInPanel != (onOpenInPanel != nil) else { return }
-        card.canOpenInPanel = onOpenInPanel != nil
+        let effective = allowsOpenInPanel && onOpenInPanel != nil
+        guard let card, let panel, card.canOpenInPanel != effective else { return }
+        card.canOpenInPanel = effective
         place(panel)
     }
 
@@ -109,6 +110,7 @@ public final class TextResultHUD {
     private var position: TextResultPosition = .belowSelection
     private var state: State?
     private var note: String?
+    private var allowsOpenInPanel = true
     private var dismissal: Task<Void, Never>?
     private var lifetime = TextResultLifetime()
     private var windowLease: ActiveResources.Lease?
@@ -137,13 +139,18 @@ public final class TextResultHUD {
     /// Shows `state` by `selection`, in AppKit's global coordinates. `note` is a line under the text, such as who read
     /// it ("Read by Claude"), or why this Mac's reading was copied instead of the cloud model's. `closeAfter` is the
     /// user's Close text card choice when they asked for the card, nil when it is shown only to say something.
-    public func show(_ state: State, near selection: CGRect, position: TextResultPosition, closeAfter: Int?, note: String? = nil) {
+    /// `canOpenInPanel` controls whether the Open in Panel chip is offered (for example on empty or no-formula states
+    /// when a captured image is available and a panel action is wired).
+    public func show(
+        _ state: State, near selection: CGRect, position: TextResultPosition, closeAfter: Int?,
+        note: String? = nil, canOpenInPanel: Bool = true
+    ) {
         anchor = selection
         self.position = position
+        allowsOpenInPanel = canOpenInPanel
         let isNew = panel == nil
         let panel = self.panel ?? makePanel()
-        card?.canOpenInPanel = onOpenInPanel != nil
-        card?.show(state, note: note)
+        card?.show(state, note: note, canOpenInPanel: allowsOpenInPanel && onOpenInPanel != nil)
         place(panel)
         if isNew {
             appear(panel)
@@ -375,7 +382,7 @@ final class TextResultCard: NSView {
     let openInPanelButton = CardButton(style: .chip, title: String(localized: "Open in Panel", bundle: .module), symbolName: "arrow.up.forward.square")
     var canOpenInPanel = true {
         didSet {
-            openInPanelButton.isHidden = !canOpenInPanel || !Self.isCopied(state)
+            openInPanelButton.isHidden = !canOpenInPanel
             needsLayout = true
         }
     }
@@ -459,9 +466,10 @@ final class TextResultCard: NSView {
         String(localized: "Copied \(text.count) characters", bundle: .module)
     }
 
-    func show(_ state: TextResultHUD.State, note: String? = nil) {
+    func show(_ state: TextResultHUD.State, note: String? = nil, canOpenInPanel: Bool = true) {
         self.state = state
         self.noteText = note
+        self.canOpenInPanel = canOpenInPanel
         self.note.stringValue = note ?? ""
         self.note.isHidden = note == nil
         let symbolName: String
@@ -514,7 +522,7 @@ final class TextResultCard: NSView {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold).applying(.init(paletteColors: Self.symbolColors(for: state))))
         preview.isHidden = !Self.isCopied(state)
         joinButton.isHidden = joinButton.isHidden || !Self.isCopied(state)
-        openInPanelButton.isHidden = !canOpenInPanel || !Self.isCopied(state)
+        openInPanelButton.isHidden = !self.canOpenInPanel
         detail.isHidden = state != .empty && state != .noFormula
         setAccessibilityLabel([title.stringValue, count.stringValue, noteText ?? ""].filter { !$0.isEmpty }.joined(separator: ", "))
         needsLayout = true
@@ -604,7 +612,7 @@ final class TextResultCard: NSView {
         background.backgroundColor = Theme.Material.cardFill(dark: dark)
         background.borderWidth = Theme.Material.edgeWidth(contrast: increaseContrast)
         background.borderColor = Theme.Material.edge(dark: dark, contrast: increaseContrast)
-        show(state, note: noteText)
+        show(state, note: noteText, canOpenInPanel: canOpenInPanel)
     }
 
     /// Whether the card shows the text read.

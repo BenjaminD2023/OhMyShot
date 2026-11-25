@@ -1,13 +1,18 @@
 import CoreGraphics
 import Foundation
 
-/// Which bottom corner of the screen Quick Access cards stack in.
+/// Which corner of the screen Quick Access cards stack in.
 public enum QuickAccessCorner: String, CaseIterable, Sendable {
     case bottomLeft
     case bottomRight
+    case topLeft
+    case topRight
 
     /// Whether cards come in from the left edge of the screen, and leave toward it.
-    public var slidesFromLeft: Bool { self == .bottomLeft }
+    public var slidesFromLeft: Bool { self == .bottomLeft || self == .topLeft }
+
+    /// Whether the stack anchors to the top edge of the visible frame.
+    public var isTop: Bool { self == .topLeft || self == .topRight }
 }
 
 /// How large Quick Access cards are.
@@ -58,19 +63,23 @@ public struct QuickAccessPreferences: Equatable, Sendable {
     /// Seconds a card stays before it closes by itself; 0 for never.
     public var closeAfter: Int
     public var closeAction: QuickAccessCloseAction
+    /// Whether copying, saving, pinning, printing, or dragging a card closes it automatically.
+    public var closesAfterAction: Bool
 
     public init(
         corner: QuickAccessCorner = .bottomLeft,
         size: QuickAccessSize = .medium,
         onPointerDisplay: Bool = false,
         closeAfter: Int = 0,
-        closeAction: QuickAccessCloseAction = .close
+        closeAction: QuickAccessCloseAction = .close,
+        closesAfterAction: Bool = true
     ) {
         self.corner = corner
         self.size = size
         self.onPointerDisplay = onPointerDisplay
         self.closeAfter = closeAfter
         self.closeAction = closeAction
+        self.closesAfterAction = closesAfterAction
     }
 
     /// How long a card stays, or nil for ever.

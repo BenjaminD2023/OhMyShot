@@ -239,6 +239,86 @@ extension RedactionSuggestionTests {
         canvas.mouseUp(with: try mouse(.leftMouseUp, at: CGPoint(x: 80, y: 190)))
         #expect(shown() == 2)
     }
+
+    @Test func drawingAManualRedactionKeepsToolRemainingSuggestionsAndRedactAll() async throws {
+        let session = makeSession(reads: ReadCounter())
+        let (canvas, window) = makeCanvas(session)
+        defer { window.close() }
+        let capsule = StyleCapsule()
+        func suggestionElements() -> [SuggestionElement] {
+            (canvas.accessibilityChildren() ?? []).compactMap { $0 as? SuggestionElement }
+        }
+        func chipLabels() -> [String] {
+            func walk(_ view: NSView) -> [CapsuleChip] {
+                (view as? CapsuleChip).map { [$0] } ?? view.subviews.flatMap(walk)
+            }
+            return walk(capsule).compactMap { $0.accessibilityLabel() }
+        }
+        func mouse(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: canvas.windowPoint(forDocument: point), modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber, context: nil,
+                eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+
+        session.tool = .redact
+        await waitForSuggestions(session)
+        capsule.refresh(from: session, canvas: canvas)
+        #expect(suggestionElements().count == 2)
+        #expect(chipLabels().contains("Redact All (2)"))
+
+        // Drag a manual redaction covering the email address: Redact stays in hand, the new redaction is
+        // selected, and the remaining phone number suggestion plus Redact All (1) stay visible.
+        step(session) {
+            do {
+                canvas.mouseDown(with: try mouse(.leftMouseDown, at: CGPoint(x: 90, y: 15)))
+                canvas.mouseDragged(with: try mouse(.leftMouseDragged, at: CGPoint(x: 310, y: 55)))
+                canvas.mouseUp(with: try mouse(.leftMouseUp, at: CGPoint(x: 310, y: 55)))
+            } catch {
+                Issue.record(error)
+            }
+        }
+        let manual = try #require(session.document.items.first)
+        #expect(session.tool == .redact)
+        #expect(session.selection == [manual.id])
+        #expect(session.openRedactionSuggestions == [Self.phone])
+        #expect(suggestionElements().map { $0.accessibilityLabel() } == ["Phone number, suggested redaction"])
+        #expect(canvas.accessibilityValue() as? String == "1 suggestion to redact")
+        #expect(capsule.countsStaleSuggestions(of: session))
+
+        capsule.refresh(from: session, canvas: canvas)
+        #expect(!capsule.countsStaleSuggestions(of: session))
+        #expect(chipLabels().contains("Delete"))
+        #expect(chipLabels().contains("Redact All (1)"))
+
+        // Even with Select in hand, selecting a redaction keeps open suggestions and Redact All visible;
+        // deselecting hides them, and reselecting brings them back.
+        session.tool = .select
+        session.select([])
+        #expect(suggestionElements().isEmpty)
+        #expect((canvas.accessibilityValue() as? String) == nil)
+        session.select([manual.id])
+        #expect(session.currentKind == .redact)
+        #expect(suggestionElements().count == 1)
+        #expect(canvas.accessibilityValue() as? String == "1 suggestion to redact")
+        capsule.refresh(from: session, canvas: canvas)
+        #expect(chipLabels().contains("Delete"))
+        #expect(chipLabels().contains("Redact All (1)"))
+
+        // Clicking the remaining visible suggestion covers it.
+        step(session) {
+            do {
+                canvas.mouseDown(with: try mouse(.leftMouseDown, at: CGPoint(x: 150, y: 95)))
+                canvas.mouseUp(with: try mouse(.leftMouseUp, at: CGPoint(x: 150, y: 95)))
+            } catch {
+                Issue.record(error)
+            }
+        }
+        #expect(session.document.items.count == 2)
+        #expect(session.openRedactionSuggestions.isEmpty)
+        #expect(suggestionElements().isEmpty)
+    }
 }
 
 /// Counts calls from any task.

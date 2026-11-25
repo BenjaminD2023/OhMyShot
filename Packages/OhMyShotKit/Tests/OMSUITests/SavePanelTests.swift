@@ -1,3 +1,4 @@
+import AppKit
 import OMSCore
 import Testing
 import UniformTypeIdentifiers
@@ -47,5 +48,35 @@ struct SavePanelTests {
         options.output.format = .heic
         options.output.addsBorder = true
         #expect(told == [.heic])
+    }
+
+    @MainActor @Test func watermarkCheckboxAppearsOnlyWhenWatermarkIsConfiguredAndTogglesOutput() {
+        let without = PictureSaveOptions(output: .standard)
+        let viewWithout = PictureSaveOptionsView(options: without)
+        #expect(viewWithout.watermark.isHidden)
+
+        let blank = PictureSaveOptions(output: .standard, availableWatermark: Watermark(text: "   "))
+        let viewBlank = PictureSaveOptionsView(options: blank)
+        #expect(viewBlank.watermark.isHidden)
+
+        let wm = Watermark(text: "Confidential", tone: .light, opacity: 0.25, size: 0.05)
+        let enabled = PictureSaveOptions(output: ScreenshotOutput(watermark: wm))
+        let viewEnabled = PictureSaveOptionsView(options: enabled)
+        #expect(!viewEnabled.watermark.isHidden)
+        #expect(viewEnabled.watermark.state == .on)
+        viewEnabled.watermark.state = .off
+        viewEnabled.watermark.sendAction(viewEnabled.watermark.action, to: viewEnabled.watermark.target)
+        #expect(enabled.output.watermark == nil)
+        viewEnabled.watermark.state = .on
+        viewEnabled.watermark.sendAction(viewEnabled.watermark.action, to: viewEnabled.watermark.target)
+        #expect(enabled.output.watermark == wm)
+
+        let optIn = PictureSaveOptions(output: .standard, availableWatermark: wm)
+        let viewOptIn = PictureSaveOptionsView(options: optIn)
+        #expect(!viewOptIn.watermark.isHidden)
+        #expect(viewOptIn.watermark.state == .off)
+        viewOptIn.watermark.state = .on
+        viewOptIn.watermark.sendAction(viewOptIn.watermark.action, to: viewOptIn.watermark.target)
+        #expect(optIn.output.watermark == wm)
     }
 }

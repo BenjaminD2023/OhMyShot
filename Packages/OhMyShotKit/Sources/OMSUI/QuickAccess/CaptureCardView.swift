@@ -7,12 +7,21 @@ import QuartzCore
 /// One capture: the picture with rounded corners and a soft shadow; on hover, buttons to copy or save
 /// it, close it, or reach the rest of its actions.
 final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharingServicePickerDelegate, NSSharingServiceDelegate {
+    /// Visual state of the zero-wakeup circular countdown progress ring around the top-left Close button.
+    enum CountdownDisplay: Equatable {
+        case running(remaining: TimeInterval, interval: TimeInterval, startFraction: CGFloat?)
+        case paused(fraction: CGFloat, interval: TimeInterval)
+    }
+
     private var sharingPicker: NSSharingServicePicker?
     private var sharingService: NSSharingService?
     /// What its buttons, its menu, VoiceOver, a double-click, or a swipe asked of the capture: Undo on a card
     /// waiting to go to the Trash too. Share, Send by Email, and Copy Error are the card's own, as they need the card
     /// (a sheet beside it) or only its upload.
     var onCommand: ((CardCommand) -> Void)?
+    /// Optional direct Translate entry for screenshot cards.
+    var onTranslate: (() -> Void)?
+    var hasTranslate: (() -> Bool)?
     /// The file a drag, Share, or Send by Email hands over: the capture's own, or a copy in the format Settings choose;
     /// nil when that copy could not be made, which the card then shows, and nothing goes. Left out, the capture's own.
     var fileToHandOver: (() -> URL?)?
@@ -21,6 +30,11 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     var canDeleteFromStorage: () -> Bool = { false }
     var pictureOffer: () -> PictureChangeOffer = { .unsupported }
     var cardCount: () -> Int = { 1 }
+    /// Optional overrides (primarily for tests); by default these read from the hosting `QuickAccessPanel`.
+    var closesAfterAction: (() -> Bool)?
+    var screenshotCardCount: (() -> Int)?
+    var onCombineAllIntoCollage: (() -> Void)?
+    var onExportAllAsPDF: (() -> Void)?
     /// The card is kept from closing, or let go (see `CardCountdown.Hold`).
     var onHold: ((CardCountdown.Hold, Bool) -> Void)?
     /// The card was clicked: the keyboard goes to it.
@@ -155,7 +169,13 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     var slidesFromLeft = true
     private(set) var swipeTranslation: CGFloat = 0
     private(set) var countdownState: (remaining: TimeInterval, interval: TimeInterval)?
+    private(set) var countdownDisplay: CountdownDisplay?
     var isCountdownRingVisible: Bool { !countdownRing.isHidden }
+    var isCountdownRingPaused: Bool {
+        if case .paused = countdownDisplay { return true }
+        return false
+    }
+    var countdownRingFraction: CGFloat { countdownRing.strokeEnd }
     private var copiedReset: Task<Void, Never>?
     private var hoverGeneration = 0
     /// The QR codes and barcodes in the picture, which the menu offers to open or copy: a code's chips over the
@@ -307,8 +327,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     /// is a destination and no upload is going or waiting on Retry (the badge has those), Recognize Text, and
     /// Move to Trash. A recording has the editor (or Play), Upload, and Trash.
     private func updateExtras() {
-        annotateButton.title = item.media.openTitle
-        annotateButton.symbolName = item.media.openSymbolName
+        annotateButton.title = item.openTitle
+        annotateButton.symbolName = item.openSymbolName
         let uploads: Bool
         switch upload {
         case .uploading?, .failed?: uploads = false
@@ -403,15 +423,23 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         undoButton.frame = CGRect(x: ((bounds.width - undo.width) / 2).rounded(), y: top + notice.height + 8, width: undo.width, height: undo.height)
     }
 
-    /// A recording shows its length in the bottom-left corner, after a play mark, or "GIF" for a GIF.
+    /// A recording shows its length in the bottom-left corner, after a play mark, "Studio" for a Studio recording, or "GIF" for a GIF.
     private func updateDuration() {
         guard item.kind == .recording, let duration = item.duration else {
             durationBadge.isHidden = true
             return
         }
         let isGIF = item.media == .gif
+        let isStudio = !isGIF && item.hasStudioProject
         durationBadge.isGIF = isGIF
-        durationBadge.text = isGIF ? "GIF \(Self.format(duration))" : Self.format(duration)
+        durationBadge.isStudio = isStudio
+        if isGIF {
+            durationBadge.text = "GIF \(Self.format(duration))"
+        } else if isStudio {
+            durationBadge.text = "\(CaptureMedia.studioBadgeTitle) \(Self.format(duration))"
+        } else {
+            durationBadge.text = Self.format(duration)
+        }
         durationBadge.isHidden = false
         needsLayout = true
     }
@@ -464,7 +492,10 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     private func updateAccessibility() {
         let label = switch item.media {
         case .screenshot: String(localized: "Screenshot, \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
-        case .movie: String(localized: "Recording, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+        case .movie:
+            item.hasStudioProject
+                ? String(localized: "Studio recording, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
+                : String(localized: "Recording, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
         case .gif: String(localized: "GIF, \(item.duration.map(Self.format) ?? ""), \(item.pixelWidth) by \(item.pixelHeight) pixels", bundle: .module)
         }
         setAccessibilityLabel(label)
@@ -501,6 +532,9 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         if isPicture {
             actions.append(action(String(localized: "Recognize Text", bundle: .module)) { [weak self] in self?.onCommand?(.recognizeText) })
             actions.append(action(String(localized: "Copy Text", bundle: .module)) { [weak self] in self?.onCommand?(.copyText) })
+            if canTranslate {
+                actions.append(action(String(localized: "Translate", bundle: .module)) { [weak self] in self?.onTranslate?() })
+            }
             actions.append(action(String(localized: "Pin to Screen", bundle: .module)) { [weak self] in self?.onCommand?(.pin) })
             let offer = pictureOffer()
             if offer.availability == .available {
@@ -525,10 +559,38 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         actions.append(action(String(localized: "Move to Trash", bundle: .module)) { [weak self] in self?.onCommand?(.moveToTrash) })
         actions.append(action(String(localized: "Close", bundle: .module)) { [weak self] in self?.onCommand?(.close) })
         if cardCount() > 1 {
+            if resolvedScreenshotCount >= 2 {
+                if let combine = resolvedCombineAll {
+                    actions.append(action(String(localized: "Combine All into Collage", bundle: .module), combine))
+                }
+                if let exportPDF = resolvedExportAllPDF {
+                    actions.append(action(String(localized: "Export All as PDF", bundle: .module), exportPDF))
+                }
+            }
             actions.append(action(String(localized: "Save All", bundle: .module)) { [weak self] in self?.onCommand?(.saveAll) })
             actions.append(action(String(localized: "Close All", bundle: .module)) { [weak self] in self?.onCommand?(.closeAll) })
         }
         return actions
+    }
+
+    private var canTranslate: Bool {
+        item.kind == .screenshot && (hasTranslate?() ?? (onTranslate != nil))
+    }
+
+    private var resolvedClosesAfterAction: Bool {
+        closesAfterAction?() ?? (window as? QuickAccessPanel)?.closesAfterAction() ?? true
+    }
+
+    private var resolvedScreenshotCount: Int {
+        screenshotCardCount?() ?? (window as? QuickAccessPanel)?.screenshotCardCount() ?? 0
+    }
+
+    private var resolvedCombineAll: (() -> Void)? {
+        onCombineAllIntoCollage ?? (window as? QuickAccessPanel)?.onCombineAllIntoCollage
+    }
+
+    private var resolvedExportAllPDF: (() -> Void)? {
+        onExportAllAsPDF ?? (window as? QuickAccessPanel)?.onExportAllAsPDF
     }
 
     /// The changes to the picture the menu and VoiceOver offer, with their names; Scale to 1× only above one pixel
@@ -740,12 +802,12 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        context == .outsideApplication ? [.copy] : []
+        [.copy]
     }
 
     func draggingSession(_ session: NSDraggingSession, endedAt screenPoint: NSPoint, operation: NSDragOperation) {
         onHold?(.drag, false)
-        if !operation.isEmpty { onCommand?(.close) }
+        if !operation.isEmpty, resolvedClosesAfterAction { onCommand?(.close) }
     }
 
     override func scrollWheel(with event: NSEvent) {
@@ -766,8 +828,9 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
             setSwipeOffset(0, animated: false)
         case .changed:
             swipeDistance += deltaX
+            // Strictly allow dismissing toward the nearest screen edge; ignore inward swipes toward screen center.
             let towardEdge = slidesFromLeft ? swipeDistance <= 0 : swipeDistance >= 0
-            let offset = towardEdge ? swipeDistance : swipeDistance * 0.35
+            let offset = towardEdge ? swipeDistance : 0
             setSwipeOffset(offset, animated: false)
         case .ended:
             // Only a swipe toward the card's own edge closes it; one the other way springs back.
@@ -810,42 +873,73 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     /// Shows or hides the zero-wakeup Core Animation countdown ring around the top-left corner.
     /// Under Reduce Motion the ring steps down once a second, as the Self-Timer's does, rather than gliding.
     func setCountdown(_ state: (remaining: TimeInterval, interval: TimeInterval)?) {
-        countdownState = state
+        if let state {
+            setCountdownDisplay(.running(remaining: state.remaining, interval: state.interval, startFraction: nil))
+        } else {
+            setCountdownDisplay(nil)
+        }
+    }
+
+    /// Updates the countdown ring for running or hover-frozen paused states without jumping or polling timers.
+    func setCountdownDisplay(_ display: CountdownDisplay?) {
+        countdownDisplay = display
         let lines = [countdownOutline, countdownRing]
         lines.forEach { $0.removeAllAnimations() }
-        guard let state, state.remaining > 0, !isTrashing else {
+        guard let display, !isTrashing else {
+            countdownState = nil
             lines.forEach { $0.isHidden = true }
             return
         }
-        let interval = max(state.interval, 0.1)
-        let fraction = CGFloat(min(max(state.remaining / interval, 0), 1))
-        CATransaction.begin()
-        CATransaction.setDisableActions(true)
-        for line in lines {
-            line.isHidden = false
-            line.strokeStart = 0
-            line.strokeEnd = 0
+        switch display {
+        case .paused(let fraction, let interval):
+            let clamped = CGFloat(min(max(fraction, 0), 1))
+            countdownState = (TimeInterval(clamped) * max(interval, 0.1), interval)
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for line in lines {
+                line.isHidden = false
+                line.strokeStart = 0
+                line.strokeEnd = clamped
+            }
+            CATransaction.commit()
+        case .running(let remaining, let interval, let startFraction):
+            guard remaining > 0 else {
+                countdownState = nil
+                lines.forEach { $0.isHidden = true }
+                return
+            }
+            countdownState = (remaining, interval)
+            let safeInterval = max(interval, 0.1)
+            let computed = CGFloat(min(max(remaining / safeInterval, 0), 1))
+            let fraction = startFraction.map { CGFloat(min(max($0, 0), 1)) } ?? computed
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            for line in lines {
+                line.isHidden = false
+                line.strokeStart = 0
+                line.strokeEnd = 0
+            }
+            CATransaction.commit()
+            let animation: CAAnimation
+            if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+                // Each whole second's length held until the next: discrete steps, still without waking the app.
+                let seconds = max(1, Int(remaining.rounded(.up)))
+                let stepping = CAKeyframeAnimation(keyPath: "strokeEnd")
+                let times = (0...seconds).map { min(Double($0), remaining) }
+                stepping.values = times.map { fraction * CGFloat(max(0, (remaining - $0) / remaining)) }
+                stepping.keyTimes = times.map { NSNumber(value: $0 / remaining) }
+                stepping.calculationMode = .discrete
+                animation = stepping
+            } else {
+                let gliding = CABasicAnimation(keyPath: "strokeEnd")
+                gliding.fromValue = fraction
+                gliding.toValue = 0
+                gliding.timingFunction = CAMediaTimingFunction(name: .linear)
+                animation = gliding
+            }
+            animation.duration = remaining
+            lines.forEach { $0.add(animation, forKey: "countdown") }
         }
-        CATransaction.commit()
-        let animation: CAAnimation
-        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
-            // Each whole second's length held until the next: discrete steps, still without waking the app.
-            let seconds = Int(state.remaining.rounded(.up))
-            let stepping = CAKeyframeAnimation(keyPath: "strokeEnd")
-            let times = (0...seconds).map { min(Double($0), state.remaining) }
-            stepping.values = times.map { CGFloat(max(0, (state.remaining - $0) / interval)) }
-            stepping.keyTimes = times.map { NSNumber(value: $0 / state.remaining) }
-            stepping.calculationMode = .discrete
-            animation = stepping
-        } else {
-            let gliding = CABasicAnimation(keyPath: "strokeEnd")
-            gliding.fromValue = fraction
-            gliding.toValue = 0
-            gliding.timingFunction = CAMediaTimingFunction(name: .linear)
-            animation = gliding
-        }
-        animation.duration = state.remaining
-        lines.forEach { $0.add(animation, forKey: "countdown") }
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -870,19 +964,25 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         add(String(localized: "Save", bundle: .module), "square.and.arrow.down", #selector(saveClicked), .save)
         add(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAsClicked), .saveAs)
         menu.addItem(.separator())
-        // A picture is marked up, a movie trimmed and made smaller; a GIF only plays (`CaptureMedia.openMenuTitle`).
-        add(item.media.openMenuTitle, item.media.openSymbolName, #selector(annotateClicked), .annotate)
+        // A picture is marked up, a movie trimmed and made smaller (or filmed again in Studio); a GIF only plays (`CaptureMedia.openMenuTitle`).
+        add(item.openMenuTitle, item.openSymbolName, #selector(annotateClicked), .annotate)
         add(String(localized: "Open", bundle: .module), "arrow.up.forward.app", #selector(openClicked), .open)
         add(String(localized: "Quick Look", bundle: .module), "eye", #selector(quickLookClicked), .quickLook)
         if item.kind == .screenshot {
             add(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", #selector(recognizeTextClicked), .recognizeText)
             add(String(localized: "Copy Text", bundle: .module), "doc.plaintext", #selector(copyTextClicked), .copyText)
+            if canTranslate {
+                add(String(localized: "Translate…", bundle: .module), "translate", #selector(translateClicked))
+            }
             addCodeItems(to: menu)
             add(String(localized: "Pin to Screen", bundle: .module), "pin", #selector(pinClicked), .pin)
             add(String(localized: "Print…", bundle: .module), "printer", #selector(printClicked), .print)
             addPictureItems(to: menu)
         }
-        add(String(localized: "Show in Finder", bundle: .module), "folder", #selector(revealClicked))
+        let revealTitle = item.savedURL != nil
+            ? String(localized: "Show in Finder", bundle: .module)
+            : String(localized: "Show Original in Finder", bundle: .module)
+        add(revealTitle, "folder", #selector(revealClicked))
         menu.addItem(.separator())
         addSharingItems(to: menu, add: add)
         add(String(localized: "Move to Trash", bundle: .module), "trash", #selector(trashClicked), .moveToTrash)
@@ -890,6 +990,14 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         // What the whole stack can do, once there is more than one card.
         if cardCount() > 1 {
             menu.addItem(.separator())
+            if resolvedScreenshotCount >= 2 {
+                if resolvedCombineAll != nil {
+                    add(String(localized: "Combine All into Collage…", bundle: .module), "rectangle.grid.2x2", #selector(combineAllClicked))
+                }
+                if resolvedExportAllPDF != nil {
+                    add(String(localized: "Export All as PDF…", bundle: .module), "doc.richtext", #selector(exportAllPDFClicked))
+                }
+            }
             add(String(localized: "Save All", bundle: .module), "square.and.arrow.down.on.square", #selector(saveAllClicked), .saveAll)
             add(String(localized: "Close All", bundle: .module), "xmark.square", #selector(closeAllClicked), .closeAll)
         }
@@ -909,20 +1017,58 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
         menuItem.keyEquivalentModifierMask = mask
     }
 
-    /// One item for each different code the picture shows, at most five: a web address opens, anything else is copied.
+    /// One item for each different code the picture shows, at most five: structured payloads get tailored
+    /// summaries and quick actions (open link/mail/phone, copy Wi-Fi password, copy contact); plain codes copy.
     private func addCodeItems(to menu: NSMenu) {
         var seen = Set<String>()
         let codes = foundCodes.filter { seen.insert($0.payload).inserted }.prefix(5)
         for code in codes {
-            let shown = Self.shortened(code.payload, to: 48)
-            let title = code.webURL != nil
-                ? String(localized: "Open Link “\(shown)”", bundle: .module)
-                : String(localized: "Copy Code “\(shown)”", bundle: .module)
+            let title: String
+            let symbol: String
+            var toolTip: String? = code.payload.count > 48 ? code.payload : nil
+            switch code.structured {
+            case .web(let url):
+                let shown = Self.shortened(url.absoluteString, to: 48)
+                title = String(localized: "Open Link “\(shown)”", bundle: .module)
+                symbol = code.isMatrix ? "qrcode" : "barcode"
+            case .wifi(let ssid, let password, _, _):
+                let shown = Self.shortened(ssid, to: 36)
+                if let password, !password.isEmpty {
+                    title = String(localized: "Copy Password for “\(shown)”", bundle: .module)
+                } else {
+                    title = String(localized: "Copy Wi-Fi “\(shown)”", bundle: .module)
+                }
+                symbol = "wifi"
+                toolTip = code.displaySummary
+            case .mailto(let address, _, _):
+                let shown = Self.shortened(address, to: 40)
+                title = String(localized: "Open Mail “\(shown)”", bundle: .module)
+                symbol = "envelope"
+                toolTip = code.displaySummary
+            case .phone(let number, _):
+                let shown = Self.shortened(number, to: 40)
+                title = String(localized: "Call “\(shown)”", bundle: .module)
+                symbol = "phone"
+                toolTip = code.displaySummary
+            case .contact(let name, let organization, _, _, _):
+                if let label = name ?? organization {
+                    let shown = Self.shortened(label, to: 36)
+                    title = String(localized: "Copy Contact “\(shown)”", bundle: .module)
+                } else {
+                    title = String(localized: "Copy Contact", bundle: .module)
+                }
+                symbol = "person.crop.rectangle"
+                toolTip = code.displaySummary
+            case nil:
+                let shown = Self.shortened(code.payload, to: 48)
+                title = String(localized: "Copy Code “\(shown)”", bundle: .module)
+                symbol = code.isMatrix ? "qrcode" : "barcode"
+            }
             let entry = NSMenuItem(title: title, action: #selector(codeClicked(_:)), keyEquivalent: "")
             entry.target = self
             entry.representedObject = code.payload
-            entry.image = NSImage(systemSymbolName: code.isMatrix ? "qrcode" : "barcode", accessibilityDescription: nil)
-            entry.toolTip = code.payload.count > 48 ? code.payload : nil
+            entry.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
+            entry.toolTip = toolTip
             menu.addItem(entry)
         }
     }
@@ -936,12 +1082,12 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
 
     @objc private func codeClicked(_ sender: NSMenuItem) {
         guard let payload = sender.representedObject as? String, let code = foundCodes.first(where: { $0.payload == payload }) else { return }
-        if let url = code.webURL {
+        if let url = code.openableURL {
             NSWorkspace.shared.open(url)
         } else {
             let pasteboard = NSPasteboard.general
             pasteboard.clearContents()
-            pasteboard.setString(payload, forType: .string)
+            pasteboard.setString(code.primaryCopyValue, forType: .string)
             VoiceOver.announce(String(localized: "Copied", bundle: .module), from: self)
         }
     }
@@ -1083,7 +1229,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     func sharingService(_ sharingService: NSSharingService, didShareItems items: [Any]) {
         self.sharingService = nil
         onHold?(.action, false)
-        onCommand?(.close)
+        if resolvedClosesAfterAction { onCommand?(.close) }
     }
 
     func sharingService(_ sharingService: NSSharingService, didFailToShareItems items: [Any], error: any Error) {
@@ -1122,6 +1268,7 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     @objc private func revealClicked() { onCommand?(.reveal) }
     @objc private func recognizeTextClicked() { onCommand?(.recognizeText) }
     @objc private func copyTextClicked() { onCommand?(.copyText) }
+    @objc private func translateClicked() { onTranslate?() }
     @objc private func pinClicked() { onCommand?(.pin) }
     @objc private func printClicked() { onCommand?(.print) }
     @objc private func trashClicked() { onCommand?(.moveToTrash) }
@@ -1130,6 +1277,8 @@ final class CaptureCardView: NSView, NSDraggingSource, NSMenuDelegate, NSSharing
     @objc private func quickLookClicked() { onCommand?(.quickLook) }
     @objc private func saveAllClicked() { onCommand?(.saveAll) }
     @objc private func closeAllClicked() { onCommand?(.closeAll) }
+    @objc private func combineAllClicked() { resolvedCombineAll?() }
+    @objc private func exportAllPDFClicked() { resolvedExportAllPDF?() }
     @objc private func pictureChangeClicked(_ sender: NSMenuItem) {
         guard let change = sender.representedObject as? PictureChange else { return }
         onCommand?(.picture(change))
@@ -1182,9 +1331,17 @@ private final class DurationBadge: NSView {
         }
     }
 
+    /// A Studio recording uses the Studio sparkles glyph in place of the plain play triangle.
+    var isStudio = false {
+        didSet {
+            guard isStudio != oldValue else { return }
+            updateMark()
+        }
+    }
+
     /// Where the label begins: after the mark, or at the capsule's padding.
     private var labelX: CGFloat {
-        isGIF ? 7 : 7 + 7 + 4
+        isGIF ? 7 : 7 + (isStudio ? 9 : 7) + 4
     }
 
     override init(frame frameRect: NSRect) {
@@ -1193,13 +1350,21 @@ private final class DurationBadge: NSView {
         layer?.shadowOpacity = 0.18
         layer?.shadowRadius = 4
         layer?.shadowOffset = CGSize(width: 0, height: 1)
-        mark.image = NSImage(systemSymbolName: "play.fill", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 7, weight: .bold))
+        updateMark()
         label.font = Theme.Typeface.reading(size: 10.5, weight: .semibold)
         addSubview(mark)
         addSubview(label)
         setAccessibilityElement(false)
         applyAppearance()
+    }
+
+    private func updateMark() {
+        let name = isStudio ? "wand.and.sparkles" : "play.fill"
+        let pointSize: CGFloat = isStudio ? 8.5 : 7
+        mark.image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: .bold))
+        invalidateIntrinsicContentSize()
+        needsLayout = true
     }
 
     @available(*, unavailable)
@@ -1216,7 +1381,9 @@ private final class DurationBadge: NSView {
     override func layout() {
         super.layout()
         let height = bounds.height
-        mark.frame = CGRect(x: 7, y: (height - 8) / 2, width: 7, height: 8)
+        let markWidth: CGFloat = isStudio ? 9 : 7
+        let markHeight: CGFloat = isStudio ? 10 : 8
+        mark.frame = CGRect(x: 7, y: (height - markHeight) / 2, width: markWidth, height: markHeight)
         let size = label.intrinsicContentSize
         label.frame = CGRect(x: labelX, y: ((height - size.height) / 2).rounded(), width: ceil(size.width), height: size.height)
         layer?.cornerRadius = height / 2

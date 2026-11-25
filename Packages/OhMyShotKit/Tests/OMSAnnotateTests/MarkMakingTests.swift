@@ -99,6 +99,21 @@ struct MarkMakingTests {
         #expect(session.document.items.count == 2)
     }
 
+    @Test func theRedactToolStaysInHandMarkAfterMark() throws {
+        #expect(!AnnotationTool.redact.isPutDownAfterMark)
+        #expect(AnnotationTool.rectangle.isPutDownAfterMark)
+        #expect(AnnotationTool.arrow.isPutDownAfterMark)
+        #expect(AnnotationTool.text.isPutDownAfterMark)
+        let (canvas, session, window, _) = try makeCanvas(tool: .redact)
+        defer { window.close() }
+        try press(canvas, in: window, from: CGPoint(x: 40, y: 40), to: CGPoint(x: 120, y: 100))
+        #expect(session.tool == .redact)
+        #expect(session.selection.count == 1)
+        try press(canvas, in: window, from: CGPoint(x: 200, y: 40), to: CGPoint(x: 280, y: 100))
+        #expect(session.tool == .redact)
+        #expect(session.document.items.count == 2)
+    }
+
     @Test func aClickAwayFromWrittenTextPutsTheTextToolDownInsteadOfStartingAnother() throws {
         let (canvas, session, window, _) = try makeCanvas(tool: .text)
         defer { window.close() }
@@ -121,5 +136,113 @@ struct MarkMakingTests {
         #expect(session.tool == .text)
         #expect(canvas.isEditingText)
         #expect(session.document.items.count == 1)
+    }
+
+    @Test func drawingToolCreatesNewMarkNearExistingMarkAndCommandGrabsExisting() throws {
+        let (canvas, session, window, _) = try makeCanvas(tool: .arrow)
+        defer { window.close() }
+        let existing = Annotation(shape: .rectangle(Box(rect: CGRect(x: 40, y: 40, width: 100, height: 80))), style: Style())
+        var document = session.document
+        document.items = [existing]
+        session.commit(document, actionName: "Setup")
+
+        // Pressing right on the existing rectangle's edge while holding `.arrow` starts a new arrow instead of dragging the rectangle.
+        try press(canvas, in: window, from: CGPoint(x: 40, y: 110), to: CGPoint(x: 200, y: 180))
+        #expect(session.document.items.count == 2)
+        #expect(session.document.item(existing.id) == existing)
+
+        // Holding ⌘ while holding `.rectangle` temporarily grabs and moves the existing rectangle instead of drawing a new mark.
+        session.tool = .rectangle
+        func cmdEvent(_ type: NSEvent.EventType, at point: CGPoint) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(
+                with: type, location: canvas.windowPoint(forDocument: point), modifierFlags: .command, timestamp: 0,
+                windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+            ))
+        }
+        canvas.mouseDown(with: try cmdEvent(.leftMouseDown, at: CGPoint(x: 90, y: 40)))
+        canvas.mouseDragged(with: try cmdEvent(.leftMouseDragged, at: CGPoint(x: 110, y: 50)))
+        canvas.mouseUp(with: try cmdEvent(.leftMouseUp, at: CGPoint(x: 110, y: 50)))
+        #expect(session.document.items.count == 2)
+        guard case .rectangle(let moved) = session.document.item(existing.id)?.shape else {
+            Issue.record("Expected rectangle")
+            return
+        }
+        #expect(moved.rect.origin == CGPoint(x: 60, y: 50))
+    }
+
+    @Test func lockedToolStaysActiveAcrossConsecutiveMarksUntilSwitched() throws {
+        let (canvas, session, window, _) = try makeCanvas(tool: .select)
+        defer { window.close() }
+        session.lockTool(.rectangle)
+        #expect(session.tool == .rectangle && session.isToolLocked)
+        try press(canvas, in: window, from: CGPoint(x: 20, y: 20), to: CGPoint(x: 80, y: 70))
+        #expect(session.tool == .rectangle && session.isToolLocked)
+        try press(canvas, in: window, from: CGPoint(x: 120, y: 20), to: CGPoint(x: 180, y: 70))
+        #expect(session.tool == .rectangle && session.isToolLocked)
+        #expect(session.document.items.count == 2)
+
+        // Switching tools clears the lock.
+        session.tool = .arrow
+        #expect(!session.isToolLocked)
+
+        // Locking a non-single-shot tool leaves `isToolLocked` false.
+        session.lockTool(.pen)
+        #expect(session.tool == .pen && !session.isToolLocked)
+    }
+
+    @Test func commandOneZoomsToActualSizeAndCommandReturnCommitsTextEditing() throws {
+        let (canvas, session, window, _) = try makeCanvas(pixels: CGSize(width: 1600, height: 800), scale: 2, tool: .text)
+        defer { window.close() }
+        #expect(canvas.zoom == 0.25)
+        window.makeFirstResponder(canvas)
+
+        // ⌘1 zooms to actual size (1 / scale == 0.5).
+        let cmd1 = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "1", charactersIgnoringModifiers: "1", isARepeat: false, keyCode: 18
+        ))
+        #expect(canvas.performKeyEquivalent(with: cmd1))
+        #expect(canvas.zoom == 0.5)
+
+        // Start editing a text mark; ⌘0 zooms while editing, and ⌘Return commits text editing cleanly.
+        try press(canvas, in: window, from: CGPoint(x: 100, y: 100))
+        #expect(canvas.isEditingText)
+        let textField = try field(in: canvas)
+        textField.insertText("Committed", replacementRange: NSRange(location: NSNotFound, length: 0))
+
+        let cmd0 = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "0", charactersIgnoringModifiers: "0", isARepeat: false, keyCode: 29
+        ))
+        #expect(canvas.performKeyEquivalent(with: cmd0))
+        #expect(canvas.zoom == 0.25)
+        #expect(canvas.isEditingText)
+
+        let cmdReturn = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .command, timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
+        ))
+        #expect(canvas.performKeyEquivalent(with: cmdReturn))
+        #expect(!canvas.isEditingText)
+        guard case .text(let block) = session.document.items.first?.shape else {
+            Issue.record("Expected committed text mark")
+            return
+        }
+        #expect(block.string == "Committed")
+
+        // Context menu displays standard macOS shortcut equivalents for selected mark actions.
+        let rightClick = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let menu = try #require(canvas.menu(for: rightClick))
+        let duplicate = try #require(menu.items.first { $0.action == #selector(AnnotationCanvasView.duplicateSelection(_:)) })
+        #expect(duplicate.keyEquivalent == "d" && duplicate.keyEquivalentModifierMask == .command)
+        let front = try #require(menu.items.first { $0.action == #selector(AnnotationCanvasView.bringToFront(_:)) })
+        #expect(front.keyEquivalent == "]" && front.keyEquivalentModifierMask == [.command, .shift])
+        let back = try #require(menu.items.first { $0.action == #selector(AnnotationCanvasView.sendToBack(_:)) })
+        #expect(back.keyEquivalent == "[" && back.keyEquivalentModifierMask == [.command, .shift])
+        let del = try #require(menu.items.first { $0.action == #selector(AnnotationCanvasView.delete(_:)) })
+        #expect(del.keyEquivalent == "\u{8}" && del.keyEquivalentModifierMask == [])
     }
 }

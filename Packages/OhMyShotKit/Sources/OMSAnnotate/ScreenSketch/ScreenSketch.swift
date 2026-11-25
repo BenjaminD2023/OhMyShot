@@ -15,22 +15,73 @@ import QuartzCore
 @MainActor
 public final class ScreenSketchController {
     public enum Tool: String, CaseIterable, Sendable {
-        case laser, pen, arrow, rectangle, ellipse, counter
+        case laser, pen, arrow, rectangle, ellipse, counter, highlighter, text, eraser
 
-        /// The editor's tool that draws the same mark, whose symbol and name the toolbar shows; the laser draws none.
+        /// The editor's tool that draws the same mark, whose symbol and name the toolbar shows; laser and eraser draw none.
         var mark: AnnotationTool? {
             switch self {
-            case .laser: nil
+            case .laser, .eraser: nil
             case .pen: .pen
             case .arrow: .arrow
             case .rectangle: .rectangle
             case .ellipse: .ellipse
             case .counter: .counter
+            case .highlighter: .highlighter
+            case .text: .text
             }
         }
 
-        var symbol: String { mark?.symbol ?? "cursorarrow.rays" }
-        var name: String { mark?.name ?? String(localized: "Laser Pointer", bundle: .module) }
+        var symbol: String {
+            switch self {
+            case .eraser: "eraser"
+            default: mark?.symbol ?? "cursorarrow.rays"
+            }
+        }
+
+        var name: String {
+            switch self {
+            case .eraser: String(localized: "Eraser", bundle: .module)
+            default: mark?.name ?? String(localized: "Laser Pointer", bundle: .module)
+            }
+        }
+    }
+
+    public enum LineWidth: String, CaseIterable, Sendable {
+        case thin
+        case medium
+        case thick
+
+        public var value: CGFloat {
+            switch self {
+            case .thin: 2.5
+            case .medium: 4.5
+            case .thick: 8.0
+            }
+        }
+
+        var fontSize: CGFloat {
+            switch self {
+            case .thin: 16
+            case .medium: 22
+            case .thick: 30
+            }
+        }
+
+        var dotDiameter: CGFloat {
+            switch self {
+            case .thin: 6
+            case .medium: 10
+            case .thick: 14
+            }
+        }
+
+        var name: String {
+            switch self {
+            case .thin: String(localized: "Thin", bundle: .module)
+            case .medium: String(localized: "Medium", bundle: .module)
+            case .thick: String(localized: "Thick", bundle: .module)
+            }
+        }
     }
 
     /// Whether the canvases are up.
@@ -40,13 +91,19 @@ public final class ScreenSketchController {
     /// Called once the canvases are on screen, and again when a display added later gets one: a recording under way
     /// takes them in.
     public var onCanvasesShown: (() -> Void)?
+    /// Optional callback invoked when the user clicks the Capture chip on the toolbar to screenshot live drawings.
+    public var onCapture: (() -> Void)? {
+        didSet { toolbar?.refreshAndResize() }
+    }
 
     public private(set) var tool: Tool = .laser
     public private(set) var color: RGBA = .red
+    public private(set) var lineWidth: LineWidth = .medium
     /// Whether the pointer and keyboard go to the apps underneath, the marks staying on screen.
     public private(set) var clicksThrough = false
-    public static let colors: [RGBA] = [.red, .yellow, .green, .blue, .white]
-    static let lineWidth: CGFloat = 4
+    public static let colors: [RGBA] = [.red, .yellow, .green, .blue, .white, .black]
+    /// Current stroke width in points.
+    var strokeWidth: CGFloat { lineWidth.value }
 
     /// Every display's marks, by display, at one moment.
     private typealias Snapshot = [CGDirectDisplayID: [Annotation]]
@@ -60,12 +117,14 @@ public final class ScreenSketchController {
     private let defaults: UserDefaults
     private static let toolKey = "sketch.tool"
     private static let colorKey = "sketch.color"
+    private static let lineWidthKey = "sketch.lineWidth"
 
     public init(defaults: UserDefaults = .standard) {
         self.defaults = defaults
         tool = defaults.string(forKey: Self.toolKey).flatMap(Tool.init(rawValue:)) ?? .laser
         let colorIndex = defaults.integer(forKey: Self.colorKey)
         color = Self.colors.indices.contains(colorIndex) ? Self.colors[colorIndex] : .red
+        lineWidth = defaults.string(forKey: Self.lineWidthKey).flatMap(LineWidth.init(rawValue:)) ?? .medium
     }
 
     /// The canvases' windows, which captures and recordings take in.
@@ -143,7 +202,16 @@ public final class ScreenSketchController {
 
     // MARK: Choices
 
+    func commitActiveText() {
+        for board in boards { board.view.commitTextEditing() }
+    }
+
+    var isEditingText: Bool {
+        boards.contains { $0.view.isEditingText }
+    }
+
     func choose(_ tool: Tool) {
+        commitActiveText()
         self.tool = tool
         defaults.set(tool.rawValue, forKey: Self.toolKey)
         if clicksThrough { setClicksThrough(false) }
@@ -156,16 +224,43 @@ public final class ScreenSketchController {
     func choose(_ color: RGBA) {
         self.color = color
         if let index = Self.colors.firstIndex(of: color) { defaults.set(index, forKey: Self.colorKey) }
+        for board in boards { board.view.refreshActiveTextStyle() }
         toolbar?.refresh()
     }
 
+    public func choose(_ lineWidth: LineWidth) {
+        self.lineWidth = lineWidth
+        defaults.set(lineWidth.rawValue, forKey: Self.lineWidthKey)
+        for board in boards { board.view.refreshActiveTextStyle() }
+        toolbar?.refresh()
+    }
+
+    public func cycleLineWidth() {
+        let all = LineWidth.allCases
+        let nextIndex = ((all.firstIndex(of: lineWidth) ?? 0) + 1) % all.count
+        choose(all[nextIndex])
+    }
+
+    public func stepLineWidth(up: Bool) {
+        let all = LineWidth.allCases
+        let index = all.firstIndex(of: lineWidth) ?? 1
+        let target = up ? min(index + 1, all.count - 1) : max(index - 1, 0)
+        choose(all[target])
+    }
+
     func setClicksThrough(_ on: Bool) {
+        if on { commitActiveText() }
         clicksThrough = on
         for board in boards { board.panel.ignoresMouseEvents = on }
         // Drawing again, the canvas under the pointer takes the keys back; clicking through, the app clicked takes them.
         if !on { board(at: NSEvent.mouseLocation)?.takeKeyboard() }
         toolbar?.refresh()
         VoiceOver.announce(on ? String(localized: "Clicks go through to the apps", bundle: .module) : String(localized: "Drawing", bundle: .module))
+    }
+
+    func capture() {
+        commitActiveText()
+        onCapture?()
     }
 
     // MARK: Marks
@@ -195,18 +290,21 @@ public final class ScreenSketchController {
     var hasMarks: Bool { boards.contains { !$0.view.marks.isEmpty } }
 
     func undo() {
+        commitActiveText()
         guard let last = history.popLast() else { return NSSound.beep() }
         future.append(snapshot)
         restore(last)
     }
 
     func redo() {
+        commitActiveText()
         guard let next = future.popLast() else { return NSSound.beep() }
         history.append(snapshot)
         restore(next)
     }
 
     func clear() {
+        commitActiveText()
         guard hasMarks else { return }
         willChange()
         for board in boards { board.view.marks = [] }
@@ -225,15 +323,19 @@ public final class ScreenSketchController {
         boards.first { NSMouseInRect(point, $0.panel.frame, false) }
     }
 
-    /// The keys a canvas answers while it has the keyboard: Escape stops, ⌘Z undoes, ⇧⌘Z redoes, Delete clears, 1 to 6
-    /// choose a tool (on the keypad too), T clicks through.
+    /// The keys a canvas answers while it has the keyboard: Escape cancels text editing or stops, ⌘Z undoes,
+    /// ⇧⌘Z redoes, Delete clears, 1 to 9 choose a tool (on the keypad too), [ / ] step line width, T clicks through.
     func handle(_ event: NSEvent) -> Bool {
         // Forward Delete and the keypad's digits carry these flags of their own; they are not modifiers held down.
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask).subtracting([.function, .numericPad, .capsLock])
         let key = event.charactersIgnoringModifiers?.lowercased()
         switch (event.keyCode, flags) {
         case (53, []):
-            stop()
+            if isEditingText {
+                for board in boards { board.view.cancelTextEditing() }
+            } else {
+                stop()
+            }
         case (51, []), (117, []):
             clear()
         case (_, .command) where key == "z":
@@ -242,6 +344,10 @@ public final class ScreenSketchController {
             redo()
         case (_, []) where key == "t":
             setClicksThrough(!clicksThrough)
+        case (_, []) where key == "[":
+            stepLineWidth(up: false)
+        case (_, []) where key == "]":
+            stepLineWidth(up: true)
         case (_, []) where key.flatMap(Int.init).map { (1...Tool.allCases.count).contains($0) } == true:
             choose(Tool.allCases[Int(key!)! - 1])
         default:
@@ -254,6 +360,15 @@ public final class ScreenSketchController {
     /// Every board's marks, for tests.
     var debugMarks: [[Annotation]] { boards.map(\.view.marks) }
     func debugDraw(on board: Int, from start: CGPoint, to end: CGPoint) { boards[board].view.debugDraw(from: start, to: end) }
+
+    /// Attaches an off-screen board for headless unit testing without putting a panel on screen.
+    @discardableResult
+    func debugAttachBoard(frame: CGRect = CGRect(x: 0, y: 0, width: 400, height: 300)) -> SketchView {
+        let board = SketchBoard(headlessFrame: frame, display: CGDirectDisplayID(boards.count + 1), controller: self)
+        boards.append(board)
+        isActive = true
+        return board.view
+    }
 
     /// The toolbar alone in a window behind the desktop picture, for scripted renders that show nothing: `tool` in hand,
     /// or none while clicking through, the ink at `colorIndex` chosen, and Undo lit when `canUndo`.
@@ -313,6 +428,16 @@ final class SketchBoard {
         panel.orderFrontRegardless()
     }
 
+    #if DEBUG
+    init(headlessFrame frame: CGRect, display: CGDirectDisplayID, controller: ScreenSketchController) {
+        self.display = display
+        panel = SketchPanel(frame: frame)
+        view = SketchView(frame: CGRect(origin: .zero, size: frame.size), controller: controller)
+        panel.contentView = view
+        panel.initialFirstResponder = view
+    }
+    #endif
+
     /// Over its display again, after the display moved or changed size.
     func fit(to screen: NSScreen) {
         guard panel.frame != screen.frame else { return }
@@ -327,6 +452,7 @@ final class SketchBoard {
     }
 
     func close() {
+        view.cancelTextEditing()
         view.stopFrames()
         panel.orderOut(nil)
         panel.close()
@@ -364,13 +490,15 @@ final class SketchPanel: NSPanel {
 /// Draws a display's marks, the mark being drawn, and the laser's trails, in points from the display's top-left
 /// corner. What changes as the pointer moves is redrawn where it was and where it is, not over the whole display.
 @MainActor
-final class SketchView: NSView {
+final class SketchView: NSView, NSTextFieldDelegate {
     var marks: [Annotation] = [] {
         didSet {
             needsDisplay = true
             controller?.marksDidChange()
         }
     }
+
+    var isEditingText: Bool { activeTextField != nil }
 
     private weak var controller: ScreenSketchController?
     private var drawing: Annotation? {
@@ -381,6 +509,10 @@ final class SketchView: NSView {
     }
     private var start: CGPoint?
     private var penPoints: [CGPoint] = []
+    private var hasErasedInStroke = false
+    private var lastErasePoint: CGPoint?
+    private(set) var activeTextField: NSTextField?
+    private var activeTextOrigin: CGPoint?
     private var trails: [(trail: LaserTrail, color: RGBA)] = []
     /// The trails' outlines as the last frame found them, and the room they take with their glow: the next frame
     /// redraws only there and where they have gone.
@@ -396,7 +528,7 @@ final class SketchView: NSView {
         setAccessibilityElement(true)
         setAccessibilityRole(.layoutArea)
         setAccessibilityLabel(String(localized: "Drawing Canvas", bundle: .module))
-        setAccessibilityHelp(String(localized: "Draw with the pointer. Press 1 to 6 to choose a tool, T to click through, Delete to clear, Command-Z to undo, or Escape to stop.", bundle: .module))
+        setAccessibilityHelp(String(localized: "Draw with the pointer. Press 1 to 9 to choose a tool, [ or ] to change line width, T to click through, Delete to clear, Command-Z to undo, or Escape to stop.", bundle: .module))
     }
 
     @available(*, unavailable)
@@ -432,9 +564,13 @@ final class SketchView: NSView {
 
     // MARK: Pointer
 
-    /// The arrow for the laser, which points at things; a crosshair for every tool that draws a mark.
+    /// The arrow for the laser, I-beam for text, and a crosshair for every other drawing or erasing tool.
     static func cursor(for tool: ScreenSketchController.Tool) -> NSCursor {
-        tool == .laser ? .arrow : .crosshair
+        switch tool {
+        case .laser: .arrow
+        case .text: .iBeam
+        case .pen, .arrow, .rectangle, .ellipse, .counter, .highlighter, .eraser: .crosshair
+        }
     }
 
     override func updateTrackingAreas() {
@@ -454,23 +590,41 @@ final class SketchView: NSView {
     override func mouseDown(with event: NSEvent) {
         guard let controller else { return }
         window?.makeKey()
-        Self.cursor(for: controller.tool).set()
         let point = convert(event.locationInWindow, from: nil)
-        let style = Style(color: controller.color, lineWidth: ScreenSketchController.lineWidth, shadow: true)
+        if activeTextField != nil {
+            let hadText = !(activeTextField?.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ?? true)
+            commitTextEditing()
+            if controller.tool == .text && hadText { return }
+        }
+        Self.cursor(for: controller.tool).set()
+        let width = controller.strokeWidth
+        let style = Style(color: controller.color, lineWidth: width, shadow: true)
         switch controller.tool {
         case .laser:
-            var trail = LaserTrail(width: ScreenSketchController.lineWidth * 2.5)
+            var trail = LaserTrail(width: width * 2.5)
             trail.add(point, at: CACurrentMediaTime())
             trails.append((trail, controller.color))
             startFrames()
         case .pen:
             penPoints = [point]
             drawing = Annotation(shape: .pen(Stroke(points: penPoints)), style: style)
+        case .highlighter:
+            penPoints = [point]
+            drawing = Annotation(
+                shape: .highlighter(Stroke(points: penPoints)),
+                style: Style(color: controller.color.withAlpha(0.38), lineWidth: width * 3.5, shadow: false)
+            )
         case .arrow, .rectangle, .ellipse:
             start = point
         case .counter:
             controller.willChange()
             marks.append(Annotation(shape: .counter(Counter(center: point, value: controller.nextCounterValue())), style: style))
+        case .text:
+            beginTextEditing(at: point)
+        case .eraser:
+            hasErasedInStroke = false
+            lastErasePoint = nil
+            erase(at: point)
         }
     }
 
@@ -478,6 +632,7 @@ final class SketchView: NSView {
         guard let controller else { return }
         let point = convert(event.locationInWindow, from: nil)
         let constrained = event.modifierFlags.contains(.shift)
+        let width = controller.strokeWidth
         switch controller.tool {
         case .laser:
             guard !trails.isEmpty else { return }
@@ -485,11 +640,20 @@ final class SketchView: NSView {
         case .pen:
             guard !penPoints.isEmpty else { return }
             penPoints.append(point)
-            drawing = Annotation(shape: .pen(Stroke(points: penPoints)), style: Style(color: controller.color, lineWidth: ScreenSketchController.lineWidth, shadow: true))
+            drawing = Annotation(shape: .pen(Stroke(points: penPoints)), style: Style(color: controller.color, lineWidth: width, shadow: true))
+        case .highlighter:
+            guard !penPoints.isEmpty else { return }
+            penPoints.append(point)
+            drawing = Annotation(
+                shape: .highlighter(Stroke(points: penPoints)),
+                style: Style(color: controller.color.withAlpha(0.38), lineWidth: width * 3.5, shadow: false)
+            )
         case .arrow, .rectangle, .ellipse:
             guard let start else { return }
-            drawing = Self.shape(controller.tool, from: start, to: point, constrained: constrained, color: controller.color)
-        case .counter:
+            drawing = Self.shape(controller.tool, from: start, to: point, constrained: constrained, color: controller.color, lineWidth: width)
+        case .eraser:
+            erase(at: point)
+        case .counter, .text:
             break
         }
     }
@@ -500,10 +664,17 @@ final class SketchView: NSView {
             drawing = nil
             start = nil
             penPoints = []
+            hasErasedInStroke = false
+            lastErasePoint = nil
         }
-        // A laser's trail fades by itself; anything else drawn is kept, unless it was only a click.
-        guard controller.tool != .laser, controller.tool != .counter, let drawing else { return }
-        if case .pen = drawing.shape, penPoints.count < 2 { return }
+        // A laser's trail fades by itself; eraser, counter, and text commit on their own events.
+        guard controller.tool != .laser, controller.tool != .counter, controller.tool != .text, controller.tool != .eraser, let drawing else { return }
+        switch drawing.shape {
+        case .pen, .highlighter:
+            if penPoints.count < 2 { return }
+        default:
+            break
+        }
         controller.willChange()
         marks.append(drawing)
     }
@@ -512,16 +683,139 @@ final class SketchView: NSView {
         if controller?.handle(event) != true { super.keyDown(with: event) }
     }
 
-    static func shape(_ tool: ScreenSketchController.Tool, from start: CGPoint, to end: CGPoint, constrained: Bool, color: RGBA) -> Annotation? {
+    static func shape(
+        _ tool: ScreenSketchController.Tool, from start: CGPoint, to end: CGPoint,
+        constrained: Bool, color: RGBA, lineWidth: CGFloat = ScreenSketchController.LineWidth.medium.value
+    ) -> Annotation? {
         let annotationTool: AnnotationTool = switch tool {
         case .arrow: .arrow
         case .rectangle: .rectangle
         case .ellipse: .ellipse
-        case .laser, .pen, .counter: .select
+        case .laser, .pen, .counter, .highlighter, .text, .eraser: .select
         }
         guard hypot(end.x - start.x, end.y - start.y) >= 3 else { return nil }
-        let settings = ToolSettings(color: color, lineWidth: ScreenSketchController.lineWidth, shadow: true, cornerRadius: 6)
+        let settings = ToolSettings(color: color, lineWidth: lineWidth, shadow: true, cornerRadius: 6)
         return annotationTool.mark(from: start, to: end, constrained: constrained, settings: settings)
+    }
+
+    // MARK: Inline Text
+
+    func beginTextEditing(at point: CGPoint) {
+        guard controller != nil else { return }
+        cancelTextEditing()
+        let field = NSTextField()
+        field.isBordered = false
+        field.isBezeled = false
+        field.drawsBackground = false
+        field.focusRingType = .none
+        field.isEditable = true
+        field.isSelectable = true
+        field.wantsLayer = true
+        field.delegate = self
+        field.placeholderString = String(localized: "Type text…", bundle: .module)
+        activeTextField = field
+        activeTextOrigin = point
+        addSubview(field)
+        refreshActiveTextStyle()
+        window?.makeKey()
+        window?.makeFirstResponder(field)
+    }
+
+    func refreshActiveTextStyle() {
+        guard let controller, let field = activeTextField else { return }
+        let fontSize = controller.lineWidth.fontSize
+        let font = TextLayout.font(pointSize: fontSize)
+        field.font = font
+        field.textColor = controller.color.prefersDarkInk ? NSColor(white: 0, alpha: 0.88) : .white
+        field.layer?.backgroundColor = controller.color.cgColor
+        field.layer?.cornerRadius = fontSize * 0.32
+        field.layer?.cornerCurve = .continuous
+        resizeActiveTextField()
+    }
+
+    private func resizeActiveTextField() {
+        guard let controller, let field = activeTextField, let origin = activeTextOrigin else { return }
+        let fontSize = controller.lineWidth.fontSize
+        let sample = field.stringValue.isEmpty ? (field.placeholderString ?? "M") : field.stringValue
+        let font = TextLayout.font(pointSize: fontSize)
+        let measured = (sample as NSString).size(withAttributes: [.font: font])
+        let padX = (fontSize * 0.4).rounded()
+        let padY = (fontSize * 0.2).rounded()
+        let width = min(max(ceil(measured.width) + padX * 2 + 12, 84), max(bounds.width - origin.x - 16, 84))
+        let height = ceil(max(measured.height, fontSize * TextLayout.lineSpacing)) + padY * 2
+        let x = min(max(origin.x - padX, 8), max(8, bounds.width - width - 8))
+        let y = min(max(origin.y - height / 2, 8), max(8, bounds.height - height - 8))
+        field.frame = CGRect(x: x.rounded(), y: y.rounded(), width: width.rounded(), height: height.rounded())
+    }
+
+    func controlTextDidChange(_ obj: Notification) {
+        resizeActiveTextField()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        if commandSelector == #selector(NSResponder.insertNewline(_:)) {
+            commitTextEditing()
+            return true
+        }
+        if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
+            cancelTextEditing()
+            return true
+        }
+        return false
+    }
+
+    func commitTextEditing() {
+        guard let field = activeTextField else { return }
+        let text = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let origin = field.frame.origin
+        cancelTextEditing()
+        guard let controller, !text.isEmpty else { return }
+        controller.willChange()
+        let block = TextBlock(origin: origin, string: text, fontSize: controller.lineWidth.fontSize, look: .label)
+        let style = Style(color: controller.color, lineWidth: controller.strokeWidth, shadow: true)
+        marks.append(Annotation(shape: .text(block), style: style))
+    }
+
+    func cancelTextEditing() {
+        guard let field = activeTextField else { return }
+        activeTextField = nil
+        activeTextOrigin = nil
+        field.delegate = nil
+        field.removeFromSuperview()
+        if window?.firstResponder == nil || window?.firstResponder === window {
+            window?.makeFirstResponder(self)
+        }
+    }
+
+    // MARK: Eraser
+
+    /// Erases any marks intersecting the path from the previous erase sample to `point`, recording at most
+    /// one undo snapshot per erase stroke.
+    @discardableResult
+    func erase(at point: CGPoint) -> Bool {
+        guard let controller else { return false }
+        let tolerance = max(controller.strokeWidth * 2, 10)
+        let from = lastErasePoint ?? point
+        lastErasePoint = point
+        let distance = hypot(point.x - from.x, point.y - from.y)
+        let steps = max(1, Int(ceil(distance / 6)))
+        var hitIDs = Set<Annotation.ID>()
+        for step in 0...steps {
+            let t = CGFloat(step) / CGFloat(steps)
+            let sample = CGPoint(x: from.x + (point.x - from.x) * t, y: from.y + (point.y - from.y) * t)
+            for mark in marks where !hitIDs.contains(mark.id) {
+                if mark.contains(sample, tolerance: tolerance, scale: 1, interior: true) {
+                    hitIDs.insert(mark.id)
+                }
+            }
+        }
+        guard !hitIDs.isEmpty else { return false }
+        if !hasErasedInStroke {
+            controller.willChange()
+            hasErasedInStroke = true
+        }
+        marks.removeAll { hitIDs.contains($0.id) }
+        return true
     }
 
     // MARK: Frames
@@ -555,9 +849,31 @@ final class SketchView: NSView {
 
     #if DEBUG
     func debugDraw(from start: CGPoint, to end: CGPoint) {
-        guard let controller, let mark = Self.shape(controller.tool, from: start, to: end, constrained: false, color: controller.color) else { return }
-        controller.willChange()
-        marks.append(mark)
+        guard let controller else { return }
+        switch controller.tool {
+        case .highlighter:
+            controller.willChange()
+            marks.append(Annotation(
+                shape: .highlighter(Stroke(points: [start, end])),
+                style: Style(color: controller.color.withAlpha(0.38), lineWidth: controller.strokeWidth * 3.5, shadow: false)
+            ))
+        case .pen:
+            controller.willChange()
+            marks.append(Annotation(
+                shape: .pen(Stroke(points: [start, end])),
+                style: Style(color: controller.color, lineWidth: controller.strokeWidth, shadow: true)
+            ))
+        case .eraser:
+            hasErasedInStroke = false
+            lastErasePoint = start
+            _ = erase(at: end)
+            hasErasedInStroke = false
+            lastErasePoint = nil
+        default:
+            guard let mark = Self.shape(controller.tool, from: start, to: end, constrained: false, color: controller.color, lineWidth: controller.strokeWidth) else { return }
+            controller.willChange()
+            marks.append(mark)
+        }
     }
     #endif
 }
@@ -622,17 +938,28 @@ final class SketchToolbar: NSPanel {
     func refresh() {
         bar.refresh()
     }
+
+    func refreshAndResize() {
+        bar.refresh()
+        let room = SketchToolbarView.shadowRoom
+        let target = CGSize(width: bar.fittingSize.width + room * 2, height: bar.fittingSize.height + room * 2)
+        guard frame.size != target else { return }
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        setFrame(CGRect(x: (center.x - target.width / 2).rounded(), y: (center.y - target.height / 2).rounded(), width: target.width, height: target.height), display: true)
+        bar.frame = CGRect(origin: .zero, size: frame.size)
+        bar.needsLayout = true
+    }
 }
 
-/// The toolbar's capsule, the in-place toolbar's sibling: the tools, the inks, Undo, Redo, and Clear, then Click
-/// Through and Done, in 30 pt round chips 6 pt inside a 42 pt capsule, groups parted by hairlines. Glass over an
-/// opaque window-colored backing, a solid capsule with Reduce Transparency. The tool in hand is marked as the editor
-/// marks it, its symbol in the accent on the selected fill, and Click Through the same while it is on; the chosen ink is
-/// ringed in the label ink, as the style capsule rings it. Every chip names itself and its key in a hover tag.
+/// The toolbar's capsule, the in-place toolbar's sibling: the tools, the inks, line width, Undo, Redo, and Clear,
+/// then Click Through, optional Capture, and Done, in 30 pt round chips 6 pt inside a 42 pt capsule, groups parted by
+/// hairlines. Glass over an opaque window-colored backing, a solid capsule with Reduce Transparency. The tool in hand
+/// is marked as the editor marks it, its symbol in the accent on the selected fill, and Click Through carries an active
+/// ring while on; the chosen ink is ringed in the label ink, as the style capsule rings it.
 @MainActor
 final class SketchToolbarView: NSView {
     enum Action {
-        case undo, redo, clear, clickThrough, done
+        case lineWidth, undo, redo, clear, clickThrough, capture, done
     }
 
     /// Room around the capsule for its shadow.
@@ -666,6 +993,7 @@ final class SketchToolbarView: NSView {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 2
+        stack.detachesHiddenViews = true
         stack.edgeInsets = NSEdgeInsets(top: Self.inset, left: Self.inset, bottom: Self.inset, right: Self.inset)
         for (index, tool) in ScreenSketchController.Tool.allCases.enumerated() {
             let chip = makeChip(symbol: tool.symbol, name: tool.name, key: "\(index + 1)")
@@ -680,6 +1008,10 @@ final class SketchToolbarView: NSView {
             stack.addArrangedSubview(chip)
         }
         addDivider()
+        let widthChip = makeLineWidthChip(controller.lineWidth)
+        actionChips[.lineWidth] = widthChip
+        stack.addArrangedSubview(widthChip)
+        addDivider()
         add(.undo, symbol: "arrow.uturn.backward", name: String(localized: "Undo", bundle: .module), help: String(localized: "Undo (⌘Z)", bundle: .module))
         add(.redo, symbol: "arrow.uturn.forward", name: String(localized: "Redo", bundle: .module), help: String(localized: "Redo (⇧⌘Z)", bundle: .module))
         let clear = String(localized: "Clear", bundle: .module)
@@ -688,6 +1020,8 @@ final class SketchToolbarView: NSView {
         let through = String(localized: "Click Through", bundle: .module)
         add(.clickThrough, symbol: "cursorarrow.click.2", name: through, help: "\(through) (T)")
         actionChips[.clickThrough]?.setButtonType(.onOff)
+        add(.capture, symbol: "camera", name: String(localized: "Capture", bundle: .module), help: String(localized: "Capture screen with drawings", bundle: .module))
+        actionChips[.capture]?.isHidden = controller.onCapture == nil
         let done = String(localized: "Done", bundle: .module)
         add(.done, symbol: "xmark", name: done, help: "\(done) (Esc)")
         // The stack's own size from the start: laid out at 0 × 0 before its first layout, it could not hold its
@@ -798,12 +1132,14 @@ final class SketchToolbarView: NSView {
         guard let controller else { return }
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
         let dark = effectiveAppearance.isDark
+        var accent = NSColor.controlAccentColor.cgColor
         effectiveAppearance.performAsCurrentDrawingAppearance {
             backing.layer?.backgroundColor = NSColor.windowBackgroundColor.cgColor
             rim.lineWidth = contrast ? 1 : 0.5
             rim.strokeColor = contrast
                 ? (dark ? CGColor(gray: 1, alpha: 0.5) : CGColor(gray: 0, alpha: 0.35))
                 : NSColor.separatorColor.cgColor
+            accent = NSColor.controlAccentColor.cgColor
         }
         let fills = (on: Theme.ChipFill.selectedColor(dark: dark, contrast: contrast), hover: Theme.ChipFill.hoverColor(dark: dark, contrast: contrast))
         for (tool, chip) in toolChips { paint(chip, fills: fills, on: tool == controller.tool && !controller.clicksThrough) }
@@ -813,10 +1149,30 @@ final class SketchToolbarView: NSView {
             chip.image = StyleCapsule.dot(ink, selected: chosen)
             chip.setAccessibilityValue(chosen ? String(localized: "Selected", bundle: .module) : nil)
         }
+        if let widthChip = actionChips[.lineWidth] {
+            widthChip.image = Self.lineWidthDot(diameter: controller.lineWidth.dotDiameter)
+            widthChip.toolTip = "\(controller.lineWidth.name) ([ / ])"
+            widthChip.setAccessibilityValue(controller.lineWidth.name)
+            widthChip.menu = makeLineWidthMenu(selected: controller.lineWidth)
+            paint(widthChip, fills: fills)
+        }
         paint(actionChips[.undo], fills: fills, enabled: controller.canUndo)
         paint(actionChips[.redo], fills: fills, enabled: controller.canRedo)
         paint(actionChips[.clear], fills: fills, enabled: controller.hasMarks)
-        paint(actionChips[.clickThrough], fills: fills, on: controller.clicksThrough)
+        if let throughChip = actionChips[.clickThrough] {
+            paint(throughChip, fills: fills, on: controller.clicksThrough)
+            throughChip.layer?.borderWidth = controller.clicksThrough ? (contrast ? 2 : 1.5) : 0
+            throughChip.layer?.borderColor = controller.clicksThrough ? accent : nil
+            let throughTitle = String(localized: "Click Through", bundle: .module)
+            throughChip.toolTip = controller.clicksThrough
+                ? String(localized: "Click here or press T to resume drawing", bundle: .module)
+                : "\(throughTitle) (T)"
+            throughChip.setAccessibilityValue(controller.clicksThrough ? String(localized: "On", bundle: .module) : String(localized: "Off", bundle: .module))
+        }
+        if let captureChip = actionChips[.capture] {
+            captureChip.isHidden = controller.onCapture == nil
+            paint(captureChip, fills: fills)
+        }
         paint(actionChips[.done], fills: fills)
     }
 
@@ -867,6 +1223,41 @@ final class SketchToolbarView: NSView {
         return chip
     }
 
+    private func makeLineWidthChip(_ lineWidth: ScreenSketchController.LineWidth) -> RailChip {
+        let chip = RailChip(image: Self.lineWidthDot(diameter: lineWidth.dotDiameter), target: self, action: #selector(clicked(_:)))
+        chip.setButtonType(.momentaryChange)
+        configure(chip, side: Self.chip, name: String(localized: "Line Width", bundle: .module), help: "\(lineWidth.name) ([ / ])")
+        chip.menu = makeLineWidthMenu(selected: lineWidth)
+        return chip
+    }
+
+    private func makeLineWidthMenu(selected: ScreenSketchController.LineWidth) -> NSMenu {
+        let menu = NSMenu()
+        for width in ScreenSketchController.LineWidth.allCases {
+            let item = NSMenuItem(title: width.name, action: #selector(lineWidthChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = width.rawValue
+            item.state = width == selected ? .on : .off
+            menu.addItem(item)
+        }
+        return menu
+    }
+
+    @objc private func lineWidthChosen(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String, let width = ScreenSketchController.LineWidth(rawValue: raw) else { return }
+        controller?.choose(width)
+    }
+
+    private static func lineWidthDot(diameter: CGFloat) -> NSImage {
+        let image = NSImage(size: CGSize(width: 18, height: 18), flipped: true) { rect in
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: CGRect(x: rect.midX - diameter / 2, y: rect.midY - diameter / 2, width: diameter, height: diameter)).fill()
+            return true
+        }
+        image.isTemplate = true
+        return image
+    }
+
     private func configure(_ chip: RailChip, side: CGFloat, name: String, help: String) {
         chip.answersInInactiveWindow = true
         chip.onHover = { [weak self] _ in self?.refresh() }
@@ -890,10 +1281,12 @@ final class SketchToolbarView: NSView {
             controller.choose(ScreenSketchController.colors[index])
         } else if let action = actionChips.first(where: { $0.value === sender })?.key {
             switch action {
+            case .lineWidth: controller.cycleLineWidth()
             case .undo: controller.undo()
             case .redo: controller.redo()
             case .clear: controller.clear()
             case .clickThrough: controller.setClicksThrough(!controller.clicksThrough)
+            case .capture: controller.capture()
             case .done: controller.stop()
             }
         }
@@ -910,6 +1303,14 @@ final class SketchToolbarView: NSView {
             actionChips[.undo]?.isEnabled == true, actionChips[.redo]?.isEnabled == true, actionChips[.clear]?.isEnabled == true,
             actionChips[.clickThrough]?.state == .on
         )
+    }
+
+    var debugHasCaptureChip: Bool {
+        !(actionChips[.capture]?.isHidden ?? true)
+    }
+
+    var debugClickThroughTooltip: String? {
+        actionChips[.clickThrough]?.toolTip
     }
     #endif
 }

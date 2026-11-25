@@ -13,6 +13,8 @@ struct SharingSettingsView: View {
     let actions: SettingsDependencies.UploadRecordActions
     @State private var editing: UploadDestinationDraft?
     @State private var removing: UploadDestination?
+    @State private var showsAllRecords = false
+    @State private var confirmingForgetAll = false
     @State private var importProblem: String?
     @State private var importNotes: ImportNotes?
     #if DEBUG
@@ -23,6 +25,7 @@ struct SharingSettingsView: View {
         let id = UUID()
         let name: String
         let notes: [String]
+        let destination: UploadDestination
     }
 
     /// How many finished uploads the list shows; the rest wait behind them.
@@ -60,22 +63,31 @@ struct SharingSettingsView: View {
                 SettingsRow(String(localized: "Recent uploads", bundle: .module), help: [
                     HelpTopic(String(localized: "Recent uploads", bundle: .module), Text("Forgetting an upload only takes it off this list. The file stays where it is, and its link keeps working.", bundle: .module)),
                 ]) {
+                    let visibleRecords = showsAllRecords ? records.records : Array(records.records.prefix(Self.recentLimit))
                     VStack(alignment: .leading, spacing: 8) {
-                        VStack(spacing: 0) {
-                            ForEach(Array(records.records.prefix(Self.recentLimit).enumerated()), id: \.element.id) { index, record in
+                        LazyVStack(spacing: 0) {
+                            ForEach(Array(visibleRecords.enumerated()), id: \.element.id) { index, record in
                                 if index > 0 { Divider() }
                                 RecordRow(record: record, actions: actions)
                             }
                         }
                         .frame(minWidth: 280, maxWidth: 360)
                         .settingsWell()
-                        HStack(spacing: 8) {
+                        HStack(spacing: 12) {
                             if records.records.count > Self.recentLimit {
-                                Text("\(records.records.count - Self.recentLimit) older", bundle: .module)
-                                    .font(.callout)
-                                    .foregroundStyle(.secondary)
+                                Button {
+                                    showsAllRecords.toggle()
+                                } label: {
+                                    if showsAllRecords {
+                                        Text("Show Fewer", bundle: .module)
+                                    } else {
+                                        Text("Show All (\(records.records.count))", bundle: .module)
+                                    }
+                                }
+                                .buttonStyle(.link)
+                                .font(.callout)
                             }
-                            Button(action: actions.forgetAll) { Text("Forget All", bundle: .module) }
+                            Button { confirmingForgetAll = true } label: { Text("Forget All", bundle: .module) }
                                 .buttonStyle(.link)
                                 .font(.callout)
                         }
@@ -116,8 +128,30 @@ struct SharingSettingsView: View {
             } label: {
                 Text("Remove", bundle: .module)
             }
-        } message: { _ in
-            Text("Its saved keys and passwords are deleted from the Keychain. Files already uploaded stay where they are.", bundle: .module)
+        } message: { destination in
+            if destination.id == destinations.defaultDestinationID {
+                if let next = destinations.destinations.first(where: { $0.id != destination.id }) {
+                    Text("This is your default upload destination. “\(next.name)” will become the default until you choose another; automatic uploads after capture stop whenever no default destination is set. Its saved keys and passwords are deleted from the Keychain, and files already uploaded stay where they are.", bundle: .module)
+                } else {
+                    Text("This is your default upload destination. Automatic uploads after capture will stop until another destination is chosen. Its saved keys and passwords are deleted from the Keychain, and files already uploaded stay where they are.", bundle: .module)
+                }
+            } else {
+                Text("Its saved keys and passwords are deleted from the Keychain. Files already uploaded stay where they are.", bundle: .module)
+            }
+        }
+        .confirmationDialog(
+            Text("Forget all upload history?", bundle: .module),
+            isPresented: $confirmingForgetAll,
+            titleVisibility: .visible
+        ) {
+            Button(role: .destructive) {
+                showsAllRecords = false
+                actions.forgetAll()
+            } label: {
+                Text("Forget All", bundle: .module)
+            }
+        } message: {
+            Text("This removes all saved links and remote deletion records from OhMyShot. Uploaded files stay on your storage, and you won’t be able to delete them from here.", bundle: .module)
         }
         .alert(
             Text("The uploader couldn’t be imported", bundle: .module),
@@ -131,7 +165,11 @@ struct SharingSettingsView: View {
             Text("Imported “\(importNotes?.name ?? "")”", bundle: .module),
             isPresented: Binding(get: { importNotes != nil }, set: { if !$0 { importNotes = nil } })
         ) {
-            Button { importNotes = nil } label: { Text("OK", bundle: .module) }
+            Button {
+                let importedDestination = importNotes?.destination
+                importNotes = nil
+                if let importedDestination { edit(importedDestination) }
+            } label: { Text("OK", bundle: .module) }
         } message: {
             Text((importNotes?.notes ?? []).joined(separator: "\n"))
         }
@@ -140,14 +178,19 @@ struct SharingSettingsView: View {
     // MARK: List
 
     private var list: some View {
-        VStack(spacing: 0) {
+        let count = destinations.destinations.count
+        return VStack(spacing: 0) {
             ForEach(Array(destinations.destinations.enumerated()), id: \.element.id) { index, destination in
                 if index > 0 { Divider() }
                 DestinationRow(
                     destination: destination,
                     isDefault: destination.id == destinations.defaultDestinationID,
+                    canMoveUp: index > 0,
+                    canMoveDown: index + 1 < count,
                     edit: { edit(destination) },
                     makeDefault: { destinations.setDefault(id: destination.id) },
+                    moveUp: { destinations.move(id: destination.id, direction: .up) },
+                    moveDown: { destinations.move(id: destination.id, direction: .down) },
                     remove: { removing = destination }
                 )
             }
@@ -185,7 +228,11 @@ struct SharingSettingsView: View {
         do {
             let imported = try ShareXImporter.importUploader(fromFileAt: url)
             try destinations.add(imported)
-            if !imported.notes.isEmpty { importNotes = ImportNotes(name: imported.destination.name, notes: imported.notes) }
+            if !imported.notes.isEmpty {
+                importNotes = ImportNotes(name: imported.destination.name, notes: imported.notes, destination: imported.destination)
+            } else {
+                edit(imported.destination)
+            }
         } catch {
             importProblem = error.localizedDescription
         }
@@ -243,8 +290,12 @@ private struct RecordRow: View {
 private struct DestinationRow: View {
     let destination: UploadDestination
     let isDefault: Bool
+    let canMoveUp: Bool
+    let canMoveDown: Bool
     let edit: () -> Void
     let makeDefault: () -> Void
+    let moveUp: () -> Void
+    let moveDown: () -> Void
     let remove: () -> Void
 
     var body: some View {
@@ -278,16 +329,33 @@ private struct DestinationRow: View {
             Button(action: edit) { Text("Edit…", bundle: .module) }
                 .controlSize(.small)
             SettingsMoreMenu {
-                Button(action: makeDefault) { Text("Make Default", bundle: .module) }
-                    .disabled(isDefault)
-                Divider()
-                Button(role: .destructive, action: remove) { Text("Remove…", bundle: .module) }
+                menuItems
             }
         }
         .padding(.horizontal, 10)
         .padding(.vertical, 8)
         .contentShape(Rectangle())
         .onTapGesture(count: 2, perform: edit)
+        .contextMenu {
+            Button(action: edit) { Text("Edit…", bundle: .module) }
+            Divider()
+            menuItems
+        }
+    }
+
+    @ViewBuilder
+    private var menuItems: some View {
+        Button(action: makeDefault) { Text("Make Default", bundle: .module) }
+            .disabled(isDefault)
+        if canMoveUp || canMoveDown {
+            Divider()
+            Button(action: moveUp) { Text("Move Up", bundle: .module) }
+                .disabled(!canMoveUp)
+            Button(action: moveDown) { Text("Move Down", bundle: .module) }
+                .disabled(!canMoveDown)
+        }
+        Divider()
+        Button(role: .destructive, action: remove) { Text("Remove…", bundle: .module) }
     }
 
     private var symbol: String {

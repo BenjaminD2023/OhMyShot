@@ -11,6 +11,8 @@ public struct HistoryActions {
     /// Puts several captures' files on the clipboard, as Finder's Copy does with a selection.
     public var copyFiles: ([HistoryItem]) -> Void = { _ in }
     public var save: (HistoryItem) -> Void
+    /// Asks where and how to save a copy of the capture.
+    public var saveAs: (HistoryItem) -> Void = { _ in }
     public var open: (HistoryItem) -> Void
     /// Opens the capture in the annotation editor, or a recording in the recording window.
     public var annotate: (HistoryItem) -> Void
@@ -19,6 +21,8 @@ public struct HistoryActions {
     public var recognizeText: (HistoryItem) -> Void
     /// Reads the text in a screenshot and copies it (`TextCopier`).
     public var copyText: (HistoryItem) async -> TextCopy = { _ in .noText }
+    /// Opens the capture in the OCR panel with translation enabled.
+    public var translate: ((HistoryItem) -> Void)?
     /// Keeps the capture on screen as a pin.
     public var pin: (HistoryItem) -> Void
     /// Prints a screenshot through the print panel, as a sheet on the window.
@@ -87,10 +91,17 @@ public struct HistoryActions {
 public final class HistoryWindowController: NSWindowController, NSWindowDelegate {
     public var onClose: (() -> Void)?
 
+    /// Optional direct hook to translate a screenshot from Capture History (overrides `HistoryActions.translate`).
+    public var onTranslate: ((HistoryItem) -> Void)? {
+        get { model.onTranslate }
+        set { model.onTranslate = newValue }
+    }
+
     private let model: HistoryModel
     private let textReader: HistoryTextReader?
     private var windowLease: ActiveResources.Lease?
     private var readingShown: Task<Void, Never>?
+    private var terminateObserver: (any NSObjectProtocol)?
 
     /// - Parameters:
     ///   - retentionPreview: how many captures a retention would delete now, including how many favorites,
@@ -115,6 +126,16 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
         window.isReleasedWhenClosed = false
         super.init(window: window)
         model.window = window
+        model.onRetryIndexing = { [weak self] in
+            self?.textReader?.readNow(retryingFailed: true)
+        }
+        terminateObserver = NotificationCenter.default.addObserver(
+            forName: NSApplication.willTerminateNotification, object: nil, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated {
+                self?.model.commitPendingTrash()
+            }
+        }
         let content = NSHostingController(rootView: HistoryView(model: model))
         // The SwiftUI toolbar becomes the window's toolbar; the view sets only the minimum size.
         content.sceneBridgingOptions = [.toolbars]
@@ -123,6 +144,10 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
         window.setContentSize(CGSize(width: 920, height: 640))
         window.setFrameAutosaveName("CaptureHistory")
         window.delegate = self
+    }
+
+    isolated deinit {
+        if let terminateObserver { NotificationCenter.default.removeObserver(terminateObserver) }
     }
 
     @available(*, unavailable)
@@ -165,12 +190,21 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
         model.loadText(of: [id])
     }
 
-    /// While captures are being read, a search says how many are left.
+    /// While captures are being read, the floating indexing bar shows progress, and checks for failures when a pass ends.
     private func showReading() {
         guard readingShown == nil, let textReader else { return }
         readingShown = Task { [weak self] in
+            var wasReading = false
             for await count in Observations({ textReader.reading }) {
-                self?.model.reading = count
+                guard let self else { break }
+                self.model.reading = count
+                if count > 0 {
+                    wasReading = true
+                    self.model.failedIndexingCount = 0
+                } else if wasReading {
+                    wasReading = false
+                    self.model.refreshFailedIndexingCount()
+                }
             }
         }
     }
@@ -203,6 +237,10 @@ public final class HistoryWindowController: NSWindowController, NSWindowDelegate
         // with the views, for left to SwiftUI they stayed a minute or more in one close of three. The window closes
         // at once, as it would show empty while it faded.
         window?.animationBehavior = .none
+        if let terminateObserver {
+            NotificationCenter.default.removeObserver(terminateObserver)
+            self.terminateObserver = nil
+        }
         model.release()
         window?.contentViewController = nil
         readingShown?.cancel()

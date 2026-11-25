@@ -23,6 +23,8 @@ public final class QuickAccessController {
         public var recognizeText: (QuickAccessItem) -> Void
         /// Reads the text in a screenshot and copies it (`TextCopier`).
         public var copyText: (QuickAccessItem) async -> TextCopy = { _ in .noText }
+        /// Opens the capture in the OCR panel with translation enabled.
+        public var translate: ((QuickAccessItem) -> Void)?
         /// Keeps the capture on screen as a pin.
         public var pin: (QuickAccessItem) async -> Bool
         /// Prints the capture's picture through the print panel.
@@ -49,6 +51,10 @@ public final class QuickAccessController {
         public var changePicture: (QuickAccessItem, PictureChange) -> Void = { _, _ in }
         /// What can be done to the capture's picture now; read when a menu opens or a key arrives.
         public var pictureChangeOffer: (QuickAccessItem) -> PictureChangeOffer = { _ in .unsupported }
+        /// Lays two or more screenshot cards out together in the Collage window.
+        public var combineIntoCollage: (([QuickAccessItem]) -> Void)?
+        /// Exports two or more screenshot cards together as a single PDF.
+        public var exportAsPDF: (([QuickAccessItem]) -> Void)?
 
         /// Uploading, for a person who set up a destination. Left as it is, the card offers none of it.
         public var sharing = Sharing()
@@ -101,6 +107,12 @@ public final class QuickAccessController {
 
     /// Cards kept at most; fewer when the screen is short.
     public var maximumCards = 5
+    /// Optional direct Translate entry for screenshot cards (overrides `Actions.translate`).
+    public var onTranslate: ((QuickAccessItem) -> Void)?
+
+    private var resolvedTranslate: ((QuickAccessItem) -> Void)? {
+        onTranslate ?? actions.translate
+    }
 
     private let actions: Actions
     private let history: HistoryStore?
@@ -200,9 +212,36 @@ public final class QuickAccessController {
     private var displayID: CGDirectDisplayID?
     private var windowLease: ActiveResources.Lease?
 
+    /// Tracks each card's visual countdown ring progress so hover/menu/drag/focus holds freeze the ring
+    /// in place and resuming continues smoothly without jumping backwards.
+    private struct CountdownVisual {
+        enum Mode: Equatable {
+            case running(startedAt: TimeInterval, duration: TimeInterval, startFraction: CGFloat)
+            case paused(fraction: CGFloat)
+        }
+
+        var interval: TimeInterval
+        var mode: Mode
+
+        func currentFraction(at now: TimeInterval) -> CGFloat {
+            switch mode {
+            case .paused(let fraction):
+                return fraction
+            case .running(let startedAt, let duration, let startFraction):
+                guard duration > 0 else { return 0 }
+                let elapsed = max(0, now - startedAt)
+                let progress = min(max(1 - elapsed / duration, 0), 1)
+                return startFraction * CGFloat(progress)
+            }
+        }
+    }
+
     /// What keeps each card from closing by itself right now, and when each card closes while Settings says
     /// cards do.
     private var schedule = CardCloseSchedule()
+    private var countdownVisuals: [UUID: CountdownVisual] = [:]
+    var clock: () -> TimeInterval = { ProcessInfo.processInfo.systemUptime }
+    private var lastCloseInterval: TimeInterval?
     private var closer: Task<Void, Never>?
     /// The card that has the keyboard, once the panel was clicked or asked for; it is held from closing by the
     /// keyboard, and let go when the keys go to another card.
@@ -270,8 +309,14 @@ public final class QuickAccessController {
         !trashing.isEmpty || recentlyClosed.reversed().contains { canRestore($0.item) }
     }
 
+    /// Alias matching settings/menu queries for whether a live recently-closed card can be restored.
+    public var hasRecentlyClosed: Bool { canRestoreRecentlyClosed }
+
     private func canRestore(_ item: QuickAccessItem) -> Bool {
-        history?.item(forFileAt: item.fileURL)?.id == item.id
+        if let history {
+            return history.item(forFileAt: item.fileURL)?.id == item.id
+        }
+        return FileManager.default.fileExists(atPath: item.fileURL.path(percentEncoded: false))
     }
 
     /// History may have finished loading before the file was replaced. Check its record before showing
@@ -300,6 +345,10 @@ public final class QuickAccessController {
         items.filter { !isTrashing($0.id) }
     }
 
+    private var liveScreenshotItems: [QuickAccessItem] {
+        liveItems.filter { $0.kind == .screenshot }
+    }
+
     /// Shows a card for `item`, or brings an existing card for it back to the bottom of the stack.
     public func add(_ item: QuickAccessItem) {
         if firstCaptureHint?.captureID != item.id { dismissFirstCaptureHint() }
@@ -321,6 +370,7 @@ public final class QuickAccessController {
         }
         // A card brought back anew starts its time again; one already up keeps its own.
         schedule.restart(item.id)
+        countdownVisuals[item.id] = nil
         if let upload = actions.sharing.current(item) { hold(.upload, for: item.id, if: upload.holdsCard) }
         if actions.isBeingEdited(item) { hold(.editor, for: item.id, if: true) }
         reselectIfNeeded()
@@ -581,6 +631,7 @@ public final class QuickAccessController {
         // Brought back, it starts its time again, as a card restored from Recently Closed does; one whose copy could not
         // be saved is held again, as it was before it went.
         schedule.restart(pending.id)
+        countdownVisuals[pending.id] = nil
         if failures[pending.id] != nil { hold(.failure, for: pending.id, if: true) }
         // The Trash let its holds go; a Copy Text still reading holds it again.
         if readingText[pending.id] != nil { hold(.reading, for: pending.id, if: true) }
@@ -616,6 +667,7 @@ public final class QuickAccessController {
         guard items.contains(where: { $0.id == id }) else { return }
         items.removeAll { $0.id == id }
         schedule.forget(id)
+        countdownVisuals[id] = nil
         refresh()
     }
 
@@ -626,11 +678,56 @@ public final class QuickAccessController {
         present(entering: nil, on: displayID)
     }
 
+    /// Applies live changes to Quick Access settings (corner, size, pointer display, auto-close timing) to visible cards.
+    public func preferencesChanged() {
+        let preferences = actions.preferences()
+        let newInterval = preferences.closeInterval
+        guard !items.isEmpty else {
+            lastCloseInterval = newInterval
+            return
+        }
+        if newInterval != lastCloseInterval {
+            lastCloseInterval = newInterval
+            for item in liveItems {
+                schedule.restart(item.id)
+                countdownVisuals[item.id] = nil
+            }
+        }
+        updateCountdowns()
+        let target: CGDirectDisplayID
+        if preferences.onPointerDisplay, let pointer = Self.pointerDisplayID() {
+            target = pointer
+        } else {
+            target = displayID ?? items[items.count - 1].displayID
+        }
+        present(entering: nil, on: target)
+    }
+
+    private func combineAllIntoCollage() {
+        let screenshots = liveScreenshotItems
+        guard screenshots.count >= 2 else { return }
+        actions.combineIntoCollage?(screenshots)
+    }
+
+    private func exportAllAsPDF() {
+        let screenshots = liveScreenshotItems
+        guard screenshots.count >= 2 else { return }
+        actions.exportAsPDF?(screenshots)
+    }
+
     /// Brings back the card moved to the Trash last while it waits to go, or else the most recently closed card
-    /// whose capture still exists.
+    /// whose capture still exists (clearing a saved URL whose file was removed from disk).
     public func restoreRecentlyClosed() {
         if undoTrash() { return }
-        if let item = takeRecentlyClosed() { add(item) }
+        guard var item = takeRecentlyClosed() else { return }
+        if let saved = item.savedURL, !FileManager.default.fileExists(atPath: saved.path(percentEncoded: false)) {
+            item.savedURL = nil
+            if var copies = savedCopiesByID[item.id] {
+                copies.savedURL = nil
+                setSavedCopies(copies, for: item.id)
+            }
+        }
+        add(item)
     }
 
     func takeRecentlyClosed() -> QuickAccessItem? {
@@ -662,6 +759,7 @@ public final class QuickAccessController {
             if oldest.evicted { actions.closed(oldest.item) }
         }
         schedule.forget(item.id)
+        countdownVisuals[item.id] = nil
         if !evicted { actions.closed(item) }
         pruneSavedCopiesIfNeeded()
     }
@@ -695,7 +793,7 @@ public final class QuickAccessController {
             corner: preferences.corner, visible: visible, panelWidth: CardStackView.width(for: preferences.size),
             panelHeight: CardStackView.height(for: items, size: preferences.size), margin: margin
         )
-        if !panel.isVisible || panel.frame.origin != frame.origin || frame.height >= panel.frame.height {
+        if !panel.isVisible || panel.frame.origin != frame.origin || panel.frame.width != frame.width || frame.height >= panel.frame.height {
             panel.setFrame(frame, display: true)
             stack.show(items, entering: entering)
         } else {
@@ -721,6 +819,7 @@ public final class QuickAccessController {
         closer?.cancel()
         closer = nil
         schedule.removeAll()
+        countdownVisuals.removeAll()
         selectedID = nil
         stack?.quickLook.close()
         stack?.quickLook.detach()
@@ -741,6 +840,12 @@ public final class QuickAccessController {
     private func makeStack() -> CardStackView {
         let stack = CardStackView()
         stack.onCommand = { [weak self] command, item in self?.perform(command, on: item, keyed: false) }
+        stack.hasTranslate = { [weak self] in self?.resolvedTranslate != nil }
+        stack.onTranslate = { [weak self] item in
+            guard let self, item.kind == .screenshot else { return }
+            if self.firstCaptureHint?.captureID == item.id { self.dismissFirstCaptureHint() }
+            self.resolvedTranslate?(item)
+        }
         stack.fileToHandOver = { [weak self] item in
             guard let self else { return nil }
             switch actions.fileToHandOver(item) {
@@ -773,6 +878,10 @@ public final class QuickAccessController {
         let panel = QuickAccessPanel()
         panel.contentView = stack
         panel.onResignKey = { [weak self] in self?.keyboardLost() }
+        panel.closesAfterAction = { [weak self] in self?.actions.preferences().closesAfterAction ?? true }
+        panel.screenshotCardCount = { [weak self] in self?.liveScreenshotItems.count ?? 0 }
+        panel.onCombineAllIntoCollage = actions.combineIntoCollage == nil ? nil : { [weak self] in self?.combineAllIntoCollage() }
+        panel.onExportAllAsPDF = actions.exportAsPDF == nil ? nil : { [weak self] in self?.exportAllAsPDF() }
         self.panel = panel
         self.stack = stack
         return stack
@@ -821,6 +930,7 @@ public final class QuickAccessController {
         let next = neighbor(of: item.id)
         let hadKeyboard = selectedID == item.id
         schedule.forget(item.id)
+        countdownVisuals[item.id] = nil
         if hadKeyboard { select(nil) }
         let sender = Task { [weak self] in
             try? await Task.sleep(for: Self.trashDelay)
@@ -855,6 +965,7 @@ public final class QuickAccessController {
                 savedCopiesByID[item.id] = nil
                 items.removeAll { $0.id == item.id }
                 failures[item.id] = nil
+                countdownVisuals[item.id] = nil
                 return
             } catch {
                 message = String(localized: "Couldn’t Move to Trash", bundle: .module)
@@ -873,20 +984,22 @@ public final class QuickAccessController {
     // MARK: Closing by itself
 
     /// The time now, to count the cards' time against; stops while the Mac sleeps.
-    private static var now: TimeInterval { ProcessInfo.processInfo.systemUptime }
+    private var now: TimeInterval { clock() }
 
     /// A card is kept from closing by itself (the pointer over it, its menu open, a drag out of it, an upload),
     /// or let go.
     private func hold(_ hold: CardCountdown.Hold, for id: UUID, if on: Bool) {
         guard items.contains(where: { $0.id == id }), !isTrashing(id) else { return }
-        schedule.hold(hold, for: id, if: on, at: Self.now)
+        schedule.hold(hold, for: id, if: on, at: now)
         if schedule.isCounting(id) { scheduleCloser() }
     }
 
     /// Starts the time of every card that has none while Settings has cards close by themselves, and stops all of
     /// it while they do not. Cards already counting keep their own time, whatever the interval was.
     private func updateCountdowns() {
-        schedule.sync(cards: liveItems.map(\.id), interval: actions.preferences().closeInterval, at: Self.now)
+        let interval = actions.preferences().closeInterval
+        lastCloseInterval = interval
+        schedule.sync(cards: liveItems.map(\.id), interval: interval, at: now)
         scheduleCloser()
     }
 
@@ -894,20 +1007,82 @@ public final class QuickAccessController {
     private func scheduleCloser() {
         closer?.cancel()
         closer = nil
-        let now = Self.now
-        for item in liveItems {
-            stack?.setCountdown(schedule.countdownState(for: item.id, at: now), for: item.id)
-        }
-        guard let soonest = schedule.timeUntilNextClose(at: now) else { return }
+        let current = now
+        syncCountdownVisuals(at: current)
+        guard let soonest = schedule.timeUntilNextClose(at: current) else { return }
         closer = Task { [weak self] in
             try? await Task.sleep(for: .seconds(soonest + 0.02))
-            guard !Task.isCancelled else { return }
-            self?.closeDueCards(at: Self.now)
+            guard !Task.isCancelled, let self else { return }
+            self.closeDueCards(at: self.now)
+        }
+    }
+
+    private func syncCountdownVisuals(at now: TimeInterval) {
+        let liveIDs = Set(liveItems.map(\.id))
+        for staleID in countdownVisuals.keys where !liveIDs.contains(staleID) || !schedule.isCounting(staleID) {
+            countdownVisuals[staleID] = nil
+            stack?.setCountdownDisplay(nil, for: staleID)
+        }
+        for item in liveItems {
+            guard schedule.isCounting(item.id) else {
+                countdownVisuals[item.id] = nil
+                stack?.setCountdownDisplay(nil, for: item.id)
+                continue
+            }
+            if let state = schedule.countdownState(for: item.id, at: now) {
+                let safeInterval = max(state.interval, 0.1)
+                let naturalFraction = CGFloat(min(max(state.remaining / safeInterval, 0), 1))
+                if let existing = countdownVisuals[item.id] {
+                    switch existing.mode {
+                    case .running(let startedAt, let duration, _):
+                        // Already gliding toward the same deadline: leave Core Animation undisturbed.
+                        if abs(existing.interval - state.interval) < 0.01,
+                           abs((startedAt + duration) - (now + state.remaining)) < 0.05 {
+                            continue
+                        }
+                        countdownVisuals[item.id] = CountdownVisual(
+                            interval: state.interval,
+                            mode: .running(startedAt: now, duration: state.remaining, startFraction: naturalFraction)
+                        )
+                        stack?.setCountdownDisplay(.running(remaining: state.remaining, interval: state.interval, startFraction: naturalFraction), for: item.id)
+                    case .paused(let pausedFraction):
+                        // Resume from the frozen progress (never jumping backwards even when grace extends time).
+                        let resumeFraction = min(pausedFraction, naturalFraction)
+                        countdownVisuals[item.id] = CountdownVisual(
+                            interval: state.interval,
+                            mode: .running(startedAt: now, duration: state.remaining, startFraction: resumeFraction)
+                        )
+                        stack?.setCountdownDisplay(.running(remaining: state.remaining, interval: state.interval, startFraction: resumeFraction), for: item.id)
+                    }
+                } else {
+                    countdownVisuals[item.id] = CountdownVisual(
+                        interval: state.interval,
+                        mode: .running(startedAt: now, duration: state.remaining, startFraction: naturalFraction)
+                    )
+                    stack?.setCountdownDisplay(.running(remaining: state.remaining, interval: state.interval, startFraction: naturalFraction), for: item.id)
+                }
+            } else if !schedule.holds(on: item.id).isEmpty {
+                // Card is counting down but currently held (pointer hover, menu, drag, keyboard, etc.): freeze in place.
+                let interval = countdownVisuals[item.id]?.interval ?? lastCloseInterval ?? 10
+                if let existing = countdownVisuals[item.id] {
+                    if case .paused = existing.mode { continue }
+                    let frozen = existing.currentFraction(at: now)
+                    countdownVisuals[item.id] = CountdownVisual(interval: interval, mode: .paused(fraction: frozen))
+                    stack?.setCountdownDisplay(.paused(fraction: frozen, interval: interval), for: item.id)
+                } else {
+                    countdownVisuals[item.id] = CountdownVisual(interval: interval, mode: .paused(fraction: 1))
+                    stack?.setCountdownDisplay(.paused(fraction: 1, interval: interval), for: item.id)
+                }
+            } else {
+                countdownVisuals[item.id] = nil
+                stack?.setCountdownDisplay(nil, for: item.id)
+            }
         }
     }
 
     func closeDueCards(at now: TimeInterval) {
         for id in schedule.takeDue(at: now) {
+            countdownVisuals[id] = nil
             guard let item = item(id) else { continue }
             if actions.preferences().closeAction == .saveAndClose, item.savedURL == nil {
                 // The card goes once its copy is saved, which never asks for a name: nobody is waiting for it. A copy that
@@ -1010,9 +1185,16 @@ public final class QuickAccessController {
     private func performKeyed(_ command: CardCommand) -> Bool {
         // ⌘Z brings back the card moved to the Trash last, whichever card has the ring.
         if command == .undoTrash { return undoTrash() }
-        guard let selectedID, let item = item(selectedID) else { return false }
-        perform(command, on: item, keyed: true)
-        return true
+        if let selectedID, let item = item(selectedID) {
+            perform(command, on: item, keyed: true)
+            return true
+        }
+        // Escape always gives the keyboard back while the panel holds it, even if no live card is ringed.
+        if command == .releaseKeyboard, panel?.isKeyWindow == true {
+            endKeyboard()
+            return true
+        }
+        return false
     }
 
     /// Keep the source alive while an action consumes it. Failure or cancellation leaves the card available.
@@ -1032,14 +1214,17 @@ public final class QuickAccessController {
         hold(.action, for: item.id, if: true)
         let succeeded = await action()
         guard completing[item.id] == completion else { return }
+        let shouldClose = actions.preferences().closesAfterAction && !keepsCard
         if succeeded, showsCopyConfirmation {
             stack?.showCopied(item.id)
-            try? await Task.sleep(for: .milliseconds(900))
-            guard completing[item.id] == completion else { return }
+            if shouldClose {
+                try? await Task.sleep(for: .milliseconds(900))
+                guard completing[item.id] == completion else { return }
+            }
         }
         completing[item.id] = nil
         hold(.action, for: item.id, if: false)
-        if succeeded, !keepsCard { dismiss(item.id) }
+        if succeeded, shouldClose { dismiss(item.id) }
     }
 
     // MARK: Commands
@@ -1050,29 +1235,35 @@ public final class QuickAccessController {
     /// done it with the pointer never came. Close All gives it back however it was asked for: no card is left to hold it.
     func perform(_ command: CardCommand, on item: QuickAccessItem, keyed: Bool) {
         if firstCaptureHint?.captureID == item.id { dismissFirstCaptureHint() }
-        // A card waiting to go to the Trash only comes back.
+        // A card waiting to go to the Trash only comes back, or lets go of the keyboard.
         guard !isTrashing(item.id) else {
             if command == .undoTrash { undoTrash(item.id) }
+            else if command == .releaseKeyboard { endKeyboard() }
             return
         }
         switch command {
         case .copy:
             if keyed { endKeyboard() }
-            complete(item, showsCopyConfirmation: true) { [self] in await actions.copy(item) }
+            let keepOpen = !keyed && NSEvent.modifierFlags.contains(.option)
+            complete(item, showsCopyConfirmation: true, keepsCard: keepOpen) { [self] in await actions.copy(item) }
         case .copyAndKeep:
             complete(item, showsCopyConfirmation: true, keepsCard: true) { [self] in await actions.copy(item) }
         case .save:
             if keyed { endKeyboard() }
-            complete(item) { [self] in
-                if item.savedURL != nil {
-                    actions.reveal(item)
-                    return true
-                }
-                return await save(item, .save).url != nil
+            let current = self.item(item.id) ?? item
+            if current.savedURL != nil {
+                // Already saved: reveal the saved copy in Finder without dismissing the card.
+                actions.reveal(current)
+                return
+            }
+            let keepOpen = !keyed && NSEvent.modifierFlags.contains(.option)
+            complete(current, keepsCard: keepOpen) { [self] in
+                await save(current, .save).url != nil
             }
         case .saveAs:
             if keyed { endKeyboard() }
-            complete(item) { [self] in await save(item, .saveAs).url != nil }
+            let keepOpen = !keyed && NSEvent.modifierFlags.contains(.option)
+            complete(item, keepsCard: keepOpen) { [self] in await save(item, .saveAs).url != nil }
         case .annotate:
             if keyed { endKeyboard() }
             actions.annotate(item)
@@ -1104,7 +1295,7 @@ public final class QuickAccessController {
         case .copyLink:
             guard actions.sharing.hasLink(item) else { return }
             actions.sharing.copyLink(item)
-            dismiss(item.id)
+            if actions.preferences().closesAfterAction { dismiss(item.id) }
             if keyed { endKeyboard() }
         case .deleteFromStorage:
             actions.sharing.deleteFromStorage(item)
@@ -1119,6 +1310,8 @@ public final class QuickAccessController {
         case .undoTrash:
             // Only a card waiting to go comes back (above); ⌘Z, which brings back the last one, never reaches here.
             break
+        case .releaseKeyboard:
+            endKeyboard()
         case .close:
             dismiss(item.id)
             if keyed { endKeyboard() }
@@ -1191,6 +1384,12 @@ final class QuickAccessPanel: NSPanel {
     var allowsKey = false
     /// The panel gave up the keys.
     var onResignKey: (() -> Void)?
+    /// Whether completing an action (drag-out, share) closes the card automatically.
+    var closesAfterAction: () -> Bool = { true }
+    /// Live screenshot cards currently in the stack, for multi-card Collage/PDF actions.
+    var screenshotCardCount: () -> Int = { 0 }
+    var onCombineAllIntoCollage: (() -> Void)?
+    var onExportAllAsPDF: (() -> Void)?
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)

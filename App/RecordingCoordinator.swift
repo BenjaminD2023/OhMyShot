@@ -36,7 +36,9 @@ final class RecordingCoordinator {
         resume: { [weak self] in self?.resume() },
         restart: { [weak self] in self?.restart() },
         delete: { [weak self] in self?.delete() },
-        stop: { [weak self] in self?.stop() }
+        stop: { [weak self] in self?.stop() },
+        toggleMicrophoneMute: { [weak self] in self?.toggleMicrophoneMute() },
+        drawOnScreen: onDrawOnScreen
     ))
 
     /// What the menu bar shows of recordings.
@@ -65,6 +67,13 @@ final class RecordingCoordinator {
     var onStatus: ((Status) -> Void)?
     /// The keys of Record Screen, told to VoiceOver as the way to stop; nil when it has none.
     var shortcutKeys: (() -> String?)?
+    /// Toggles Draw on Screen mid-recording when the control bar's Draw chip is pressed.
+    var onDrawOnScreen: (() -> Void)? {
+        didSet { controls.onDrawOnScreen = onDrawOnScreen }
+    }
+    /// Ephemeral desktop icon cover used when "Hide desktop icons while capturing" is turned on.
+    var desktopIcons: DesktopCover?
+    private var hidesDesktopForRecording = false
 
     /// What one recording is of, kept so Restart can record it again.
     private struct Plan {
@@ -214,6 +223,7 @@ final class RecordingCoordinator {
         guard !overlay.isActive else { return }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         overlay.freezesScreen = false
+        overlay.lastArea = overlay.lastArea ?? settings.allInOneArea?.area(in: displays.layout)
         configureOverlayForRecording()
         overlay.begin(mode: .area, purpose: .record, choosing: area) { [weak self] outcome in
             guard case .record(let target, let display, let choices) = outcome else {
@@ -301,13 +311,17 @@ final class RecordingCoordinator {
             let keys = shortcutKeys?()
             VoiceOver.announce(keys.map { String(localized: "Recording in \(seconds) seconds. Press \($0) to cancel.") }
                 ?? String(localized: "Recording in \(seconds) seconds."))
-            countdown.start(seconds: seconds, area: area, layout: displays.layout, outlinesArea: false) { [weak self] in
+            countdown.start(
+                seconds: seconds, area: area, layout: displays.layout, outlinesArea: false,
+                onCancel: { [weak self] in self?.cancelCountdown() }
+            ) { [weak self] in
                 Task { await self?.start(plan) }
             }
         }
     }
 
     private func cancelCountdown() {
+        guard case .countingDown = phase else { return }
         phase = .idle
         countdown.cancel()
         outline.hide()
@@ -335,6 +349,11 @@ final class RecordingCoordinator {
             clickRings = rings
             // Studio films the camera from a movie of its own, so its bubble stays out of the picture.
             let studio = plan.choices.output == .studio
+            if settings.hidesDesktopIconsWhileCapturing, let desktopIcons, !hidesDesktopForRecording {
+                desktopIcons.beginTemporaryHide()
+                hidesDesktopForRecording = true
+                await desktopIcons.waitForRefresh()
+            }
             let shown = Set([keys?.windowID, rings?.windowID, studio ? nil : camera.windowID].compactMap(\.self))
             let source = try await capturer.recordingSource(for: plan.target, on: plan.display, including: shown)
             let format = RecordingFormat.choose(
@@ -349,6 +368,7 @@ final class RecordingCoordinator {
                 clickRings?.hide()
                 clickRings = nil
                 camera.hide()
+                endTemporaryDesktopHide()
                 showStatusAfterRecording()
                 return
             }
@@ -364,9 +384,10 @@ final class RecordingCoordinator {
             cameraBubble = StudioProject.Camera()
             tickCount = 0
             // Studio draws the cursor and the clicks again from what the pointer did, so neither is in the picture.
+            let resolvedMic = plan.choices.recordsMicrophone ? RecordingAudio.Microphone.resolve(plan.choices.microphoneID) : nil
             let recorder = try ScreenRecorder(ScreenRecorder.Request(
                 filter: source.filter, sourceRect: source.sourceRect, format: format,
-                audio: RecordingAudio(system: plan.choices.recordsSystemAudio, microphone: microphone(for: plan.choices)),
+                audio: RecordingAudio(system: plan.choices.recordsSystemAudio, microphone: resolvedMic?.microphone),
                 // Rings in place of the system's circles, never both.
                 showsCursor: settings.recordingShowsCursor && !studio, showsClicks: plan.choices.showsClicks && rings == nil && !studio,
                 movieURL: created.movieURL
@@ -420,6 +441,9 @@ final class RecordingCoordinator {
             // Stop came while it started: kept as a recording stopped now is.
             if stops { return stop() }
             showChrome(for: plan, source: source)
+            if resolvedMic?.fellBack == true {
+                notice.show(String(localized: "Selected microphone unavailable. Using default microphone."), near: NSEvent.mouseLocation)
+            }
             camera.setRecording(true)
             if let keys {
                 let monitor = KeyMonitor()
@@ -431,7 +455,7 @@ final class RecordingCoordinator {
             VoiceOver.announce(stopKeys.map { String(localized: "Recording. Press \($0) again to stop.") }
                 ?? String(localized: "Recording. Click the time in the menu bar to stop."))
         } catch {
-            Log.recording.error("Recording could not start: \(String(describing: error), privacy: .public)")
+            Log.recording.error("Recording could not start: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             phase = .idle
             if let draft { drafts.remove(draft) }
             outline.hide()
@@ -440,6 +464,7 @@ final class RecordingCoordinator {
             clickRings?.hide()
             clickRings = nil
             camera.hide()
+            endTemporaryDesktopHide()
             showStatusAfterRecording()
             NSSound.beep()
             VoiceOver.announce(String(localized: "The recording couldn’t start."))
@@ -472,21 +497,41 @@ final class RecordingCoordinator {
             let style = plan.choices.cameraStyle
             let area = Self.area(of: plan)
             let bubble = camera.bubbleFrame ?? area
-            let left = bubble.midX < area.midX, bottom = bubble.midY < area.midY
             cameraBubble = StudioProject.Camera(
                 shape: style.shape == .circle ? .circle : .roundedSquare, size: Double(style.size.points),
-                corner: bottom ? (left ? .bottomLeft : .bottomRight) : (left ? .topLeft : .topRight), mirrored: style.mirrored
+                corner: Self.cameraCorner(of: bubble, in: area), mirrored: style.mirrored
             )
             cameraFills = [(Self.hostSeconds(), camera.isFilling)]
             camera.onFillChange = { [weak self] fills in
-                self?.cameraFills.append((Self.hostSeconds(), fills))
-                self?.checkpointTelemetry()
+                guard let self else { return }
+                self.cameraFills.append((Self.hostSeconds(), fills))
+                if let session = self.session {
+                    self.syncCameraBubbleCorner(for: session.plan, recorded: session.source.frame)
+                }
+                self.checkpointTelemetry()
             }
             return recorder
         } catch {
-            Log.recording.error("The camera couldn't be recorded: \(String(describing: error), privacy: .public)")
+            Log.recording.error("The camera couldn't be recorded: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             return nil
         }
+    }
+
+    private static func cameraCorner(of bubble: CGRect, in area: CGRect) -> StudioProject.Camera.Corner {
+        let left = bubble.midX < area.midX
+        let bottom = bubble.midY < area.midY
+        return bottom ? (left ? .bottomLeft : .bottomRight) : (left ? .topLeft : .topRight)
+    }
+
+    /// Updates `cameraBubble.corner` from the live camera bubble's current position so dragging the bubble
+    /// during a Studio recording is reflected in the Studio project (and in crash-recovery checkpoints).
+    @discardableResult
+    private func syncCameraBubbleCorner(for plan: Plan, recorded: CGRect?) -> Bool {
+        guard !camera.isFilling, let bubble = camera.bubbleFrame else { return false }
+        let corner = Self.cameraCorner(of: bubble, in: Self.area(of: plan, recorded: recorded))
+        guard corner != cameraBubble.corner else { return false }
+        cameraBubble.corner = corner
+        return true
     }
 
     /// Stops listening to the camera and throws its movie away.
@@ -525,9 +570,10 @@ final class RecordingCoordinator {
     }
 
     /// Shows the camera's bubble at the corner of what `plan` records when the camera is chosen, or hides
-    /// it. A window is recorded alone, so it never has the camera.
+    /// it. Plain window recordings exclude the camera, while Studio window recordings composite `camera.mov`
+    /// independently of ScreenCaptureKit's window filter.
     private func showCamera(for plan: Plan) {
-        if case .window = plan.target {
+        if case .window = plan.target, plan.choices.output != .studio {
             return camera.hide()
         }
         // Without access or a camera, nothing shows: a bubble with no picture would be recorded as a blank disc.
@@ -542,18 +588,20 @@ final class RecordingCoordinator {
     }
 
     /// Takes the windows put on screen since the recording began (Draw on Screen's canvases) into it, as the ones there
-    /// when it began were: the stream is given the filter it would be given now. A window recorded on its own, or a
-    /// Studio recording, which films the screen without what is shown over it, is left as it is.
+    /// when it began were: the stream is given the filter it would be given now. Single-window recordings stay on their
+    /// window; non-window Studio recordings also pick up Draw on Screen canvases while keeping camera/keystrokes/click
+    /// rings excluded.
     func includeWindowsShownSince() async {
-        guard let session, session.plan.choices.output != .studio else { return }
+        guard let session else { return }
         if case .window = session.plan.target { return }
-        let shown = Set([keystrokes?.windowID, clickRings?.windowID, camera.windowID].compactMap(\.self))
+        let studio = session.plan.choices.output == .studio
+        let shown: Set<CGWindowID> = studio ? [] : Set([keystrokes?.windowID, clickRings?.windowID, camera.windowID].compactMap(\.self))
         do {
             let source = try await capturer.recordingSource(for: session.plan.target, on: session.plan.display, including: shown)
             try await session.recorder.updateFilter(source.filter)
             Log.capture.notice("Recording takes in the windows shown since it began")
         } catch {
-            Log.capture.error("Recording could not take in new windows: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Recording could not take in new windows: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
         }
     }
 
@@ -573,12 +621,47 @@ final class RecordingCoordinator {
         return true
     }
 
-    /// The microphone a recording takes: the one chosen while it is attached, else the system's default.
-    private func microphone(for choices: RecordingChoices) -> RecordingAudio.Microphone? {
-        choices.recordsMicrophone ? .chosen(choices.microphoneID) : nil
+    // MARK: While recording
+
+    var isPaused: Bool {
+        session?.recorder.state == .paused
     }
 
-    // MARK: While recording
+    var isMicrophoneMuted: Bool {
+        session?.recorder.isMicrophoneMuted ?? false
+    }
+
+    var recordsMicrophone: Bool {
+        session?.plan.choices.recordsMicrophone ?? false
+    }
+
+    /// Updates the Draw on Screen button's active appearance in the floating recording control bar.
+    func setDrawing(_ active: Bool) {
+        controls.update(drawing: active)
+    }
+
+    /// Pauses or resumes the active recording.
+    func togglePause() {
+        guard let session else { return }
+        switch session.recorder.state {
+        case .recording: pause()
+        case .paused: resume()
+        default: break
+        }
+    }
+
+    /// Toggles live microphone mute during an active recording without stopping the capture stream.
+    func toggleMicrophoneMute() {
+        guard let session, session.plan.choices.recordsMicrophone else {
+            NSSound.beep()
+            return
+        }
+        let muted = !session.recorder.isMicrophoneMuted
+        session.recorder.isMicrophoneMuted = muted
+        controls.update(microphoneMuted: muted)
+        report(.recording(time: RecordingControlBar.format(session.recorder.elapsed), paused: session.recorder.state == .paused))
+        notice.show(muted ? String(localized: "Microphone muted") : String(localized: "Microphone unmuted"), near: NSEvent.mouseLocation)
+    }
 
     func pause() {
         guard let session, session.recorder.state == .recording else { return }
@@ -650,6 +733,11 @@ final class RecordingCoordinator {
         phase = .idle
         let makesGIF = session.plan.choices.output == .gif
         if makesGIF { makingGIFs += 1 }
+        // Capture the bubble's latest dragged corner before `endChrome()` hides the bubble panel.
+        if session.camera != nil {
+            syncCameraBubbleCorner(for: session.plan, recorded: session.source.frame)
+            checkpointTelemetry()
+        }
         endChrome()
         finishing += 1
         let movieStartSnapshot = movieStartHostTime
@@ -789,13 +877,23 @@ final class RecordingCoordinator {
         let byteCount: Int
     }
 
+    /// How `keep(_:...)` finished a draft, for launch recovery notices.
+    private enum KeepOutcome {
+        case studio
+        case studioWithoutTelemetry
+        case plain
+        case failed
+    }
+
     /// Finishes a draft into an MP4, or makes it into a GIF, and keeps it: history, clipboard, card. A draft
     /// that cannot be finished — or whose Studio sidecar assets only partly saved — stays in the drafts folder,
     /// where the next launch tries again.
+    @discardableResult
     private func keep(
         _ draft: RecordingDrafts.Draft, plan: Plan?, displayID: CGDirectDisplayID, writer: RecordingWriter.Statistics?,
-        telemetry: StudioTelemetry? = nil, interruption: Interruption? = nil
-    ) async {
+        telemetry: StudioTelemetry? = nil, interruption: Interruption? = nil,
+        copiesToClipboard: Bool = true, isRecovery: Bool = false
+    ) async -> KeepOutcome {
         let probe = LatencyProbe("recording.keep")
         let output = draft.info?.output ?? .video
         let destination = draft.movieURL.deletingPathExtension().appendingPathExtension(output == .gif ? "gif" : "mp4")
@@ -865,23 +963,27 @@ final class RecordingCoordinator {
                     presentPartialStudioSaveAlert(saveResult)
                 }
                 if saveResult.savedTelemetry {
-                    VoiceOver.announce(String(localized: "Recording stopped. Opening Studio."))
+                    if !isRecovery {
+                        VoiceOver.announce(String(localized: "Recording stopped. Opening Studio."))
+                    }
                     await openStudio(entry)
                 }
-                return
+                return .studio
             }
             let entry = try await deliver(
                 file, startedAt: draft.info?.startedAt ?? .now, appName: draft.info?.appName ?? plan?.appName,
-                pixelsPerPoint: draft.info?.pixelsPerPoint, displayID: displayID, countsAsRecording: plan != nil
+                pixelsPerPoint: draft.info?.pixelsPerPoint, displayID: displayID, countsAsRecording: plan != nil,
+                copiesToClipboard: copiesToClipboard
             )
             drafts.remove(draft)
             probe.end()
             Log.recording.notice("Kept a recording of \(file.duration, format: .fixed(precision: 2), privacy: .public) s, \(file.pixelWidth, privacy: .public)x\(file.pixelHeight, privacy: .public), \(file.byteCount, privacy: .public) bytes as \(entry.fileName, privacy: .private)\(writer.map { ", \($0.framesWritten) frames written, \($0.framesDropped) dropped" } ?? "", privacy: .public)")
             if let interruption {
                 presentInterruptionKept(interruption, keptDuration: file.duration)
-            } else {
+            } else if !isRecovery {
                 VoiceOver.announce(output == .gif ? String(localized: "GIF made.") : String(localized: "Recording stopped."))
             }
+            return output == .studio ? .studioWithoutTelemetry : .plain
         } catch {
             try? FileManager.default.removeItem(at: destination)
             Log.recording.error("Keeping the recording failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
@@ -892,10 +994,12 @@ final class RecordingCoordinator {
                     title: String(localized: "Recording Couldn’t Be Kept"),
                     message: String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts.")
                 )
-            } else {
+            } else if !isRecovery {
                 NSSound.beep()
-                VoiceOver.announce(String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts."))
+                let message = String(localized: "The recording couldn’t be kept. OhMyShot will try again next time it starts.")
+                notice.show(message, near: NSEvent.mouseLocation)
             }
+            return .failed
         }
     }
 
@@ -1059,7 +1163,7 @@ final class RecordingCoordinator {
     /// says so, and given a card.
     private func deliver(
         _ file: KeptFile, startedAt: Date, appName: String?, pixelsPerPoint: Double?, displayID: CGDirectDisplayID,
-        countsAsRecording: Bool = false
+        countsAsRecording: Bool = false, copiesToClipboard: Bool = true
     ) async throws -> HistoryItem {
         let name = fileName(startedAt: startedAt, appName: appName)
         let entry = try history.add(
@@ -1067,17 +1171,17 @@ final class RecordingCoordinator {
             appName: appName, duration: file.duration, pixelsPerPoint: pixelsPerPoint
         )
         if countsAsRecording { onRecordingCompleted?() }
-        await present(entry, displayID: displayID)
+        await present(entry, displayID: displayID, copiesToClipboard: copiesToClipboard)
         onKept?(entry)
         return entry
     }
 
     /// Hands a kept recording on as a capture is: copied, saved, uploaded, and given a card as the choices Settings has
     /// for recordings say.
-    private func present(_ entry: HistoryItem, displayID: CGDirectDisplayID) async {
+    private func present(_ entry: HistoryItem, displayID: CGDirectDisplayID, copiesToClipboard: Bool = true) async {
         let url = history.fileURL(for: entry)
         let after = settings.afterCapture(for: .recording)
-        if after.copies, !leavesClipboard {
+        if copiesToClipboard, after.copies, !leavesClipboard {
             PasteboardWriter.write(fileURL: url)
             copiedToClipboard?(entry.id)
         }
@@ -1117,18 +1221,24 @@ final class RecordingCoordinator {
         }
     }
 
-    /// Finishes what a crash or a forced quit left in the drafts folder: each is kept like a stopped
-    /// recording. A partial Studio draft whose movie is already in History retries only its missing Studio
-    /// assets into that entry. A leftover movie verified as unreadable is removed once it is a week old.
+    /// Finishes what a crash or a forced quit left in the drafts folder: Studio drafts with saved telemetry
+    /// restore as Studio projects; plain recordings restore without overwriting the user's clipboard on launch.
+    /// A partial Studio draft whose movie is already in History retries only its missing Studio assets into
+    /// that entry. A leftover movie verified as unreadable is removed once it is a week old.
     func recoverLeftovers() {
         let leftovers = drafts.leftovers(excluding: Set([session?.draft.id].compactMap(\.self)))
         guard !leftovers.isEmpty else { return }
         Log.recording.notice("Finishing \(leftovers.count, privacy: .public) recording(s) left from before")
         let displayID = displays.layout.primary?.id ?? 0
         Task {
+            var recoveredStudio = 0
+            var recoveredWithoutTelemetry = 0
+            var recoveredPlain = 0
             for draft in leftovers {
                 if let historyID = draft.info?.keptHistoryID {
-                    await recoverPartialStudioDraft(draft, historyID: historyID)
+                    if await recoverPartialStudioDraft(draft, historyID: historyID) {
+                        recoveredStudio += 1
+                    }
                     continue
                 }
                 let makesGIF = draft.info?.output == .gif
@@ -1136,16 +1246,33 @@ final class RecordingCoordinator {
                     makingGIFs += 1
                     showStatusAfterRecording()
                 }
-                await keep(draft, plan: nil, displayID: displayID, writer: nil)
+                let outcome = await keep(
+                    draft, plan: nil, displayID: displayID, writer: nil,
+                    copiesToClipboard: false, isRecovery: true
+                )
+                switch outcome {
+                case .studio: recoveredStudio += 1
+                case .studioWithoutTelemetry: recoveredWithoutTelemetry += 1
+                case .plain: recoveredPlain += 1
+                case .failed: break
+                }
                 if makesGIF { madeGIF() }
                 if await drafts.pruneIfExpiredAndUnreadable(draft) {
                     Log.recording.notice("Removed unreadable draft \(draft.id.uuidString, privacy: .public) older than a week")
                 }
             }
+            if recoveredWithoutTelemetry > 0 {
+                notice.show(String(localized: "Recovered recording restored without Studio pointer data."), near: NSEvent.mouseLocation)
+            } else if recoveredStudio > 0, recoveredPlain == 0 {
+                notice.show(String(localized: "Recovered Studio recording restored."), near: NSEvent.mouseLocation)
+            } else if recoveredStudio + recoveredPlain > 0 {
+                notice.show(String(localized: "Recovered recording restored."), near: NSEvent.mouseLocation)
+            }
         }
     }
 
-    private func recoverPartialStudioDraft(_ draft: RecordingDrafts.Draft, historyID: UUID) async {
+    @discardableResult
+    private func recoverPartialStudioDraft(_ draft: RecordingDrafts.Draft, historyID: UUID) async -> Bool {
         let outcome = await StudioProjectStorage.recoverMissingAssets(
             forHistoryID: historyID,
             telemetryURL: draft.telemetryURL,
@@ -1162,14 +1289,18 @@ final class RecordingCoordinator {
             }
             drafts.remove(draft)
             Log.recording.notice("Finished recovering Studio assets for history \(historyID.uuidString, privacy: .public)")
+            return true
         case .incomplete(let result):
             Log.recording.error("Recovering Studio assets for history \(historyID.uuidString, privacy: .public) still incomplete: \(result.errorDescription ?? "unknown error", privacy: .private)")
+            return false
         case .movieReplaced:
             drafts.remove(draft)
             Log.recording.notice("Dropped Studio draft \(draft.id.uuidString, privacy: .public) for history \(historyID.uuidString, privacy: .public) because the kept movie was replaced")
+            return false
         case .discarded:
             drafts.remove(draft)
             Log.recording.notice("Removed orphaned Studio draft \(draft.id.uuidString, privacy: .public) for history \(historyID.uuidString, privacy: .public)")
+            return false
         }
     }
 
@@ -1359,16 +1490,62 @@ final class RecordingCoordinator {
         report(.exportingStudio(progress: fraction))
     }
 
+    /// Imports a standalone `.omsstudio` project package into Capture History and opens it in Studio.
+    func importStudioPackage(at packageURL: URL) async {
+        let staging = FileManager.default.temporaryDirectory.appending(path: "omsstudio-import-\(UUID().uuidString)", directoryHint: .isDirectory)
+        let stagedMovie = staging.appending(path: "movie.mp4")
+        let stagedStudio = staging.appending(path: "studio", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: staging) }
+        do {
+            let imported = try await Self.stageStudioPackageImport(from: packageURL, movieURL: stagedMovie, studioFolder: stagedStudio)
+            let asset = AVURLAsset(url: stagedMovie)
+            let duration = try await asset.load(.duration).seconds
+            let size = try await asset.loadTracks(withMediaType: .video).first?.load(.naturalSize) ?? .zero
+            let pixelWidth = max(2, Int(size.width.rounded()))
+            let pixelHeight = max(2, Int(size.height.rounded()))
+            let name = packageURL.deletingPathExtension().lastPathComponent
+            let entry = try history.add(
+                movingFileAt: stagedMovie, name: name.isEmpty ? "Studio Recording" : name, kind: .recording,
+                pixelWidth: pixelWidth, pixelHeight: pixelHeight, appName: nil, duration: duration,
+                pixelsPerPoint: imported.telemetry.pixelsPerPoint
+            )
+            let studioDestination = history.studioURL(for: entry)
+            if FileManager.default.fileExists(atPath: studioDestination.path(percentEncoded: false)) {
+                try FileManager.default.removeItem(at: studioDestination)
+            }
+            try FileManager.default.moveItem(at: stagedStudio, to: studioDestination)
+            onKept?(entry)
+            await openStudio(entry)
+        } catch {
+            Log.recording.error("Importing Studio package \(packageURL.lastPathComponent, privacy: .private) failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+            NSSound.beep()
+            let alert = NSAlert()
+            alert.alertStyle = .warning
+            alert.messageText = String(localized: "The Studio project couldn’t be opened")
+            alert.informativeText = error.localizedDescription
+            NSApp.activate(ignoringOtherApps: true)
+            alert.runModal()
+        }
+    }
+
+    @concurrent
+    private nonisolated static func stageStudioPackageImport(
+        from packageURL: URL, movieURL: URL, studioFolder: URL
+    ) async throws -> (telemetry: StudioTelemetry, project: StudioProject) {
+        try StudioPackage.importPackage(at: packageURL, toMovieURL: movieURL, studioFolder: studioFolder)
+    }
+
     private func makeWindow(for entry: HistoryItem) -> RecordingWindowController {
         let id = entry.id
         let controller = RecordingWindowController(
             fileURL: history.fileURL(for: entry), title: (entry.fileName as NSString).deletingPathExtension,
             pixelWidth: entry.pixelWidth, pixelHeight: entry.pixelHeight, pixelsPerPoint: entry.pixelsPerPoint,
             hasOriginal: history.hasOriginal(entry),
+            defaultGIFFrameRate: settings.recordingGIFFrameRate,
             actions: .init(
-                keep: { [weak self] edit in
+                keep: { [weak self] edit, progress in
                     guard let self else { throw CocoaError(.userCancelled) }
-                    return try await keepEdit(edit, of: id)
+                    return try await keepEdit(edit, of: id, progress: progress)
                 },
                 revert: { [weak self] in
                     guard let self, let entry = history.item(id: id) else { throw CocoaError(.fileNoSuchFile) }
@@ -1376,9 +1553,9 @@ final class RecordingCoordinator {
                     onChanged?(restored)
                     return history.fileURL(for: restored)
                 },
-                makeGIF: { [weak self] edit in
+                makeGIF: { [weak self] edit, progress in
                     guard let self else { throw CocoaError(.userCancelled) }
-                    try await makeGIF(of: id, edit: edit)
+                    try await makeGIF(of: id, edit: edit, progress: progress)
                 },
                 save: { [weak self] url in self?.saveCopy(of: url) },
                 copy: { [weak self] url in self?.files.copy(fileAt: url) }
@@ -1394,13 +1571,15 @@ final class RecordingCoordinator {
     }
 
     /// Makes the recording with `edit` and keeps it in place of the recording.
-    private func keepEdit(_ edit: RecordingEdit, of id: UUID) async throws -> URL {
+    private func keepEdit(_ edit: RecordingEdit, of id: UUID, progress: @escaping @Sendable (Double) -> Void) async throws -> URL {
         guard let entry = history.item(id: id) else { throw CocoaError(.fileNoSuchFile) }
         let probe = LatencyProbe("recording.edit")
         // Written in the recording's own container: a MOV opened from Finder stays a QuickTime movie.
         let edited = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).\((entry.fileName as NSString).pathExtension)")
         do {
-            let movie = try await RecordingFinisher.export(history.fileURL(for: entry), to: edited, edits: Self.edits(edit))
+            try Task.checkCancellation()
+            let movie = try await RecordingFinisher.export(history.fileURL(for: entry), to: edited, edits: Self.edits(edit), progress: progress)
+            try Task.checkCancellation()
             let updated = try history.replaceRecording(
                 of: entry, withFileAt: movie.url, pixelWidth: movie.pixelWidth, pixelHeight: movie.pixelHeight, duration: movie.duration
             )
@@ -1410,20 +1589,24 @@ final class RecordingCoordinator {
             return history.fileURL(for: updated)
         } catch {
             try? FileManager.default.removeItem(at: edited)
-            Log.recording.error("Editing the recording failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
+            if !(error is CancellationError), !Task.isCancelled {
+                Log.recording.error("Editing the recording failed: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
+            }
             throw error
         }
     }
 
     /// Makes a GIF of the recording with `edit` (its part and size; a GIF has no sound) and keeps it as a
     /// recording of its own, with a card. The GIF is never larger than things were on screen.
-    private func makeGIF(of id: UUID, edit: RecordingEdit) async throws {
+    private func makeGIF(of id: UUID, edit: RecordingEdit, progress: @escaping @Sendable (Double) -> Void) async throws {
         guard let entry = history.item(id: id) else { throw CocoaError(.fileNoSuchFile) }
         let onScreen = 1 / max(entry.pixelsPerPoint ?? 1, 1)
+        let gifFrameRate = edit.gifOptions?.framesPerSecond ?? settings.recordingGIFFrameRate
+        let gifScale = min(edit.scale, onScreen) * (edit.gifOptions?.scale ?? 1.0)
         let options = GIFMaker.Options(
-            framesPerSecond: settings.recordingGIFFrameRate, scale: min(edit.scale, onScreen), timeRange: edit.timeRange
+            framesPerSecond: gifFrameRate, scale: gifScale, timeRange: edit.timeRange
         )
-        try await keepGIF(of: history.fileURL(for: entry), as: options, madeFrom: entry)
+        try await keepGIF(of: history.fileURL(for: entry), as: options, madeFrom: entry, progress: progress)
     }
 
     /// Makes a GIF of `movie` with `options` and keeps it as a recording of its own beside `entry`, the recording it was
@@ -1434,6 +1617,7 @@ final class RecordingCoordinator {
     ) async throws {
         let destination = FileManager.default.temporaryDirectory.appending(path: "\(UUID().uuidString).gif")
         do {
+            try Task.checkCancellation()
             let gif = try await GIFMaker.make(from: movie, to: destination, options: options, progress: progress)
             // Cancelled as it was finished: nothing is kept.
             try Task.checkCancellation()
@@ -1609,7 +1793,14 @@ final class RecordingCoordinator {
         clickRings?.hide()
         clickRings = nil
         camera.hide()
+        endTemporaryDesktopHide()
         showStatusAfterRecording()
+    }
+
+    private func endTemporaryDesktopHide() {
+        guard hidesDesktopForRecording else { return }
+        hidesDesktopForRecording = false
+        desktopIcons?.endTemporaryHide()
     }
 
     /// The menu bar once nothing is recording: how far along a GIF is, or the icon. A recording counting
@@ -1690,8 +1881,8 @@ final class RecordingCoordinator {
         }
     }
 
-    /// Shows, logs, and announces the microphone going silent, once, and clears the warning when sound is back.
-    /// What the Mac plays stopping is only logged. Pausing clears both, and resuming counts the seconds again.
+    /// Shows a visible notice, logs, and announces when the microphone or system audio stops arriving, once per stall,
+    /// and clears the warning when sound resumes. Pausing clears both, and resuming counts the seconds again.
     private func watchSound(of recorder: ScreenRecorder) {
         let microphone = recorder.isMicrophoneStalled
         if microphone != microphoneStalled {
@@ -1699,7 +1890,7 @@ final class RecordingCoordinator {
             controls.update(microphoneStalled: microphone)
             if microphone {
                 Log.recording.error("The microphone stopped sending sound")
-                VoiceOver.announce(String(localized: "The microphone stopped sending sound. It may have been disconnected."))
+                notice.show(String(localized: "The microphone stopped sending sound. It may have been disconnected."), near: NSEvent.mouseLocation)
             } else if recorder.state == .recording {
                 Log.recording.notice("The microphone is sending sound again")
             }
@@ -1709,6 +1900,7 @@ final class RecordingCoordinator {
             systemAudioStalled = system
             if system {
                 Log.recording.notice("The Mac's sound stopped arriving")
+                notice.show(String(localized: "System audio stopped arriving."), near: NSEvent.mouseLocation)
             } else if recorder.state == .recording {
                 Log.recording.notice("The Mac's sound is arriving again")
             }
@@ -1717,6 +1909,9 @@ final class RecordingCoordinator {
 
     private func tick() {
         guard let session else { return }
+        if session.camera != nil, syncCameraBubbleCorner(for: session.plan, recorded: session.source.frame) {
+            checkpointTelemetry()
+        }
         let elapsed = session.recorder.elapsed
         let paused = session.recorder.state == .paused
         controls.update(elapsed: elapsed, paused: paused)

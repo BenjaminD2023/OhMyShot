@@ -47,22 +47,57 @@ public final class DesktopCover {
     private let capturer: ScreenCapturer
     private var panels: [CGDirectDisplayID: CoverPanel] = [:]
     private var observers: [(NotificationCenter, NSObjectProtocol)] = []
+    /// Whether the user's persistent Hide Desktop Icons toggle is on.
+    private var persistentShown = false
+    /// Reference count for ephemeral captures/recordings ("Hide desktop icons while capturing").
+    private var temporaryHideCount = 0
     /// Counts the refreshes, so a slow capture never replaces a later one's picture.
     private var generation = 0
     private var lease: ActiveResources.Lease?
     /// A refresh asked for by a Space switch, a wake, or Dark Mode: one for a burst of them, once the switch is over.
     private var pendingRefresh: Task<Void, Never>?
+    /// The in-flight refresh capturing/drawing wallpaper panels.
+    private var refreshTask: Task<Void, Never>?
 
     public init(topology: DisplayTopology, capturer: ScreenCapturer) {
         self.topology = topology
         self.capturer = capturer
     }
 
+    /// Whether an ephemeral capture/recording currently holds a temporary hide lease.
+    public var isTemporarilyHidden: Bool { temporaryHideCount > 0 }
+
     public func setShown(_ shown: Bool) {
-        guard shown != isShown else { return }
-        isShown = shown
-        Log.capture.notice("Desktop icons \(shown ? "hidden" : "shown", privacy: .public)")
-        if shown {
+        guard shown != persistentShown else { return }
+        persistentShown = shown
+        updateVisibility()
+    }
+
+    /// Reference-counted ephemeral hide for "Hide desktop icons while capturing": shows the cover without
+    /// altering the persistent toggle, and tears it down automatically when the matching `endTemporaryHide()` ends.
+    public func beginTemporaryHide() {
+        temporaryHideCount += 1
+        updateVisibility()
+    }
+
+    /// Releases one temporary hide lease acquired via `beginTemporaryHide()`.
+    public func endTemporaryHide() {
+        guard temporaryHideCount > 0 else { return }
+        temporaryHideCount -= 1
+        updateVisibility()
+    }
+
+    /// Awaits any wallpaper refresh currently in flight (for example, after `beginTemporaryHide()` before capturing).
+    public func waitForRefresh() async {
+        await refreshTask?.value
+    }
+
+    private func updateVisibility() {
+        let shouldShow = persistentShown || temporaryHideCount > 0
+        guard shouldShow != isShown else { return }
+        isShown = shouldShow
+        Log.capture.notice("Desktop icons \(shouldShow ? "hidden" : "shown", privacy: .public)")
+        if shouldShow {
             observe()
             lease = ActiveResources.shared.acquire(.window)
             refresh()
@@ -70,6 +105,8 @@ public final class DesktopCover {
             generation += 1
             pendingRefresh?.cancel()
             pendingRefresh = nil
+            refreshTask?.cancel()
+            refreshTask = nil
             for (center, observer) in observers { center.removeObserver(observer) }
             observers = []
             for panel in panels.values { panel.orderOut(nil) }
@@ -86,6 +123,7 @@ public final class DesktopCover {
         guard isShown else { return }
         pendingRefresh?.cancel()
         pendingRefresh = nil
+        refreshTask?.cancel()
         generation += 1
         let generation = generation
         let layout = topology.layout
@@ -94,7 +132,7 @@ public final class DesktopCover {
             panels[id]?.orderOut(nil)
             panels[id] = nil
         }
-        Task { [weak self] in
+        refreshTask = Task { [weak self] in
             guard let self else { return }
             var captured: [CGDirectDisplayID: CGImage] = [:]
             if canReadScreen() {
@@ -104,7 +142,7 @@ public final class DesktopCover {
                     Log.capture.notice("Wallpaper not captured (\(String(describing: error), privacy: .public)): drawn from its file")
                 }
             }
-            guard isShown, generation == self.generation else { return }
+            guard isShown, generation == self.generation, !Task.isCancelled else { return }
             let new = layout.displays.filter { panels[$0.id] == nil }
             for display in layout.displays {
                 show(captured[display.id].map(Picture.captured) ?? Self.drawnPicture(of: display), on: display)
@@ -168,16 +206,25 @@ public final class DesktopCover {
 
     private func observe() {
         let workspace = NSWorkspace.shared.notificationCenter
-        for name in [NSWorkspace.activeSpaceDidChangeNotification, NSWorkspace.didWakeNotification] {
+        for name in [
+            NSWorkspace.activeSpaceDidChangeNotification,
+            NSWorkspace.didWakeNotification,
+            NSWorkspace.screensDidWakeNotification,
+        ] {
             observers.append((workspace, workspace.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
                 MainActor.assumeIsolated { self?.refreshSoon() }
             }))
         }
         let distributed = DistributedNotificationCenter.default()
-        let theme = Notification.Name("AppleInterfaceThemeChangedNotification")
-        observers.append((distributed, distributed.addObserver(forName: theme, object: nil, queue: .main) { [weak self] _ in
-            MainActor.assumeIsolated { self?.refreshSoon() }
-        }))
+        for name in [
+            Notification.Name("AppleInterfaceThemeChangedNotification"),
+            Notification.Name("com.apple.desktop"),
+            Notification.Name("AppleDesktopPictureChanged"),
+        ] {
+            observers.append((distributed, distributed.addObserver(forName: name, object: nil, queue: .main) { [weak self] _ in
+                MainActor.assumeIsolated { self?.refreshSoon() }
+            }))
+        }
     }
 }
 

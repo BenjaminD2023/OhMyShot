@@ -7,12 +7,18 @@ struct CloudToggle: View {
     @Bindable var model: TextRecognitionModel
     let cloud: CloudModel
 
+    /// Local servers (`localhost`, `127.0.0.1`, `::1`, `.local`, private LAN) use a computer icon so the toolbar
+    /// immediately distinguishes on-machine/local models from remote cloud services.
+    static func symbol(for cloud: CloudModel) -> String {
+        cloud.isLocal ? "desktopcomputer" : "cloud"
+    }
+
     var body: some View {
         Toggle(isOn: $model.readsInCloud) {
             Label {
                 Text("Read with \(cloud.name)", bundle: .module)
             } icon: {
-                Image(systemName: "cloud")
+                Image(systemName: Self.symbol(for: cloud))
             }
             .labelStyle(.iconOnly)
         }
@@ -73,6 +79,8 @@ struct CloudStatus: View {
                 .foregroundStyle(.secondary)
                 .lineLimit(1)
             Spacer(minLength: 8)
+            Button { model.retryCloudReading() } label: { Text("Re-read", bundle: .module) }
+                .controlSize(.small)
         case .read(let result) where !result.reading.isComplete:
             // Text cut short is said in words, as a failure is: a glyph alone would go unseen until the text was copied.
             Image(systemName: "exclamationmark.triangle.fill")
@@ -86,6 +94,8 @@ struct CloudStatus: View {
                 .layoutPriority(1)
             Spacer(minLength: 8)
             summary(result)
+            Button { model.retryCloudReading() } label: { Text("Re-read", bundle: .module) }
+                .controlSize(.small)
         case .read(let result):
             Text("Read by \(cloud.name)", bundle: .module)
                 .font(.callout)
@@ -93,6 +103,8 @@ struct CloudStatus: View {
                 .lineLimit(1)
             Spacer(minLength: 8)
             summary(result)
+            Button { model.retryCloudReading() } label: { Text("Re-read", bundle: .module) }
+                .controlSize(.small)
         case .failed(let message, let canRetry):
             Image(systemName: "exclamationmark.triangle.fill")
                 .foregroundStyle(.orange)
@@ -158,7 +170,7 @@ struct CloudEmptyState: View {
                 message: Text("Try an image with larger text or more contrast, or read it with \(cloud.name).", bundle: .module)
             ) {
                 Button { model.readsInCloud = true } label: {
-                    Label { Text("Read with \(cloud.name)", bundle: .module) } icon: { Image(systemName: "cloud") }
+                    Label { Text("Read with \(cloud.name)", bundle: .module) } icon: { Image(systemName: CloudToggle.symbol(for: cloud)) }
                 }
                 .padding(.top, 6)
                 .help(Text("Sends this picture to \(cloud.host ?? cloud.address)", bundle: .module))
@@ -175,7 +187,10 @@ struct CloudEmptyState: View {
                 symbol: "text.magnifyingglass",
                 title: Text("No text found", bundle: .module),
                 message: Text("Neither this Mac nor \(cloud.name) found text in it.", bundle: .module)
-            )
+            ) {
+                Button { model.retryCloudReading() } label: { Text("Re-read", bundle: .module) }
+                    .padding(.top, 6)
+            }
         case .failed(let message, let canRetry):
             PanelPlaceholder(
                 symbol: "exclamationmark.triangle",

@@ -42,6 +42,21 @@ nonisolated public struct ImageSizing: Equatable, Sendable {
         height = Self.clamped(Int((Double(current.height) * factor).rounded()))
     }
 
+    /// Quick scale presets offered in the Image Size sheet.
+    public static let presetPercents: [Double] = [50, 75, 200]
+
+    /// Formats a scale percentage cleanly without grouping separators or trailing decimal zeros.
+    public static func formatPercent(_ value: Double) -> String {
+        let rounded = (value * 100).rounded() / 100
+        if rounded == rounded.rounded() {
+            return "\(Int(rounded))"
+        }
+        var formatted = String(format: "%.2f", rounded)
+        while formatted.last == "0" { formatted.removeLast() }
+        if formatted.last == "." { formatted.removeLast() }
+        return formatted
+    }
+
     private static func clamped(_ value: Int) -> Int {
         min(max(value, 1), AnnotationDocument.maxPictureSide)
     }

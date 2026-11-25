@@ -12,19 +12,119 @@ import QuartzCore
 /// the recording bar, so it can be placed before recording. Its window floats above the overlay that chooses
 /// what to record, the Dock, and other apps' menus, and the recording's filter takes it in.
 public final class CameraBubble {
+    /// Pure placement state for the bubble's corner, drag position, and pre-fill memory.
+    struct Placement: Equatable {
+        var area: CGRect = .zero
+        var bubble: CGRect?
+        var snappedCorner: CameraBubbleCommand.Corner? = .bottomLeft
+        var wasMoved = false
+        var fills = false
+        var preFill: (frame: CGRect, corner: CameraBubbleCommand.Corner?, wasMoved: Bool)?
+
+        static func == (lhs: Placement, rhs: Placement) -> Bool {
+            lhs.area == rhs.area && lhs.bubble == rhs.bubble && lhs.snappedCorner == rhs.snappedCorner
+                && lhs.wasMoved == rhs.wasMoved && lhs.fills == rhs.fills
+                && lhs.preFill?.frame == rhs.preFill?.frame
+                && lhs.preFill?.corner == rhs.preFill?.corner
+                && lhs.preFill?.wasMoved == rhs.preFill?.wasMoved
+        }
+
+        mutating func update(area newArea: CGRect, side: CGFloat) {
+            if area != newArea {
+                area = newArea
+                if !wasMoved {
+                    fills = false
+                    preFill = nil
+                }
+            }
+            if let current = bubble, wasMoved, current.intersects(area) {
+                if let corner = snappedCorner {
+                    bubble = CameraBubble.corner(corner, of: area, side: side)
+                } else {
+                    bubble = CGRect(origin: current.origin, size: CGSize(width: side, height: side))
+                }
+            } else {
+                bubble = CameraBubble.corner(.bottomLeft, of: area, side: side)
+                snappedCorner = .bottomLeft
+                wasMoved = false
+            }
+        }
+
+        /// Moves the bubble to `corner`, exiting fill if active; returns whether it exited fill.
+        @discardableResult
+        mutating func move(to corner: CameraBubbleCommand.Corner, side: CGFloat) -> Bool {
+            let exitedFill = fills
+            fills = false
+            preFill = nil
+            bubble = CameraBubble.corner(corner, of: area, side: side)
+            snappedCorner = corner
+            wasMoved = true
+            return exitedFill
+        }
+
+        mutating func drag(by delta: CGVector, in bounds: CGRect?) -> CGRect? {
+            guard var moved = bubble, !fills else { return nil }
+            moved = moved.offsetBy(dx: delta.dx, dy: delta.dy)
+            if let bounds {
+                moved.origin.x = min(max(moved.minX, bounds.minX), bounds.maxX - moved.width)
+                moved.origin.y = min(max(moved.minY, bounds.minY), bounds.maxY - moved.height)
+            }
+            bubble = moved
+            snappedCorner = nil
+            wasMoved = true
+            return moved
+        }
+
+        /// Toggles filling `area`, preserving the pre-fill corner or custom dragged frame when toggling back.
+        @discardableResult
+        mutating func toggleFill(side: CGFloat) -> Bool {
+            if !fills {
+                if let bubble {
+                    preFill = (bubble, snappedCorner, wasMoved)
+                }
+                fills = true
+            } else {
+                fills = false
+                if let saved = preFill {
+                    if let corner = saved.corner {
+                        bubble = CameraBubble.corner(corner, of: area, side: side)
+                        snappedCorner = corner
+                    } else {
+                        var restored = CGRect(origin: saved.frame.origin, size: CGSize(width: side, height: side))
+                        if area.width >= side, area.height >= side {
+                            restored.origin.x = min(max(restored.minX, area.minX), area.maxX - side)
+                            restored.origin.y = min(max(restored.minY, area.minY), area.maxY - side)
+                        }
+                        bubble = restored
+                        snappedCorner = nil
+                    }
+                    wasMoved = saved.wasMoved
+                    preFill = nil
+                } else {
+                    let corner = snappedCorner ?? .bottomLeft
+                    bubble = CameraBubble.corner(corner, of: area, side: side)
+                    snappedCorner = corner
+                }
+            }
+            return fills
+        }
+
+        mutating func reset() {
+            bubble = nil
+            snappedCorner = .bottomLeft
+            wasMoved = false
+            fills = false
+            preFill = nil
+        }
+    }
+
     private var panel: BubblePanel?
     private let view = BubbleView()
     private let camera = CameraSession()
     private var lease: ActiveResources.Lease?
     private var style = CameraStyle()
     private var deviceID: String?
-    /// What is recorded, in global points: where the bubble starts, and what it fills.
-    private var area: CGRect = .zero
-    /// Where the bubble is, in global points; its panel reaches past it by `room`.
-    private var bubble: CGRect?
-    /// Moved by hand: the bubble stays where it was put when what is recorded changes.
-    private var wasMoved = false
-    private var fills = false
+    private var placement = Placement()
     private var isRecording = false
 
     /// Room around the bubble in its panel for the shadow: twice its blur and its drop.
@@ -44,13 +144,9 @@ public final class CameraBubble {
         case .toggleFill:
             toggleFill()
         case .move(let corner):
-            if fills {
-                fills = false
+            if placement.move(to: corner, side: side) {
                 onFillChange?(false)
             }
-            bubble = Self.corner(corner, of: area, side: side)
-            // Put there on purpose: it stays when what is recorded changes, as a dragged bubble does.
-            wasMoved = true
             layout()
             VoiceOver.announce(Self.name(of: corner), from: view)
         }
@@ -70,12 +166,12 @@ public final class CameraBubble {
 
     /// Whether the camera fills what is recorded rather than sitting in its bubble.
     public var isFilling: Bool {
-        fills
+        placement.fills
     }
 
     /// Where the bubble is, in global points; nil while hidden.
     public var bubbleFrame: CGRect? {
-        panel == nil ? nil : bubble
+        panel == nil ? nil : placement.bubble
     }
 
     /// The camera's frames' size in pixels, once it runs.
@@ -105,19 +201,10 @@ public final class CameraBubble {
         let changedCamera = id != deviceID
         self.style = style
         deviceID = id
-        if self.area != area {
-            self.area = area
-            if !wasMoved { fills = false }
-        }
         let panel = self.panel ?? makePanel()
         self.panel = panel
         if changedCamera { startCamera(id) }
-        if let current = bubble, wasMoved, current.intersects(area) {
-            bubble = CGRect(origin: current.origin, size: CGSize(width: side, height: side))
-        } else {
-            bubble = Self.corner(of: area, side: side)
-            wasMoved = false
-        }
+        placement.update(area: area, side: side(for: area))
         layout()
         panel.orderFrontRegardless()
     }
@@ -134,9 +221,7 @@ public final class CameraBubble {
         panel.orderOut(nil)
         self.panel = nil
         deviceID = nil
-        bubble = nil
-        wasMoved = false
-        fills = false
+        placement.reset()
         isRecording = false
         view.preview.session = nil
         camera.stop()
@@ -147,12 +232,11 @@ public final class CameraBubble {
 
     /// The bubble's side, never more than half of what is recorded.
     private var side: CGFloat {
-        min(style.size.points, max(min(area.width, area.height) / 2, 60))
+        side(for: placement.area)
     }
 
-    /// 24 points in from the bottom-left corner of `area`.
-    private static func corner(of area: CGRect, side: CGFloat) -> CGRect {
-        corner(.bottomLeft, of: area, side: side)
+    private func side(for area: CGRect) -> CGFloat {
+        min(style.size.points, max(min(area.width, area.height) / 2, 60))
     }
 
     /// 24 points in from `corner` of `area` (in global points, y up).
@@ -187,12 +271,12 @@ public final class CameraBubble {
 
     /// The panel around the bubble with room for its shadow, or over all of what is recorded when it fills.
     private func layout() {
-        guard let panel, let bubble else { return }
-        view.apply(style, fills: fills)
+        guard let panel, let bubble = placement.bubble else { return }
+        view.apply(style, fills: placement.fills)
         updateLevel()
-        if fills {
-            panel.setFrame(area, display: false)
-            view.frame = CGRect(origin: .zero, size: area.size)
+        if placement.fills {
+            panel.setFrame(placement.area, display: false)
+            view.frame = CGRect(origin: .zero, size: placement.area.size)
         } else {
             panel.setFrame(bubble.insetBy(dx: -Self.room, dy: -Self.room), display: false)
             view.frame = CGRect(x: Self.room, y: Self.room, width: bubble.width, height: bubble.height)
@@ -201,7 +285,7 @@ public final class CameraBubble {
     }
 
     private func updateLevel() {
-        panel?.level = fills && isRecording
+        panel?.level = placement.fills && isRecording
             ? NSWindow.Level(rawValue: NSWindow.Level.mainMenu.rawValue - 1)
             : NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 2)
     }
@@ -212,28 +296,15 @@ public final class CameraBubble {
     }
 
     private func drag(by delta: CGVector) {
-        guard let panel, var moved = bubble, !fills else { return }
-        moved = moved.offsetBy(dx: delta.dx, dy: delta.dy)
-        // Kept on the display it is on.
-        if let screen = panel.screen ?? NSScreen.main {
-            let bounds = screen.frame
-            moved.origin.x = min(max(moved.minX, bounds.minX), bounds.maxX - moved.width)
-            moved.origin.y = min(max(moved.minY, bounds.minY), bounds.maxY - moved.height)
-        }
-        bubble = moved
-        wasMoved = true
+        guard let panel, let moved = placement.drag(by: delta, in: (panel.screen ?? NSScreen.main)?.frame) else { return }
         panel.setFrameOrigin(CGPoint(x: moved.minX - Self.room, y: moved.minY - Self.room))
     }
 
-    /// Fills what is recorded, or goes back to a bubble in its corner, through a quick fade.
+    /// Fills what is recorded, or goes back to a bubble in its remembered corner/position, through a quick fade.
     private func toggleFill() {
         guard let panel else { return }
-        fills.toggle()
+        let fills = placement.toggleFill(side: side)
         onFillChange?(fills)
-        if !fills {
-            bubble = Self.corner(of: area, side: side)
-            wasMoved = false
-        }
         VoiceOver.announce(fills ? String(localized: "Camera fills the recording", bundle: .module) : String(localized: "Camera in a bubble", bundle: .module), from: view)
         guard !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion else { return layout() }
         NSAnimationContext.runAnimationGroup { context in

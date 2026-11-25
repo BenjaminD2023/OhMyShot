@@ -7,6 +7,18 @@ import OMSCore
 import SwiftUI
 import UniformTypeIdentifiers
 
+/// One-off GIF export overrides chosen from the recording window's Make GIF popover.
+public struct GIFExportOptions: Equatable, Sendable {
+    public var framesPerSecond: Int
+    /// Scale relative to the recording's on-screen 1× display size (`1.0`, `0.75`, `0.5`).
+    public var scale: Double
+
+    public init(framesPerSecond: Int = 15, scale: Double = 1.0) {
+        self.framesPerSecond = min(max(framesPerSecond, 5), 60)
+        self.scale = min(max(scale, 0.25), 1.0)
+    }
+}
+
 /// What the recording window changes in a recording before it is kept again.
 public struct RecordingEdit: Equatable, Sendable {
     /// The part kept, in the movie's time; nil keeps all of it.
@@ -19,15 +31,19 @@ public struct RecordingEdit: Equatable, Sendable {
     public var volume: Double
     /// How closely the picture is encoded when it is encoded again.
     public var quality: RecordingQuality
+    /// One-off GIF export overrides chosen from the recording window's Make GIF popover.
+    public var gifOptions: GIFExportOptions?
 
     public init(
-        timeRange: CMTimeRange? = nil, keepsAudio: Bool = true, scale: Double = 1, volume: Double = 1, quality: RecordingQuality = .medium
+        timeRange: CMTimeRange? = nil, keepsAudio: Bool = true, scale: Double = 1, volume: Double = 1,
+        quality: RecordingQuality = .medium, gifOptions: GIFExportOptions? = nil
     ) {
         self.timeRange = timeRange
         self.keepsAudio = keepsAudio
         self.scale = scale
         self.volume = volume
         self.quality = quality
+        self.gifOptions = gifOptions
     }
 
     /// Whether the recording is left as it was made: nothing trimmed, silenced, quieted, made smaller, or
@@ -47,26 +63,45 @@ public struct RecordingEdit: Equatable, Sendable {
 public final class RecordingWindowController: NSWindowController, NSWindowDelegate {
     public struct Actions {
         /// Makes the recording with `edit` and keeps it in place of the recording, the recording as it was made
-        /// kept beside it; returns the file that now holds it.
-        public var keep: (RecordingEdit) async throws -> URL
+        /// kept beside it; returns the file that now holds it. Reports progress (0…1) when available.
+        public var keep: (RecordingEdit, @escaping @Sendable (Double) -> Void) async throws -> URL
         /// Puts the recording back as it was made; returns its file.
         public var revert: () async throws -> URL
-        /// Makes a GIF of the recording with `edit`, kept as a capture of its own, with a card.
-        public var makeGIF: (RecordingEdit) async throws -> Void
+        /// Makes a GIF of the recording with `edit`, kept as a capture of its own, with a card. Reports progress (0…1).
+        public var makeGIF: (RecordingEdit, @escaping @Sendable (Double) -> Void) async throws -> Void
         /// Saves a copy of the file to the export location; returns where it went.
         public var save: (URL) -> URL?
         /// Puts the file on the clipboard.
         public var copy: (URL) -> Void
 
         public init(
-            keep: @escaping (RecordingEdit) async throws -> URL, revert: @escaping () async throws -> URL,
-            makeGIF: @escaping (RecordingEdit) async throws -> Void, save: @escaping (URL) -> URL?, copy: @escaping (URL) -> Void
+            keep: @escaping (RecordingEdit, @escaping @Sendable (Double) -> Void) async throws -> URL,
+            revert: @escaping () async throws -> URL,
+            makeGIF: @escaping (RecordingEdit, @escaping @Sendable (Double) -> Void) async throws -> Void,
+            save: @escaping (URL) -> URL?,
+            copy: @escaping (URL) -> Void
         ) {
             self.keep = keep
             self.revert = revert
             self.makeGIF = makeGIF
             self.save = save
             self.copy = copy
+        }
+
+        public init(
+            keep: @escaping (RecordingEdit) async throws -> URL,
+            revert: @escaping () async throws -> URL,
+            makeGIF: @escaping (RecordingEdit) async throws -> Void,
+            save: @escaping (URL) -> URL?,
+            copy: @escaping (URL) -> Void
+        ) {
+            self.init(
+                keep: { edit, _ in try await keep(edit) },
+                revert: revert,
+                makeGIF: { edit, _ in try await makeGIF(edit) },
+                save: save,
+                copy: copy
+            )
         }
     }
 
@@ -84,6 +119,8 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     private var closed: (() -> Void)?
     /// The edits being kept now, which a second keep waits for.
     private var keeping: Task<URL?, Never>?
+    /// An in-flight Make GIF export task, cancellable from the overlay.
+    private var makingGIFTask: Task<Void, Never>?
     private var contentRevision = 0
     /// The audio tracks of the movie being played, which the volume is previewed on.
     private var audioTracks: [AVAssetTrack] = []
@@ -93,7 +130,11 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     ///   - pixelsPerPoint: the recorded display's, so the window shows the recording as large as it was on
     ///     screen; nil for a Retina display's.
     ///   - hasOriginal: whether it was edited before, so Revert to Original has something to bring back.
-    public init(fileURL: URL, title: String, pixelWidth: Int, pixelHeight: Int, pixelsPerPoint: Double?, hasOriginal: Bool, actions: Actions) {
+    ///   - defaultGIFFrameRate: initial frame rate preselected in the Make GIF popover (defaults to 15 fps).
+    public init(
+        fileURL: URL, title: String, pixelWidth: Int, pixelHeight: Int, pixelsPerPoint: Double?, hasOriginal: Bool,
+        defaultGIFFrameRate: Int = 15, actions: Actions
+    ) {
         self.fileURL = fileURL
         self.actions = actions
         let isGIF = CaptureMedia(recordingAt: fileURL) == .gif
@@ -116,6 +157,10 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         model.isGIF = isGIF
         model.pixelWidth = pixelWidth
         model.pixelHeight = pixelHeight
+        model.pixelsPerPoint = max(pixelsPerPoint ?? 2, 1)
+        let clampedFPS = min(max(defaultGIFFrameRate, 5), 60)
+        model.defaultGIFFrameRate = clampedFPS
+        model.gifFrameRate = clampedFPS
         model.canRevert = hasOriginal
 
         let content: NSView
@@ -201,7 +246,9 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     public func windowWillClose(_ notification: Notification) {
+        model.showsGIFPopover = false
         playerView.player?.pause()
+        makingGIFTask?.cancel()
         if hasUnkeptEdits {
             // Kept after the window has gone; this task holds the controller until then.
             Task {
@@ -293,21 +340,31 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
     }
 
     /// Makes the edits and keeps them in the recording, once; returns the file that holds it, or nil when
-    /// it failed (said with a beep and an alert).
+    /// it was cancelled or failed (failure is said with a beep and an alert).
     private func keepEdits() async -> URL? {
         // Edits being kept already (Copy, then the window closed): wait for them rather than make them twice.
         if let keeping { return await keeping.value }
         let edit = edit
         guard !edit.isNone else { return fileURL }
         model.busy = String(localized: "Saving the recording…", bundle: .module)
-        let task = Task { () -> URL? in
+        model.progress = nil
+        model.canCancelBusy = true
+        let task = Task { [weak self] () -> URL? in
+            guard let self else { return nil }
             do {
-                let url = try await actions.keep(edit)
-                contentChanged(to: url)
-                model.canRevert = true
+                try Task.checkCancellation()
+                let url = try await self.actions.keep(edit) { [weak self] fraction in
+                    Task { @MainActor in
+                        guard let self, self.keeping != nil else { return }
+                        self.model.progress = fraction
+                    }
+                }
+                try Task.checkCancellation()
+                self.contentChanged(to: url)
+                self.model.canRevert = true
                 return url
             } catch {
-                fail(error)
+                if !(error is CancellationError), !Task.isCancelled { self.fail(error) }
                 return nil
             }
         }
@@ -315,6 +372,8 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         let url = await task.value
         keeping = nil
         model.busy = nil
+        model.progress = nil
+        model.canCancelBusy = false
         return url
     }
 
@@ -412,17 +471,57 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         return outcome
     }
 
-    func makeGIF() {
-        let edit = edit
-        Task {
-            model.busy = String(localized: "Making the GIF…", bundle: .module)
-            defer { model.busy = nil }
-            do {
-                try await actions.makeGIF(edit)
-                announce(String(localized: "GIF made", bundle: .module))
-            } catch {
-                fail(error)
+    func makeGIF(options: GIFExportOptions? = nil) {
+        model.showsGIFPopover = false
+        guard makingGIFTask == nil, keeping == nil else { return }
+        var edit = self.edit
+        edit.gifOptions = options ?? model.currentGIFOptions()
+        let task = Task { [weak self] in
+            guard let self else { return }
+            self.model.busy = String(localized: "Making the GIF…", bundle: .module)
+            self.model.progress = 0
+            self.model.canCancelBusy = true
+            defer {
+                self.makingGIFTask = nil
+                self.model.busy = nil
+                self.model.progress = nil
+                self.model.canCancelBusy = false
             }
+            do {
+                try Task.checkCancellation()
+                try await self.actions.makeGIF(edit) { [weak self] fraction in
+                    Task { @MainActor in
+                        guard let self, self.makingGIFTask != nil else { return }
+                        self.model.progress = fraction
+                    }
+                }
+                try Task.checkCancellation()
+                self.announce(String(localized: "GIF made", bundle: .module))
+            } catch {
+                if !(error is CancellationError), !Task.isCancelled { self.fail(error) }
+            }
+        }
+        makingGIFTask = task
+    }
+
+    func cancelBusy() {
+        keeping?.cancel()
+        makingGIFTask?.cancel()
+    }
+
+    /// Asks for confirmation before discarding edits or reverting to the original recording.
+    func confirmRevert() {
+        guard model.canRevert || model.isEdited else { return }
+        guard let window else { return revert() }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "Revert to the original recording?", bundle: .module)
+        alert.informativeText = String(localized: "Any trimming, sound, size, or quality edits will be lost.", bundle: .module)
+        let revertButton = alert.addButton(withTitle: String(localized: "Revert to Original", bundle: .module))
+        revertButton.hasDestructiveAction = true
+        alert.addButton(withTitle: String(localized: "Cancel", bundle: .module))
+        alert.beginSheetModal(for: window) { [weak self] response in
+            if response == .alertFirstButtonReturn { self?.revert() }
         }
     }
 
@@ -431,7 +530,12 @@ public final class RecordingWindowController: NSWindowController, NSWindowDelega
         Task {
             guard model.canRevert else { return reload(fileURL) }
             model.busy = String(localized: "Reverting…", bundle: .module)
-            defer { model.busy = nil }
+            model.progress = nil
+            model.canCancelBusy = false
+            defer {
+                model.busy = nil
+                model.progress = nil
+            }
             do {
                 let url = try await actions.revert()
                 contentChanged(to: url)
@@ -564,10 +668,19 @@ final class RecordingWindowModel {
     var quality = RecordingQuality.medium
     var pixelWidth = 0
     var pixelHeight = 0
+    var pixelsPerPoint = 2.0
+    var showsGIFPopover = false
+    var defaultGIFFrameRate = 15
+    var gifFrameRate = 15
+    var gifScale = 1.0
     var isTrimmed = false
     var isTrimming = false
     /// What the window is doing that takes a moment, shown over the recording; nil when nothing is.
     var busy: String?
+    /// Determinate progress (0…1) while saving or making a GIF; nil shows an indeterminate indicator.
+    var progress: Double?
+    /// Whether the active busy task supports cancellation.
+    var canCancelBusy = false
     var canRevert = false
     var copied = false
     var saved = false
@@ -576,11 +689,37 @@ final class RecordingWindowModel {
 
     /// The sizes Size offers: the recording's own, then smaller.
     static let scales = [1.0, 0.75, 0.5, 0.25]
+    /// Frame-rate presets offered in the Make GIF popover.
+    static let gifFrameRates = [10, 15, 20, 30]
+    /// Relative scale presets offered in the Make GIF popover (against on-screen 1× size).
+    static let gifScales = [1.0, 0.75, 0.5]
+
+    /// Sorted unique frame rates for the Make GIF popover, retaining a custom default if configured.
+    var gifFrameRateOptions: [Int] {
+        var rates = Self.gifFrameRates
+        for candidate in [defaultGIFFrameRate, gifFrameRate] where !rates.contains(candidate) {
+            rates.append(candidate)
+        }
+        return rates.sorted()
+    }
 
     /// The recording's size at `scale`, in pixels, both sides even: "1000 × 640".
     func dimensions(_ scale: Double) -> String {
         let width = Int((Double(pixelWidth) * scale).rounded()), height = Int((Double(pixelHeight) * scale).rounded())
         return "\(width - width % 2) × \(height - height % 2)"
+    }
+
+    /// Resulting even pixel dimensions for a GIF exported at `gifScale` relative to the recording's on-screen 1× size
+    /// (matching `RecordingCoordinator.makeGIF` where a GIF is never larger than on-screen 1× or the chosen Size).
+    func gifDimensions(scale gifScale: Double) -> String {
+        let clampedGIFScale = min(max(gifScale, 0.25), 1.0)
+        let effectiveScale = min(scale, 1.0 / max(pixelsPerPoint, 1.0)) * clampedGIFScale
+        return dimensions(effectiveScale)
+    }
+
+    /// Current one-off GIF export overrides selected in the Make GIF popover.
+    func currentGIFOptions() -> GIFExportOptions {
+        GIFExportOptions(framesPerSecond: gifFrameRate, scale: gifScale)
     }
 
     /// A size's name with what it makes: "Half Size (1000 × 640)".
@@ -636,25 +775,47 @@ struct RecordingWindowView: View {
 
     var body: some View {
         PlayerArea(view: content)
+            .disabled(model.busy != nil)
             .overlay {
                 if let busy = model.busy {
                     VStack(spacing: 10) {
-                        ProgressView()
-                            .controlSize(.regular)
-                        Text(busy)
+                        if let progress = model.progress {
+                            let percent = Int((min(max(progress, 0), 1) * 100).rounded())
+                            ProgressView(value: progress)
+                                .frame(width: 180)
+                            HStack(spacing: 6) {
+                                Text(busy)
+                                Text(verbatim: "\(percent)%")
+                                    .monospacedDigit()
+                            }
                             .font(.callout)
                             .foregroundStyle(.secondary)
+                        } else {
+                            ProgressView()
+                                .controlSize(.regular)
+                            Text(busy)
+                                .font(.callout)
+                                .foregroundStyle(.secondary)
+                        }
+                        if model.canCancelBusy {
+                            Button(role: .cancel) {
+                                model.controller?.cancelBusy()
+                            } label: {
+                                Text("Cancel", bundle: .module)
+                            }
+                            .keyboardShortcut(.cancelAction)
+                            .controlSize(.small)
+                        }
                     }
                     .padding(.horizontal, 22)
                     .padding(.vertical, 16)
                     // Opaque behind its text, over whatever frame the movie shows.
                     .windowNoticeCard()
-                    .accessibilityElement(children: .combine)
+                    .accessibilityElement(children: .contain)
                 }
             }
             .background(.black)
             .toolbar { toolbar }
-            .disabled(model.busy != nil)
     }
 
     @ToolbarContentBuilder private var toolbar: some ToolbarContent {
@@ -665,7 +826,7 @@ struct RecordingWindowView: View {
                 } label: {
                     Label { Text("Trim", bundle: .module) } icon: { Image(systemName: "timeline.selection") }
                 }
-                .disabled(model.isTrimming)
+                .disabled(model.isTrimming || model.busy != nil)
                 .help(Text("Trim the start and end", bundle: .module))
                 if model.hasAudio {
                     Button {
@@ -677,13 +838,14 @@ struct RecordingWindowView: View {
                             Image(systemName: model.keepsAudio ? "speaker.wave.2" : "speaker.slash")
                         }
                     }
+                    .disabled(model.busy != nil)
                     .help(model.keepsAudio ? Text("Leave the sound out", bundle: .module) : Text("Keep the sound", bundle: .module))
                     .accessibilityValue(model.keepsAudio ? Text("On", bundle: .module) : Text("Off", bundle: .module))
                     // How loud the sound is in the recording kept; dimmed while it is left out. Without a step, so it
                     // draws no tick marks (setVolume rounds to whole percents).
                     Slider(value: Binding(get: { model.volume }, set: { model.controller?.setVolume($0) }), in: 0...1)
                         .frame(width: 80)
-                        .disabled(!model.keepsAudio)
+                        .disabled(!model.keepsAudio || model.busy != nil)
                         .help(Text("Make the sound quieter", bundle: .module))
                         .accessibilityLabel(Text("Volume", bundle: .module))
                         .accessibilityValue(Text("\(Int((model.volume * 100).rounded())) percent", bundle: .module))
@@ -699,6 +861,7 @@ struct RecordingWindowView: View {
                     Text(verbatim: model.dimensions(model.scale)).monospacedDigit()
                 }
                 .fixedSize()
+                .disabled(model.busy != nil)
                 .help(Text("Make the recording smaller", bundle: .module))
                 .accessibilityLabel(Text("Size", bundle: .module))
                 .accessibilityValue(Text(verbatim: model.sizeTitle(model.scale)))
@@ -713,17 +876,23 @@ struct RecordingWindowView: View {
                     Text(verbatim: model.quality.title)
                 }
                 .fixedSize()
+                .disabled(model.busy != nil)
                 .help(Text("How closely the picture is encoded when the recording is kept: High makes a larger file, Low a smaller one", bundle: .module))
                 .accessibilityLabel(Text("Quality", bundle: .module))
                 .accessibilityValue(Text(verbatim: model.quality.menuTitle))
             }
             ToolbarItem(placement: .primaryAction) {
                 Button {
-                    model.controller?.makeGIF()
+                    guard model.busy == nil else { return }
+                    model.showsGIFPopover.toggle()
                 } label: {
                     Label { Text("Make GIF", bundle: .module) } icon: { Image(systemName: "photo.stack") }
                 }
+                .disabled(model.busy != nil)
                 .help(Text("Make a GIF of the recording, without sound, as large as it was on screen or smaller as Size says", bundle: .module))
+                .popover(isPresented: $model.showsGIFPopover, arrowEdge: .bottom) {
+                    MakeGIFPopoverView(model: model)
+                }
             }
         }
         ToolbarItem(placement: .primaryAction) {
@@ -734,7 +903,7 @@ struct RecordingWindowView: View {
                 }
                 if !model.isGIF {
                     Divider()
-                    Button { model.controller?.revert() } label: { Text("Revert to Original", bundle: .module) }
+                    Button { model.controller?.confirmRevert() } label: { Text("Revert to Original", bundle: .module) }
                         .disabled(!model.canRevert && !model.isEdited)
                 }
             } label: {
@@ -749,6 +918,7 @@ struct RecordingWindowView: View {
             } primaryAction: {
                 model.controller?.saveRecording()
             }
+            .disabled(model.busy != nil)
             .help(Text("Save a Copy (⌘S)", bundle: .module))
         }
         ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -764,6 +934,7 @@ struct RecordingWindowView: View {
                 .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.glassProminent)
+            .disabled(model.busy != nil)
             .help(Text("Copy the recording (⌘C)", bundle: .module))
         }
     }
@@ -786,6 +957,89 @@ extension RecordingQuality {
         case .medium: String(localized: "Medium (as recorded)", bundle: .module)
         case .low: String(localized: "Low (smaller file)", bundle: .module)
         }
+    }
+}
+
+/// One-off GIF frame-rate and scale options popover anchored to the recording window's Make GIF toolbar button.
+private struct MakeGIFPopoverView: View {
+    @Bindable var model: RecordingWindowModel
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 14) {
+            Text("Make GIF", bundle: .module)
+                .font(.headline)
+
+            VStack(alignment: .leading, spacing: 6) {
+                Text("Frame Rate", bundle: .module)
+                    .font(.subheadline)
+                    .foregroundStyle(.secondary)
+                Picker(selection: $model.gifFrameRate) {
+                    ForEach(model.gifFrameRateOptions, id: \.self) { fps in
+                        Text("\(fps) fps", bundle: .module)
+                            .monospacedDigit()
+                            .tag(fps)
+                    }
+                } label: {
+                    Text("Frame Rate", bundle: .module)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel(Text("Frame Rate", bundle: .module))
+            }
+
+            VStack(alignment: .leading, spacing: 6) {
+                HStack {
+                    Text("Scale", bundle: .module)
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text(verbatim: model.gifDimensions(scale: model.gifScale))
+                        .font(.subheadline)
+                        .foregroundStyle(.secondary)
+                        .monospacedDigit()
+                        .accessibilityLabel(Text("Output size \(model.gifDimensions(scale: model.gifScale))", bundle: .module))
+                }
+                Picker(selection: $model.gifScale) {
+                    ForEach(RecordingWindowModel.gifScales, id: \.self) { scale in
+                        Text(verbatim: "\(Int((scale * 100).rounded()))%")
+                            .monospacedDigit()
+                            .tag(scale)
+                    }
+                } label: {
+                    Text("Scale", bundle: .module)
+                }
+                .pickerStyle(.segmented)
+                .labelsHidden()
+                .accessibilityLabel(Text("Scale", bundle: .module))
+                .accessibilityValue(
+                    Text("\(Int((model.gifScale * 100).rounded())) percent, \(model.gifDimensions(scale: model.gifScale))", bundle: .module)
+                )
+            }
+
+            Text("Applies to this GIF only.", bundle: .module)
+                .font(.caption)
+                .foregroundStyle(.secondary)
+
+            HStack {
+                Button(role: .cancel) {
+                    model.showsGIFPopover = false
+                } label: {
+                    Text("Cancel", bundle: .module)
+                }
+                .keyboardShortcut(.cancelAction)
+                Spacer()
+                Button {
+                    model.controller?.makeGIF()
+                } label: {
+                    Text("Make GIF", bundle: .module)
+                }
+                .buttonStyle(.borderedProminent)
+                .keyboardShortcut(.defaultAction)
+                .disabled(model.busy != nil)
+            }
+        }
+        .padding(16)
+        .frame(minWidth: 296)
     }
 }
 

@@ -1,7 +1,16 @@
 import AppKit
 import AVFoundation
+import CoreMedia
 import OMSCore
 import OMSDesign
+import QuartzCore
+
+/// Ephemeral microphone input-level monitor used while the recording setup bar is visible and a
+/// microphone is enabled with granted permission. Zero activity when stopped or ungranted.
+protocol MicrophoneLevelMonitoring: AnyObject {
+    func start(deviceID: String, onLevel: @escaping (CGFloat) -> Void)
+    func stop()
+}
 
 /// The recording bar: after choosing what to record, a small glass capsule under it holding what the
 /// recording is kept as (a movie or a GIF), what it takes along (the Mac's sound, the microphone, clicks),
@@ -58,7 +67,7 @@ final class RecordingBar: NSView {
     private var cameraID = ""
     private var cameraStyle = CameraStyle()
     /// A window is recorded on its own: what the app shows over the screen can't be in it.
-    private let recordsWindow: Bool
+    private(set) var recordsWindow: Bool
     private let compact: Bool
     private var optionsButton: BarButton?
     private var hovered: NSButton?
@@ -66,6 +75,20 @@ final class RecordingBar: NSView {
     private let deviceName: (Toggle, String) -> String?
     /// The names looked up so far, so each device is looked up once.
     private var deviceNames: [String: String] = [:]
+    /// Subtle live input-level indicator tucked along the bottom of the Microphone chip while armed.
+    private let micMeterTrack = CALayer()
+    private let micMeterFill = CALayer()
+    private var levelMonitor: (any MicrophoneLevelMonitoring)?
+    private var monitoredMicrophoneID: String?
+    private var levelMonitoringStopped = false
+    /// Current normalized microphone input level (0...1) shown in the setup bar, for tests.
+    private(set) var microphoneInputLevel: CGFloat = 0
+    /// Whether the live microphone input-level monitor is currently running, for tests.
+    var isMonitoringMicrophoneLevel: Bool { levelMonitor != nil }
+    /// Injectable hooks for deterministic unit testing of microphone permission & live monitoring.
+    var microphoneAuthorizationStatus: () -> AVAuthorizationStatus = { AVCaptureDevice.authorizationStatus(for: .audio) }
+    var requestMicrophoneAccess: () async -> Bool = { await AVCaptureDevice.requestAccess(for: .audio) }
+    var makeLevelMonitor: () -> any MicrophoneLevelMonitoring = { LiveMicrophoneLevelMonitor() }
 
     /// `deviceName` names the microphone or camera a chip records; by default the device itself is asked, once access
     /// to it is granted (asking starts the system's capture machinery, and only for that one device).
@@ -142,8 +165,37 @@ final class RecordingBar: NSView {
         fatalError("init(coder:) is not supported")
     }
 
+    isolated deinit {
+        tearDownMicrophoneMonitor()
+    }
+
     override var fittingSize: NSSize {
         stack.fittingSize
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        if window == nil {
+            tearDownMicrophoneMonitor()
+        } else {
+            syncMicrophoneMonitoring()
+        }
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        tearDownMicrophoneMonitor()
+    }
+
+    override func viewDidUnhide() {
+        super.viewDidUnhide()
+        syncMicrophoneMonitoring()
+    }
+
+    /// Stops any active microphone level monitor immediately (called before recording begins or when the bar closes).
+    func stopLevelMonitoring() {
+        levelMonitoringStopped = true
+        tearDownMicrophoneMonitor()
     }
 
     override func layout() {
@@ -163,8 +215,9 @@ final class RecordingBar: NSView {
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    /// Shows the choices as they are now.
-    func update(_ choices: RecordingChoices) {
+    /// Shows the choices as they are now, updating whether a standalone window is targeted when given.
+    func update(_ choices: RecordingChoices, recordsWindow: Bool? = nil) {
+        if let recordsWindow { self.recordsWindow = recordsWindow }
         output = choices.output
         microphoneID = choices.microphoneID
         cameraID = choices.cameraID
@@ -186,10 +239,10 @@ final class RecordingBar: NSView {
             ])
         }
         // A GIF has no sound: the sound chips show off and can't be pressed, and keep their state.
-        // Studio draws the keys itself, so a window recorded for it can show them.
+        // Studio draws the keys and composites the camera itself, so a window recorded for it can show both.
         let studio = choices.output == .studio
-        let keysApply = !recordsWindow || studio
-        let cameraApplies = !recordsWindow
+        let keysApply = !self.recordsWindow || studio
+        let cameraApplies = !self.recordsWindow || studio
         states = [
             .systemAudio: choices.recordsSystemAudio, .clicks: choices.showsClicks,
             .keystrokes: choices.showsKeystrokes && keysApply && keysAllowed,
@@ -214,7 +267,6 @@ final class RecordingBar: NSView {
             let device = on && (toggle == .microphone || toggle == .camera) ? name(of: toggle, id: toggle == .microphone ? microphoneID : cameraID) : nil
             button.toolTip = !enabled
                 ? toggle == .keystrokes ? String(localized: "A window is recorded on its own, without keys shown over it", bundle: .module)
-                : toggle == .camera && studio ? String(localized: "Studio doesn’t add the camera to a window recorded on its own yet", bundle: .module)
                 : toggle == .camera ? String(localized: "A window is recorded on its own, without the camera over it", bundle: .module)
                 : String(localized: "GIFs have no sound", bundle: .module)
                 : blocked
@@ -222,7 +274,7 @@ final class RecordingBar: NSView {
                 : toggle == .microphone ? String(localized: "Microphone access is off, so the recording would have no microphone sound. Turn on OhMyShot in System Settings › Privacy & Security › Microphone.", bundle: .module)
                 : String(localized: "Camera access is off. Turn on OhMyShot in System Settings › Privacy & Security › Camera.", bundle: .module)
                 : device.map { toggle == .microphone ? String(localized: "Microphone: \($0)", bundle: .module) : String(localized: "Camera: \($0)", bundle: .module) }
-                ?? help(for: toggle)
+                ?? help(for: toggle, studio: studio)
             let value = switch toggle {
             case .microphone: on ? device ?? String(localized: "On", bundle: .module) : String(localized: "No Microphone", bundle: .module)
             case .camera: on ? device ?? String(localized: "On", bundle: .module) : String(localized: "No Camera", bundle: .module)
@@ -232,6 +284,7 @@ final class RecordingBar: NSView {
             button.setAccessibilityHelp(button.toolTip)
         }
         applyAppearance()
+        syncMicrophoneMonitoring()
     }
 
     /// The device a chip records, looked up the first time it is asked for.
@@ -282,6 +335,8 @@ final class RecordingBar: NSView {
             for button in [recordButton, cancelButton] + [optionsButton].compactMap({ $0 }) {
                 button.layer?.backgroundColor = button === hovered ? hover : .clear
             }
+            micMeterTrack.backgroundColor = NSColor.labelColor.withAlphaComponent(contrast ? 0.3 : 0.16).cgColor
+            micMeterFill.backgroundColor = NSColor.controlAccentColor.cgColor
         }
     }
 
@@ -310,13 +365,19 @@ final class RecordingBar: NSView {
         return button
     }
 
-    private func help(for toggle: Toggle) -> String {
+    private func help(for toggle: Toggle, studio: Bool = false) -> String {
         switch toggle {
         case .systemAudio: String(localized: "Record what the Mac plays", bundle: .module)
         case .microphone: String(localized: "Choose a microphone to record", bundle: .module)
         case .camera: String(localized: "Show your camera in the recording", bundle: .module)
-        case .clicks: String(localized: "Show clicks in the recording", bundle: .module)
-        case .keystrokes: String(localized: "Show the keys you press in the recording", bundle: .module)
+        case .clicks:
+            studio
+                ? String(localized: "Record clicks for Studio — you can toggle or adjust them after recording", bundle: .module)
+                : String(localized: "Show clicks in the recording", bundle: .module)
+        case .keystrokes:
+            studio
+                ? String(localized: "Record keystrokes for Studio — you can toggle or adjust them after recording", bundle: .module)
+                : String(localized: "Show the keys you press in the recording", bundle: .module)
         }
     }
 
@@ -340,8 +401,78 @@ final class RecordingBar: NSView {
         button.setAccessibilityLabel(title)
         button.setAccessibilityHelp(help)
         button.widthAnchor.constraint(equalToConstant: Self.chip).isActive = true
+        if toggle == .microphone {
+            configureMicrophoneMeter(on: button)
+        }
         toggles[toggle] = button
         return button
+    }
+
+    private static let micMeterWidth: CGFloat = 14
+    private static let micMeterHeight: CGFloat = 2.5
+
+    private func configureMicrophoneMeter(on button: BarButton) {
+        let noAnim: [String: CAAction] = ["bounds": NSNull(), "position": NSNull(), "frame": NSNull(), "backgroundColor": NSNull(), "hidden": NSNull()]
+        micMeterTrack.frame = CGRect(
+            x: (Self.chip - Self.micMeterWidth) / 2,
+            y: 3,
+            width: Self.micMeterWidth,
+            height: Self.micMeterHeight
+        )
+        micMeterTrack.cornerRadius = Self.micMeterHeight / 2
+        micMeterTrack.masksToBounds = true
+        micMeterTrack.actions = noAnim
+        micMeterTrack.isHidden = true
+
+        micMeterFill.frame = CGRect(x: 0, y: 0, width: 0, height: Self.micMeterHeight)
+        micMeterFill.cornerRadius = Self.micMeterHeight / 2
+        micMeterFill.actions = noAnim
+        micMeterTrack.addSublayer(micMeterFill)
+        button.layer?.addSublayer(micMeterTrack)
+    }
+
+    private func syncMicrophoneMonitoring() {
+        let shouldMonitor = !levelMonitoringStopped
+            && window != nil
+            && !isHiddenOrHasHiddenAncestor
+            && states[.microphone] == true
+            && microphoneAuthorizationStatus() == .authorized
+        guard shouldMonitor else {
+            tearDownMicrophoneMonitor()
+            return
+        }
+        if levelMonitor != nil, monitoredMicrophoneID == microphoneID {
+            return
+        }
+        tearDownMicrophoneMonitor()
+        let monitor = makeLevelMonitor()
+        levelMonitor = monitor
+        monitoredMicrophoneID = microphoneID
+        setMicrophoneInputLevel(0, visible: true)
+        monitor.start(deviceID: microphoneID) { [weak self] level in
+            guard let self, self.levelMonitor != nil else { return }
+            self.setMicrophoneInputLevel(level, visible: true)
+        }
+    }
+
+    private func tearDownMicrophoneMonitor() {
+        levelMonitor?.stop()
+        levelMonitor = nil
+        monitoredMicrophoneID = nil
+        setMicrophoneInputLevel(0, visible: false)
+    }
+
+    private func setMicrophoneInputLevel(_ level: CGFloat, visible: Bool) {
+        let clamped = min(max(level, 0), 1)
+        microphoneInputLevel = clamped
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        micMeterTrack.isHidden = !visible
+        let fillWidth: CGFloat = clamped > 0.02
+            ? max(Self.micMeterHeight, (Self.micMeterWidth * clamped).rounded(.toNearestOrAwayFromZero))
+            : 0
+        micMeterFill.frame = CGRect(x: 0, y: 0, width: fillWidth, height: Self.micMeterHeight)
+        CATransaction.commit()
     }
 
     private func configureRecordButton() {
@@ -454,11 +585,11 @@ final class RecordingBar: NSView {
         CGPreflightListenEventAccess()
     }
 
-    /// Whether the microphone chosen can be recorded: access not refused. Asked for when recording starts the first
-    /// time (`RecordingCoordinator`), so not yet asked counts as allowed.
+    /// Whether the microphone chosen can be recorded: access not refused. Asked immediately when a microphone
+    /// is chosen on the setup bar, or when recording starts (`RecordingCoordinator`).
     private func microphoneAllowed(_ choices: RecordingChoices) -> Bool {
         guard choices.recordsMicrophone else { return true }
-        let status = AVCaptureDevice.authorizationStatus(for: .audio)
+        let status = microphoneAuthorizationStatus()
         return status == .authorized || status == .notDetermined
     }
 
@@ -503,9 +634,17 @@ final class RecordingBar: NSView {
         menu.addItem(.separator())
         let (devices, defaultID) = Microphones.available()
         if devices.isEmpty {
-            let empty = NSMenuItem(title: String(localized: "No microphone found", bundle: .module), action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
+            if microphoneAuthorizationStatus() == .notDetermined {
+                let fallback = NSMenuItem(title: String(localized: "Default Microphone", bundle: .module), action: #selector(microphoneChosen(_:)), keyEquivalent: "")
+                fallback.target = self
+                fallback.representedObject = ""
+                fallback.state = recording ? .on : .off
+                menu.addItem(fallback)
+            } else {
+                let empty = NSMenuItem(title: String(localized: "No microphone found", bundle: .module), action: nil, keyEquivalent: "")
+                empty.isEnabled = false
+                menu.addItem(empty)
+            }
         }
         let chosen = devices.contains { $0.id == microphoneID } ? microphoneID : defaultID
         for device in devices {
@@ -519,7 +658,34 @@ final class RecordingBar: NSView {
     }
 
     @objc private func microphoneChosen(_ sender: NSMenuItem) {
-        onMicrophone?(sender.representedObject as? String)
+        chooseMicrophone(sender.representedObject as? String)
+    }
+
+    /// Selects microphone `id` (empty for system default, nil for none). When microphone access has not
+    /// been determined yet, requests it immediately before enabling so the live input-level indicator can start.
+    func chooseMicrophone(_ id: String?) {
+        guard let id else {
+            onMicrophone?(nil)
+            return
+        }
+        switch microphoneAuthorizationStatus() {
+        case .authorized:
+            onMicrophone?(id)
+        case .notDetermined:
+            let request = requestMicrophoneAccess
+            Task { [weak self] in
+                guard await request(), let self else { return }
+                self.deviceNames = self.deviceNames.filter { !$0.key.hasPrefix("\(Toggle.microphone)-") }
+                self.onMicrophone?(id)
+            }
+        default:
+            NSSound.beep()
+            VoiceOver.announce(
+                String(localized: "Microphone access is off, so the recording would have no microphone sound. Turn on OhMyShot in System Settings, Privacy and Security, Microphone.", bundle: .module),
+                from: self
+            )
+            onMicrophone?(id)
+        }
     }
 
     /// No camera, or one of the Mac's, then the bubble's shape, size, where it is while it shows, and whether it is
@@ -651,12 +817,116 @@ final class RecordingBar: NSView {
     }
 }
 
+/// Ephemeral `AVCaptureSession` audio-level reader active only while the recording setup bar is visible with
+/// an authorized microphone selected. Runs off the main thread and releases its capture lease on `stop()`.
+private final class LiveMicrophoneLevelMonitor: MicrophoneLevelMonitoring {
+    private var lease: ActiveResources.Lease?
+    private var runner: SessionRunner?
+    private var onLevel: ((CGFloat) -> Void)?
+    private var isRunning = false
+
+    isolated deinit {
+        stop()
+    }
+
+    func start(deviceID: String, onLevel: @escaping (CGFloat) -> Void) {
+        stop()
+        isRunning = true
+        self.onLevel = onLevel
+        lease = ActiveResources.shared.acquire(.captureStream)
+        let runner = SessionRunner(deviceID: deviceID) { [weak self] level in
+            Task { @MainActor [weak self] in
+                guard let self, self.isRunning else { return }
+                self.onLevel?(level)
+            }
+        }
+        self.runner = runner
+        runner.start()
+    }
+
+    func stop() {
+        isRunning = false
+        onLevel = nil
+        runner?.stop()
+        runner = nil
+        lease?.end()
+        lease = nil
+    }
+}
+
+private nonisolated final class SessionRunner: NSObject, AVCaptureAudioDataOutputSampleBufferDelegate, @unchecked Sendable {
+    private let queue = DispatchQueue(label: "com.ohmyshot.mic-level", qos: .utility)
+    private let deviceID: String
+    private let onLevel: @Sendable (CGFloat) -> Void
+    private var session: AVCaptureSession?
+    private var output: AVCaptureAudioDataOutput?
+    private var stopped = false
+    private var lastReportTime: CFTimeInterval = 0
+    private var lastQuantized = -1
+
+    init(deviceID: String, onLevel: @escaping @Sendable (CGFloat) -> Void) {
+        self.deviceID = deviceID
+        self.onLevel = onLevel
+    }
+
+    func start() {
+        queue.async { [self] in
+            guard !stopped else { return }
+            guard let device = (deviceID.isEmpty ? nil : AVCaptureDevice(uniqueID: deviceID))
+                ?? AVCaptureDevice.default(for: .audio),
+                let input = try? AVCaptureDeviceInput(device: device) else { return }
+            let session = AVCaptureSession()
+            let output = AVCaptureAudioDataOutput()
+            session.beginConfiguration()
+            guard session.canAddInput(input), session.canAddOutput(output) else {
+                session.commitConfiguration()
+                return
+            }
+            session.addInput(input)
+            session.addOutput(output)
+            session.commitConfiguration()
+            output.setSampleBufferDelegate(self, queue: queue)
+            guard !stopped else {
+                output.setSampleBufferDelegate(nil, queue: nil)
+                return
+            }
+            self.session = session
+            self.output = output
+            session.startRunning()
+        }
+    }
+
+    func stop() {
+        queue.async { [self] in
+            stopped = true
+            output?.setSampleBufferDelegate(nil, queue: nil)
+            session?.stopRunning()
+            session = nil
+            output = nil
+        }
+    }
+
+    func captureOutput(_ output: AVCaptureOutput, didOutput sampleBuffer: CMSampleBuffer, from connection: AVCaptureConnection) {
+        guard !stopped else { return }
+        let now = CACurrentMediaTime()
+        guard now - lastReportTime >= 0.05 else { return }
+        let power = connection.audioChannels.map(\.averagePowerLevel).max() ?? -160
+        let normalized = CGFloat(max(0, min(1, (power + 50) / 44)))
+        let quantized = Int((normalized * 20).rounded())
+        guard quantized != lastQuantized else { return }
+        lastReportTime = now
+        lastQuantized = quantized
+        onLevel(CGFloat(quantized) / 20)
+    }
+}
+
 #if DEBUG
 /// The recording bar alone, for rendering checks.
 public enum RecordingBarDemo {
     /// A window behind the desktop picture holding the bar with `choices`, with room for its shadow.
     public static func hiddenWindow(choices: RecordingChoices, recordsWindow: Bool = false, dark: Bool) -> NSWindow {
         let bar = RecordingBar(choices: choices, recordsWindow: recordsWindow)
+        bar.stopLevelMonitoring()
         let size = bar.fittingSize
         let room: CGFloat = 24
         let window = NSWindow(

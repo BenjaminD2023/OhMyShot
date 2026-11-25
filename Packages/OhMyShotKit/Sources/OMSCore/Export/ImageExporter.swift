@@ -36,14 +36,20 @@ public enum ImageExporter {
     }
 
     /// Encodes an image. Large captures take tens of milliseconds, so this runs off the main actor.
+    /// When `pixelsPerPoint` is provided and positive, writes matching DPI metadata (`72 * pixelsPerPoint`) so
+    /// Retina screenshots open at their logical point size in Preview and other apps.
     @concurrent
-    public static func encode(_ image: CGImage, as format: Format, quality: Double = 0.9) async throws -> Data {
-        try encoded(image, as: format, quality: quality)
+    public static func encode(
+        _ image: CGImage, as format: Format, quality: Double = 0.9, pixelsPerPoint: Double? = nil
+    ) async throws -> Data {
+        try encoded(image, as: format, quality: quality, pixelsPerPoint: pixelsPerPoint)
     }
 
     /// Encodes an image where the caller is: for code already off the main actor, and pictures small enough not
     /// to hold up the main actor. `quality` applies to the lossy formats only.
-    public static func encoded(_ image: CGImage, as format: Format, quality: Double = 0.9) throws -> Data {
+    public static func encoded(
+        _ image: CGImage, as format: Format, quality: Double = 0.9, pixelsPerPoint: Double? = nil
+    ) throws -> Data {
         let data = NSMutableData()
         guard let destination = CGImageDestinationCreateWithData(data as CFMutableData, format.type.identifier as CFString, 1, nil) else {
             throw ExportError.cannotEncode
@@ -51,6 +57,11 @@ public enum ImageExporter {
         var properties: [CFString: Any] = [:]
         if format != .png {
             properties[kCGImageDestinationLossyCompressionQuality] = quality
+        }
+        if let pixelsPerPoint, pixelsPerPoint.isFinite, pixelsPerPoint > 0 {
+            let dpi = 72 * pixelsPerPoint
+            properties[kCGImagePropertyDPIWidth] = dpi
+            properties[kCGImagePropertyDPIHeight] = dpi
         }
         CGImageDestinationAddImage(destination, image, properties as CFDictionary)
         guard CGImageDestinationFinalize(destination) else { throw ExportError.cannotEncode }
@@ -63,8 +74,10 @@ public enum ImageExporter {
     }
 
     /// Encodes and writes in one step.
-    public static func write(_ image: CGImage, to url: URL, format: Format, quality: Double = 0.9) async throws {
-        try write(try await encode(image, as: format, quality: quality), to: url)
+    public static func write(
+        _ image: CGImage, to url: URL, format: Format, quality: Double = 0.9, pixelsPerPoint: Double? = nil
+    ) async throws {
+        try write(try await encode(image, as: format, quality: quality, pixelsPerPoint: pixelsPerPoint), to: url)
     }
 
     /// A file URL in `directory` named `name.ext` that does not exist yet: "name (2).ext" and so on.

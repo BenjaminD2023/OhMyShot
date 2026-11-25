@@ -34,8 +34,20 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
         case sizing
     }
 
+    /// Where leaving All-In-One's framed area returns to without ending the session.
+    enum ExitTarget: Equatable, Sendable {
+        /// Clear the framed area and return to free area selection (Delete / Backspace).
+        case area
+        /// Switch directly into window hover selection (Space).
+        case window
+        /// Open the window preview picker (W).
+        case windowPicker
+    }
+
     /// A way to take the area was chosen: the choice and the area in global points.
     var onChoose: ((AllInOneChoice, CGRect, Bool) -> Void)?
+    /// The user cleared the framed area or switched to window selection from All-In-One's area setup.
+    var onReturnToSelection: ((ExitTarget) -> Void)?
     /// A shape was chosen on the ratio chip of Capture Area's size control: the shape Shift keeps from now on.
     var onShapeKept: ((AspectRatio) -> Void)?
     /// Called when the initial window selection becomes an edited area.
@@ -43,6 +55,7 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     private let offersUpload: Bool
     private let kind: Kind
+    private let annotates: Bool
     private var windowFrames: [CGRect]
     /// The area in global points.
     private(set) var area: CGRect
@@ -54,14 +67,15 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
     /// Capture does; Command-C copies either way.
     init(
         display: DisplayInfo, area: CGRect, offersUpload: Bool, showsCopy: Bool = true, kind: Kind = .allInOne,
-        ratio: AspectRatio? = nil, windowFrames: [CGRect] = []
+        ratio: AspectRatio? = nil, windowFrames: [CGRect] = [], annotates: Bool = false
     ) {
         self.offersUpload = offersUpload
         self.kind = kind
+        self.annotates = annotates
         self.windowFrames = windowFrames
         self.area = area
         self.ratio = ratio
-        super.init(display: display, bar: AllInOneActionBar(offersUpload: offersUpload, showsCopy: showsCopy, sizingOnly: kind == .sizing))
+        super.init(display: display, bar: AllInOneActionBar(offersUpload: offersUpload, showsCopy: showsCopy, sizingOnly: kind == .sizing, annotates: annotates))
         bar.onChoose = { [weak self] choice in self?.choose(choice) }
         bar.onCancel = { [weak self] in self?.onCancel?() }
         bar.onSize = { [weak self] width, height in self?.type(width: width, height: height) }
@@ -86,11 +100,14 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     private var keys: String {
         if kind == .sizing {
+            if annotates {
+                return String(localized: "Press Return to annotate the area. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them, and the aspect ratio button keeps a shape. Press Escape to cancel.", bundle: .module)
+            }
             return String(localized: "Press Return to capture the area. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them, and the aspect ratio button keeps a shape. Press Escape to cancel.", bundle: .module)
         }
         return offersUpload
-            ? String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, U uploads, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
-            : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
+            ? String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, U uploads, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. Press Delete to clear the area, or W or Space to choose a window. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
+            : String(localized: "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. Press Delete to clear the area, or W or Space to choose a window. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.", bundle: .module)
     }
 
     /// Every key as things stand: B's from the moment the frozen frame under the area arrives.
@@ -133,6 +150,9 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     /// How many ways to take the area the bar offers, for tests.
     var barChoiceCount: Int { bar.choiceCount }
+
+    /// The primary action chip's title ("Capture" or "Annotate"), for tests.
+    var primaryActionTitle: String { bar.primaryActionTitle }
 
     /// The area's size in pixels.
     private var pixelSize: CGSize {
@@ -227,24 +247,37 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
 
     // MARK: Input
 
-    /// Escape, Return, and Enter as every setup has them; the arrows, Tab, and the letters All-In-One's own.
+    /// Escape, Return, Enter, and arrow keys as every setup has them; Tab and the letters All-In-One's own.
     override func keyDown(with event: NSEvent) {
         if answersKeyList(event) { return }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         switch event.keyCode {
-        case 53, 36, 76: // Escape, Return, Enter
+        case 53, 36, 76, 123, 124, 125, 126: // Escape, Return, Enter, Arrows
             super.keyDown(with: event)
-        case 123, 124, 125, 126:
-            nudge(event.keyCode, by: flags.contains(.shift) ? 10 : 1, resizing: flags.contains(.option))
         case 48: // Tab: to the width, to type it.
             bar.focusWidth()
+        case 51, 117: // Delete / Backspace: clear the framed area and return to free selection.
+            guard kind == .allInOne, !(window?.firstResponder is NSText), !flags.contains(.command), !flags.contains(.control), !event.isARepeat else {
+                return super.keyDown(with: event)
+            }
+            codeChips.dismissCard()
+            onReturnToSelection?(.area)
+        case 49: // Space: leave area setup for direct window pointing.
+            guard kind == .allInOne, !(window?.firstResponder is NSText), flags.intersection([.command, .control, .option]).isEmpty, !event.isARepeat else {
+                return super.keyDown(with: event)
+            }
+            codeChips.dismissCard()
+            onReturnToSelection?(.window)
         default:
             let character = event.charactersIgnoringModifiers?.lowercased()
             // Capture Area's size control has only its own keys: the letters take an area every other way.
-            guard kind == .allInOne, !flags.contains(.command), !flags.contains(.control) else { return super.keyDown(with: event) }
+            guard kind == .allInOne, !(window?.firstResponder is NSText), !flags.contains(.command), !flags.contains(.control) else { return super.keyDown(with: event) }
             if character == "f" {
                 // The whole display, at once.
                 choose(.screenshot(nil), area: display.frame, wholeDisplay: true)
+            } else if character == "w", flags.intersection([.shift, .option]).isEmpty, !event.isARepeat {
+                codeChips.dismissCard()
+                onReturnToSelection?(.windowPicker)
             } else if let choice = Self.choice(for: character) {
                 choose(choice)
             } else {
@@ -277,28 +310,6 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
         }
     }
 
-    /// Moves the area by `step` points the arrow's way, or with `resizing` moves its right or bottom edge.
-    private func nudge(_ keyCode: UInt16, by step: CGFloat, resizing: Bool) {
-        var rect = AreaFrame.local(area, on: display)
-        let (dx, dy): (CGFloat, CGFloat) = switch keyCode {
-        case 123: (-step, 0)
-        case 124: (step, 0)
-        case 125: (0, step)
-        default: (0, -step)
-        }
-        if resizing, let ratio {
-            // With a shape kept, right and down grow the area, left and up shrink it, both sides together.
-            rect.size.width += dx != 0 ? dx : dy
-            rect.size.height = rect.width / ratio.value
-        } else if resizing {
-            rect.size.width += dx
-            rect.size.height += dy
-        } else {
-            rect = AreaFrame.placed(rect.offsetBy(dx: dx, dy: dy), in: bounds)
-        }
-        if setArea(rect) { NSAccessibility.post(element: self, notification: .valueChanged) }
-    }
-
     #if DEBUG
     /// Presses a key in the frame as the keyboard would (`return`, `escape`, a letter, `cmd-c`, `left`…), or
     /// with nil only reads; for scripted checks. Returns the area and its reading.
@@ -324,6 +335,7 @@ final class AllInOneSetupView: AreaSetupView<AllInOneActionBar> {
             "down": (125, "", []), "up": (126, "", []), "opt-right": (124, "", .option), "shift-down": (125, "", .shift),
             "cmd-c": (8, "c", .command), "cmd-s": (1, "s", .command), "tab": (48, "\t", []),
             "cmd-a": (0, "a", .command), "cmd-z": (6, "z", .command), "backspace": (51, "\u{7F}", []),
+            "delete": (117, "\u{F728}", []), "space": (49, " ", []),
         ]
         let (code, characters, flags) = keys[action] ?? (0, action, [])
         guard let event = NSEvent.keyEvent(
@@ -367,6 +379,7 @@ final class AllInOneActionBar: CapsuleBar {
     /// The ratio chip's width while it shows its symbol alone.
     private var squareRatioChip: NSLayoutConstraint?
     private var ratio: AspectRatio?
+    private(set) var primaryActionTitle: String = ""
 
     #if DEBUG
     override var debugFillsAll: Bool {
@@ -436,16 +449,24 @@ final class AllInOneActionBar: CapsuleBar {
         onRatio?(AspectRatio(width: sides[0], height: sides[1]))
     }
 
-    /// `sizingOnly` is Capture Area's size control: Capture, the size, the shape, and Cancel, without the other ways to
-    /// take the area.
-    init(offersUpload: Bool, showsCopy: Bool = true, sizingOnly: Bool = false) {
+    /// `sizingOnly` is Capture Area's (or Annotate Area's) size control: Capture/Annotate, the size, the shape,
+    /// and Cancel, without the other ways to take the area.
+    init(offersUpload: Bool, showsCopy: Bool = true, sizingOnly: Bool = false, annotates: Bool = false) {
         super.init()
+        let isAnnotateSizing = sizingOnly && annotates
+        let primaryTitle = isAnnotateSizing
+            ? String(localized: "Annotate", bundle: .module)
+            : String(localized: "Capture", bundle: .module)
+        let primarySymbol = isAnnotateSizing ? "pencil.and.scribble" : "camera.viewfinder"
         // With every capture copied, Capture copies too, and says so; Copy would do the same.
-        let captureHelp = showsCopy || sizingOnly
+        let captureHelp = isAnnotateSizing
+            ? String(localized: "Annotate the area (Return)", bundle: .module)
+            : showsCopy || sizingOnly
             ? String(localized: "Capture the area (Return)", bundle: .module)
             : String(localized: "Capture and copy the area (Return or Command-C)", bundle: .module)
-        let capture = add(.screenshot(nil), symbol: "camera.viewfinder", title: String(localized: "Capture", bundle: .module), help: captureHelp)
-        setTitle(String(localized: "Capture", bundle: .module), of: capture, emphasized: true)
+        primaryActionTitle = primaryTitle
+        let capture = add(.screenshot(nil), symbol: primarySymbol, title: primaryTitle, help: captureHelp)
+        setTitle(primaryTitle, of: capture, emphasized: true)
         if !sizingOnly {
             addDivider()
             if showsCopy {

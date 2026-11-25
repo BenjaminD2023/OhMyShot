@@ -504,4 +504,57 @@ struct PictureEditingTests {
         sizing.setPercent(-10)
         #expect(sizing.size == CGSize(width: 1, height: 1))
     }
+
+    @Test func cropCancelChipDiscardsUncommittedDraftAndExitsCropMode() throws {
+        let session = makeSession()
+        let (canvas, window) = makeCanvas(session)
+        defer { window.close() }
+        let originalCanvas = session.document.canvas
+
+        let capsule = StyleCapsule()
+        capsule.onCropCancel = { canvas.cancelCrop() }
+        session.tool = .crop
+        canvas.chooseCropRatio(.fixed(16, 9))
+        #expect(canvas.pendingCrop != originalCanvas)
+        capsule.show(kind: .crop, settings: ToolSettings(), hasSelection: false, cropRatio: session.cropRatio)
+        func findChips(_ view: NSView) -> [CapsuleChip] {
+            (view as? CapsuleChip).map { [$0] } ?? view.subviews.flatMap(findChips)
+        }
+        let cancelChip = try #require(findChips(capsule).first { $0.accessibilityLabel() == "Cancel" })
+        cancelChip.performClick(nil)
+        #expect(session.tool == .arrow && session.document.canvas == originalCanvas && !session.undoManager.canUndo)
+    }
+
+    @Test func imageSizeModelUpdatesHeightScaleAndValidityLiveWhileTyping() {
+        let document = AnnotationDocument(pixelSize: CGSize(width: 1600, height: 900), scale: 2)
+        let model = ImageSizeModel(document: document)
+        #expect(model.isRetina)
+        #expect(model.widthText == "1600" && model.heightText == "900" && model.scaleText == "100")
+        #expect(!model.canResize)
+
+        // Typing Width updates Height, Scale, and canResize immediately.
+        model.updateWidthText("800")
+        #expect(model.sizing.size == CGSize(width: 800, height: 450))
+        #expect(model.heightText == "450" && model.scaleText == "50")
+        #expect(model.canResize)
+
+        // Clearing or typing invalid input disables Submit without clobbering the user's text.
+        model.updateWidthText("")
+        #expect(!model.hasValidInput && !model.canResize && model.widthText == "")
+        model.updateWidthText("0")
+        #expect(!model.hasValidInput && !model.canResize)
+
+        // Typing an oversized width marks allowed = false and keeps canResize = false.
+        model.updateWidthText("20000")
+        #expect(!model.allowed && !model.canResize)
+
+        // Typing Scale live updates Width and Height immediately.
+        model.updateScaleText("75")
+        #expect(model.sizing.size == CGSize(width: 1200, height: 675))
+        #expect(model.widthText == "1200" && model.heightText == "675" && model.canResize)
+
+        // Non-Retina 1× document reports isRetina = false.
+        let nonRetina = ImageSizeModel(document: AnnotationDocument(pixelSize: CGSize(width: 800, height: 600), scale: 1))
+        #expect(!nonRetina.isRetina)
+    }
 }

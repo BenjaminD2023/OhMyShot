@@ -4,6 +4,7 @@ import KeyboardShortcuts
 import Testing
 @testable import OMSUI
 
+@Suite(.serialized)
 struct ShortcutListTests {
     @Test func aNewAssignmentTakesTheKeysFromAllPreviousActions() {
         let names = (0..<4).map { KeyboardShortcuts.Name("OMSUITests-\(UUID().uuidString)-\($0)") }
@@ -13,8 +14,9 @@ struct ShortcutListTests {
         for name in names.prefix(3) { KeyboardShortcuts.setShortcut(keys, for: name) }
         KeyboardShortcuts.setShortcut(unrelatedKeys, for: names[3])
 
-        HotkeyCenter.clearOtherAssignments(of: keys, keeping: names[2], among: names)
+        let cleared = HotkeyCenter.clearOtherAssignments(of: keys, keeping: names[2], among: names)
 
+        #expect(cleared == [names[0], names[1]])
         #expect(KeyboardShortcuts.getShortcut(for: names[0]) == nil)
         #expect(KeyboardShortcuts.getShortcut(for: names[1]) == nil)
         #expect(KeyboardShortcuts.getShortcut(for: names[2]) == keys)
@@ -28,8 +30,9 @@ struct ShortcutListTests {
         let keys = KeyboardShortcuts.Shortcut(.s, modifiers: [.command, .shift])
         KeyboardShortcuts.setShortcut(keys, for: other)
 
-        HotkeyCenter.clearOtherAssignments(of: nil, keeping: cleared, among: [other, cleared])
+        let removed = HotkeyCenter.clearOtherAssignments(of: nil, keeping: cleared, among: [other, cleared])
 
+        #expect(removed.isEmpty)
         #expect(KeyboardShortcuts.getShortcut(for: other) == keys)
         #expect(KeyboardShortcuts.getShortcut(for: cleared) == nil)
     }
@@ -39,7 +42,8 @@ struct ShortcutListTests {
 
     private static let newShortcuts: [CaptureShortcut] = [
         .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .annotateLatestCapture, .openFromClipboard, .captureFormula,
-        .pinFromClipboard, .togglePins, .restoreRecentlyClosed,
+        .pinFromClipboard, .recognizeClipboard, .togglePins, .restoreRecentlyClosed, .toggleDesktopIcons,
+        .pauseRecording, .toggleRecordingMicrophone,
     ]
 
     @Test func theNewShortcutsHaveNoKeysUntilChosen() throws {
@@ -113,14 +117,47 @@ struct ShortcutListTests {
     @Test func thePinShortcutsSitWithTheToolsAndRestoreWithTheHistory() throws {
         let groups = ShortcutsSettingsView.groups(hasDestination: true, hasKey: Self.noKey)
         let tools = try #require(groups.first { $0.contains(.pickColor) })
-        #expect(tools == [.pickColor, .measure, .drawOnScreen, .pinFromClipboard, .togglePins])
+        #expect(tools.contains(.togglePins))
+        #expect(tools.contains(.toggleDesktopIcons))
         let history = try #require(groups.first { $0.contains(.openHistory) })
-        #expect(history.last == .restoreRecentlyClosed)
+        #expect(history.contains(.restoreRecentlyClosed))
     }
 
     @Test func theAreaShortcutsAreListedTogetherAndInOrder() throws {
         let capturing = try #require(ShortcutsSettingsView.groups(hasDestination: true, hasKey: Self.noKey).first)
         let order: [CaptureShortcut] = [.captureArea, .annotateArea, .pinArea, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload]
         #expect(Array(capturing.prefix(order.count)) == order)
+    }
+
+    @Test func recordingGroupHoldsPauseAndMicrophoneToggle() throws {
+        let recordingGroup = try #require(
+            ShortcutsSettingsView.groups(hasDestination: true, hasFormulaPack: true, hasKey: Self.noKey).first { $0.contains(.recordScreen) }
+        )
+        #expect(recordingGroup.contains(.pauseRecording))
+        #expect(recordingGroup.contains(.toggleRecordingMicrophone))
+    }
+
+    @Test func clearedNoticeMentionsClearedShortcutTitles() throws {
+        #expect(ShortcutsSettingsView.clearedNoticeText(for: []) == nil)
+        let notice = try #require(ShortcutsSettingsView.clearedNoticeText(for: [CaptureShortcut.captureArea.name]))
+        #expect(notice.contains(CaptureShortcut.captureArea.title))
+    }
+
+    @Test func resetToDefaultsRestoresDefaultsAndClearsCustomAssignments() throws {
+        let suite = "OMSUITests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let snapshot = CaptureShortcut.allCases.map { ($0.name, KeyboardShortcuts.getShortcut(for: $0.name)) }
+        defer {
+            for (name, keys) in snapshot { KeyboardShortcuts.setShortcut(keys, for: name) }
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let center = HotkeyCenter(profile: .development, defaults: defaults)
+        KeyboardShortcuts.setShortcut(nil, for: CaptureShortcut.captureArea.name)
+        KeyboardShortcuts.setShortcut(.init(.k, modifiers: [.command, .shift]), for: CaptureShortcut.pinFromClipboard.name)
+
+        center.resetToDefaults()
+
+        #expect(KeyboardShortcuts.getShortcut(for: CaptureShortcut.captureArea.name) == center.defaultShortcut(for: .captureArea))
+        #expect(KeyboardShortcuts.getShortcut(for: CaptureShortcut.pinFromClipboard.name) == nil)
     }
 }

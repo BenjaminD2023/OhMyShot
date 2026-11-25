@@ -24,8 +24,7 @@ public struct AutomationRegion: Equatable, Sendable {
 }
 
 /// Every command of CleanShot X's URL API, with the same names and parameters, so scripts and
-/// launchers switch over by changing only the scheme; and OhMyShot's own: `capture-formula`, `pin-from-clipboard`, and
-/// `toggle-pins`.
+/// launchers switch over by changing only the scheme; plus OhMyShot's own commands.
 public enum AutomationCommand: Equatable, Sendable {
     case allInOne(AutomationRegion)
     case captureArea(AutomationRegion, action: CaptureAction?)
@@ -39,6 +38,12 @@ public enum AutomationCommand: Equatable, Sendable {
     case captureText(file: URL?, region: AutomationRegion, lineBreaks: Bool?)
     /// OhMyShot's own, with no CleanShot twin: needs the formula pack.
     case captureFormula(file: URL?, region: AutomationRegion)
+    case annotateArea(AutomationRegion)
+    case translateArea(AutomationRegion)
+    case pickColor
+    case measure
+    case drawOnScreen
+    case saveReplay
     case openAnnotate(file: URL?)
     case openFromClipboard
     /// OhMyShot's own: pins what the clipboard holds, as the menu's Pin from Clipboard does.
@@ -56,12 +61,13 @@ public enum AutomationCommand: Equatable, Sendable {
     /// Whether the command captures the screen, which needs Screen Recording.
     public var readsScreen: Bool {
         switch self {
-        case .allInOne, .captureArea, .capturePreviousArea, .captureFullscreen, .captureWindow, .selfTimer, .scrollingCapture, .recordScreen:
+        case .allInOne, .captureArea, .capturePreviousArea, .captureFullscreen, .captureWindow, .selfTimer,
+             .scrollingCapture, .recordScreen, .annotateArea, .translateArea, .pickColor, .measure, .saveReplay:
             true
         case .captureText(let file, _, _), .captureFormula(let file, _):
             file == nil
-        case .pin, .openAnnotate, .openFromClipboard, .pinFromClipboard, .togglePins, .toggleDesktopIcons, .hideDesktopIcons,
-             .showDesktopIcons, .addQuickAccessOverlay, .openHistory, .restoreRecentlyClosed, .openSettings:
+        case .pin, .drawOnScreen, .openAnnotate, .openFromClipboard, .pinFromClipboard, .togglePins, .toggleDesktopIcons,
+             .hideDesktopIcons, .showDesktopIcons, .addQuickAccessOverlay, .openHistory, .restoreRecentlyClosed, .openSettings:
             false
         }
     }

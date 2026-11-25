@@ -226,4 +226,120 @@ struct CaptureLauncherTests {
         host.view.layoutSubtreeIfNeeded()
         #expect(host.preferredContentSize == short)
     }
+
+    @Test func activeStatusEntriesWithShortcutsSurfaceAtTopWithoutDuplication() {
+        var timerRunning = false
+        var drawing = false
+        let launcher = model(
+            [
+                .init(title: "Capture Area", shortcut: .captureArea) {},
+                .init(
+                    title: "Self-Timer",
+                    shortcut: .selfTimer,
+                    currentTitle: { timerRunning ? "Cancel Self-Timer" : "Self-Timer" },
+                    isActiveStatus: { timerRunning }
+                ) {},
+            ],
+            tools: [
+                .init(
+                    title: "Draw on Screen",
+                    shortcut: .drawOnScreen,
+                    currentTitle: { drawing ? "Stop Drawing on Screen" : "Draw on Screen" },
+                    isActiveStatus: { drawing }
+                ) {},
+            ]
+        )
+
+        #expect(launcher.activeEntries.isEmpty)
+        #expect(launcher.captureTiles.map(\.title) == ["Capture Area", "Self-Timer"])
+        #expect(launcher.toolTiles.map(\.title) == ["Draw on Screen"])
+
+        timerRunning = true
+        drawing = true
+        #expect(launcher.activeEntries.map { $0.currentTitle?() ?? $0.title } == [
+            "Cancel Self-Timer",
+            "Stop Drawing on Screen",
+        ])
+        #expect(launcher.captureTiles.map(\.title) == ["Capture Area"])
+        #expect(launcher.toolTiles.isEmpty)
+
+        timerRunning = false
+        drawing = false
+        #expect(launcher.activeEntries.isEmpty)
+        #expect(launcher.captureTiles.map(\.title) == ["Capture Area", "Self-Timer"])
+        #expect(launcher.toolTiles.map(\.title) == ["Draw on Screen"])
+    }
+
+    @Test func tabAndBacktabClearArrowKeyHighlightSoFocusNeverDesyncs() {
+        let controller = StatusItemController(
+            captureEntries: [
+                .init(title: "Capture Area", shortcut: .captureArea) {},
+                .init(title: "Capture Window", shortcut: .captureWindow) {},
+            ],
+            openSettings: {},
+            editShortcut: { _ in },
+            quit: {}
+        )
+        controller.launcherModel = CaptureLauncherModel(
+            captureEntries: [
+                .init(title: "Capture Area", shortcut: .captureArea) {},
+                .init(title: "Capture Window", shortcut: .captureWindow) {},
+            ],
+            toolEntries: [],
+            imageEntries: [],
+            historyEntries: [],
+            priorityEntries: [],
+            appEntries: [],
+            debugEntries: [],
+            openSettings: {},
+            editShortcut: { _ in },
+            quit: {}
+        )
+
+        // Down arrow activates arrow-key highlight.
+        #expect(controller.handleLauncherKey(code: 125, modifiers: []))
+        #expect(controller.launcherHighlight.cell == CaptureLauncherModel.Cell(row: 0, column: 0))
+        #expect(controller.launcherHighlight.fromKeys)
+
+        // Tab hands focus back to AppKit and clears arrow-key highlight.
+        #expect(!controller.handleLauncherKey(code: 48, modifiers: []))
+        #expect(controller.launcherHighlight.cell == nil)
+        #expect(!controller.launcherHighlight.fromKeys)
+
+        // Return after Tab is not swallowed by the cleared arrow-key highlight.
+        let pressesBefore = controller.launcherHighlight.presses
+        #expect(!controller.handleLauncherKey(code: 36, modifiers: []))
+        #expect(controller.launcherHighlight.presses == pressesBefore)
+
+        // Arrow Down again, then Shift+Tab (Backtab) also clears highlight.
+        #expect(controller.handleLauncherKey(code: 125, modifiers: []))
+        #expect(controller.launcherHighlight.fromKeys)
+        #expect(!controller.handleLauncherKey(code: 48, modifiers: [.shift]))
+        #expect(controller.launcherHighlight.cell == nil)
+        #expect(!controller.launcherHighlight.fromKeys)
+    }
+
+    @Test func recordingMenuIncludesPauseMicrophoneDrawStopAndDelete() {
+        let controller = StatusItemController(captureEntries: [], openSettings: {}, editShortcut: { _ in }, quit: {})
+        let active = controller.makeRecordingMenu(
+            actions: .init(togglePause: {}, toggleMicrophone: {}, microphoneMuted: false, drawOnScreen: {}, stop: {}, delete: {}),
+            paused: false
+        )
+        let activeTitles = active.items.filter { !$0.isSeparatorItem }.map(\.title)
+        #expect(activeTitles.count == 5)
+        #expect(activeTitles.contains(String(localized: "Pause", bundle: .module)))
+        #expect(activeTitles.contains(String(localized: "Mute Microphone", bundle: .module)))
+        #expect(activeTitles.contains(String(localized: "Draw on Screen", bundle: .module)))
+        #expect(activeTitles.contains(String(localized: "Stop Recording", bundle: .module)))
+        #expect(activeTitles.contains(String(localized: "Delete Recording", bundle: .module)))
+
+        let paused = controller.makeRecordingMenu(
+            actions: .init(togglePause: {}, toggleMicrophone: {}, microphoneMuted: true, stop: {}),
+            paused: true
+        )
+        let pausedTitles = paused.items.filter { !$0.isSeparatorItem }.map(\.title)
+        #expect(pausedTitles.count == 3)
+        #expect(pausedTitles.contains(String(localized: "Resume", bundle: .module)))
+        #expect(pausedTitles.contains(String(localized: "Unmute Microphone", bundle: .module)))
+    }
 }

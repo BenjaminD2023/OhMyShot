@@ -65,17 +65,50 @@ struct QuickAccessKeyboardTests {
         #expect(try command(for: key("s", code: 1, modifiers: [.command, .shift])) == CardCommand.saveAs)
         #expect(try command(for: key("p", code: 35, modifiers: [.command, .shift])) == CardCommand.pin)
         #expect(try command(for: key("p", code: 35, modifiers: .command)) == CardCommand.print)
+        #expect(try command(for: key("w", code: 13, modifiers: .command)) == CardCommand.close)
+        #expect(try command(for: key("w", code: 13, modifiers: [.command, .option])) == CardCommand.closeAll)
         #expect(try command(for: key("\u{8}", code: 51, modifiers: .command)) == CardCommand.moveToTrash)
         #expect(try command(for: key("z", code: 6, modifiers: .command)) == CardCommand.undoTrash)
     }
 
     @Test func plainKeysReachTheStackAsCommands() throws {
-        #expect(try command(for: key("\u{1B}", code: 53)) == CardCommand.close)
+        #expect(try command(for: key("\u{1B}", code: 53)) == CardCommand.releaseKeyboard)
         #expect(try command(for: key(" ", code: 49)) == CardCommand.quickLook)
         // Delete alone is the app in front's: it never throws a capture away.
         #expect(try command(for: key("\u{8}", code: 51)) == nil)
         #expect(try command(for: key("\u{F700}", code: 126)) == CardCommand.selectOlder)
         #expect(try command(for: key("\u{F701}", code: 125)) == CardCommand.selectNewer)
+    }
+
+    @Test func escapeReleasesKeyboardWithoutClosingCardWhileCommandWClosesIt() throws {
+        var closed: [UUID] = []
+        let actions = QuickAccessController.Actions(
+            copy: { _ in true }, save: { _, _ in .cancelled }, saveAs: { _ in .cancelled },
+            open: { _ in }, annotate: { _ in }, reveal: { _ in }, recognizeText: { _ in },
+            pin: { _ in true }, moveToTrash: { _ in }, closed: { closed.append($0.id) }
+        )
+        let controller = QuickAccessController(actions: actions)
+        defer { controller.dismissAll() }
+        let capture = try item(width: 800, height: 600)
+        controller.add(capture)
+        controller.focusLatest()
+        let panel = try #require(controller.debugPanel as? QuickAccessPanel)
+        let card = try #require(panel.contentView?.subviews.compactMap { $0 as? CaptureCardView }.first)
+        #expect(panel.allowsKey)
+        #expect(card.isSelected)
+
+        // Escape gives the keyboard back and leaves the card on screen.
+        controller.perform(.releaseKeyboard, on: capture, keyed: true)
+        #expect(!panel.allowsKey)
+        #expect(!card.isSelected)
+        #expect(controller.item(capture.id) != nil)
+        #expect(closed.isEmpty)
+
+        // ⌘W closes the card and releases the keyboard.
+        controller.focusLatest()
+        controller.perform(.close, on: capture, keyed: true)
+        #expect(controller.isEmpty)
+        #expect(closed == [capture.id])
     }
 
     @Test func aKeyThatMeansNothingIsNotTaken() throws {

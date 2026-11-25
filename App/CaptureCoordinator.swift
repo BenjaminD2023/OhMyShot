@@ -12,7 +12,7 @@ import UniformTypeIdentifiers
 /// encodes it off the main actor, keeps it in the history, copies it, and hands it to Quick Access.
 /// Nothing is written to the Desktop unless the user saves or turns on saving after capture.
 final class CaptureCoordinator {
-    private let settings: SettingsStore
+    let settings: SettingsStore
     private let displays: DisplayTopology
     private let capturer: ScreenCapturer
     private let overlay: OverlayController
@@ -46,6 +46,40 @@ final class CaptureCoordinator {
     /// How Self-Timer is cancelled, told to VoiceOver when it starts: the keys of its shortcut, or nil
     /// when it has none and the menu bar is the way. Set by the composition root.
     var selfTimerKeys: (() -> String?)?
+    /// Ephemeral desktop icon cover used when "Hide desktop icons while capturing" is turned on.
+    var desktopIcons: DesktopCover?
+
+    private final class TemporaryDesktopHide {
+        private weak var cover: DesktopCover?
+
+        init(_ cover: DesktopCover) {
+            self.cover = cover
+            cover.beginTemporaryHide()
+        }
+
+        func release() {
+            cover?.endTemporaryHide()
+            cover = nil
+        }
+
+        isolated deinit {
+            cover?.endTemporaryHide()
+        }
+    }
+
+    /// Runs `action` synchronously when ephemeral desktop hiding is off, or after the cover has refreshed when on.
+    private func runWithTemporaryDesktopCover(_ action: @escaping (TemporaryDesktopHide?) -> Void) {
+        guard settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons, !cover.isShown else {
+            action(nil)
+            return
+        }
+        let token = TemporaryDesktopHide(cover)
+        Task {
+            await cover.waitForRefresh()
+            action(token)
+        }
+    }
+
     /// Self-Timer's countdown, between choosing what to capture and capturing it.
     private let countdown = SelfTimerCountdown()
     /// Says by where a window was that it closed before it could be captured.
@@ -113,12 +147,23 @@ final class CaptureCoordinator {
         return WindowCatalog.frontWindowTitle(ofProcess: pid)
     }
 
+    /// The area recalled by `L` or Capture Previous Area: the last in-memory area, or the persisted remembered area.
+    var lastRecalledArea: CGRect? {
+        lastArea ?? previousArea ?? settings.allInOneArea?.area(in: displays.layout)
+    }
+
+    /// Remembers an area chosen in another overlay flow (such as Scrolling Capture) for `L` and Capture Previous Area.
+    func noteLastArea(_ rect: CGRect) {
+        previousArea = rect
+        lastArea = rect
+    }
+
     /// Read session appearance directly so a changed preference applies before observation is delivered.
     private func configureCaptureOverlay() {
         overlay.captureLoupeStyle = settings.captureLoupeStyle
         overlay.captureLoupeSize = settings.captureLoupeSize
         overlay.measureTolerance = settings.measureTolerance
-        overlay.lastArea = lastArea ?? settings.allInOneArea?.area(in: displays.layout)
+        overlay.lastArea = lastRecalledArea
     }
 
     /// The area last taken since OhMyShot opened, in Capture Area (or by the URL API's `capture-area`) or in All-In-One
@@ -154,41 +199,65 @@ final class CaptureCoordinator {
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         let options = OverlayController.SessionOptions(allInOne: .init(offersUpload: canUpload?() ?? false, showsCopy: !settings.copyAfterCapture))
-        let start = area ?? (settings.allInOneRemembersArea ? settings.allInOneArea?.area(in: displays.layout) : nil)
-        configureCaptureOverlay()
-        overlay.onWillMeasure = { [weak self] in self?.allInOneWillMeasure?(copiesToClipboard) }
-        overlay.begin(mode: .area, options: options, choosing: start) { [weak self] outcome in
-            guard let self else { return }
-            if let area = outcome.takenArea { lastArea = area }
-            switch outcome {
-            case .allInOne(let choice, let rect, let display, let frozen):
-                handleAllInOne(choice, windows: [], area: rect, display: display, frozen: frozen, app: app, title: title, copiesToClipboard: copiesToClipboard)
-            case .allInOneWindows(let choice, let targets, let rect, let display, let frozen):
-                handleAllInOne(choice, windows: targets, area: rect, display: display, frozen: frozen, app: app, title: title, copiesToClipboard: copiesToClipboard)
-            case .window(let target, let modifiers):
-                Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
-            case .windows(let targets, let modifiers):
-                Task { await self.captureWindows(targets, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
-            case .record(let target, let display, let choices):
-                var appName = app
-                if case .area(let rect) = target {
-                    remember(rect, on: display)
-                    appName = overlay.window(framing: rect)?.ownerName ?? app
+        let remembered: CGRect? = if settings.allInOneRemembersArea,
+                                     let saved = settings.allInOneArea,
+                                     let pointerDisplay = displays.layout.pointerDisplay,
+                                     saved.displayID == pointerDisplay.id,
+                                     let rect = saved.area(in: displays.layout),
+                                     !rect.intersection(pointerDisplay.frame).isEmpty {
+            rect
+        } else {
+            nil
+        }
+        let start = area ?? remembered
+        runWithTemporaryDesktopCover { [weak self] desktopHide in
+            guard let self, !overlay.isActive else { desktopHide?.release(); return }
+            configureCaptureOverlay()
+            overlay.onWillMeasure = { [weak self] in self?.allInOneWillMeasure?(copiesToClipboard) }
+            overlay.begin(mode: .area, options: options, choosing: start) { [weak self] outcome in
+                guard let self else { desktopHide?.release(); return }
+                if let area = outcome.takenArea { lastArea = area }
+                switch outcome {
+                case .allInOne(let choice, let rect, let display, let frozen):
+                    handleAllInOne(
+                        choice, windows: [], area: rect, display: display, frozen: frozen,
+                        app: app, title: title, copiesToClipboard: copiesToClipboard, desktopHide: desktopHide
+                    )
+                case .allInOneWindows(let choice, let targets, let rect, let display, let frozen):
+                    handleAllInOne(
+                        choice, windows: targets, area: rect, display: display, frozen: frozen,
+                        app: app, title: title, copiesToClipboard: copiesToClipboard, desktopHide: desktopHide
+                    )
+                case .window(let target, let modifiers):
+                    desktopHide?.release()
+                    Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
+                case .windows(let targets, let modifiers):
+                    desktopHide?.release()
+                    Task { await self.captureWindows(targets, copiesToClipboard: copiesToClipboard, modifiers: modifiers) }
+                case .record(let target, let display, let choices):
+                    desktopHide?.release()
+                    var appName = app
+                    if case .area(let rect) = target {
+                        remember(rect, on: display)
+                        appName = overlay.window(framing: rect)?.ownerName ?? app
+                    }
+                    onRecord?(target, display, choices, appName)
+                case .color(let color, let point, _, let modifiers, let keyboard):
+                    desktopHide?.release()
+                    onColor?(color, point, modifiers, keyboard)
+                case .cancelled:
+                    desktopHide?.release()
+                    if overlay.didSetUpRecording { recordingSetupCancelled?() }
+                case .region, .annotated, .scroll:
+                    desktopHide?.release()
                 }
-                onRecord?(target, display, choices, appName)
-            case .color(let color, let point, _, let modifiers, let keyboard):
-                onColor?(color, point, modifiers, keyboard)
-            case .cancelled:
-                if overlay.didSetUpRecording { recordingSetupCancelled?() }
-            case .region, .annotated, .scroll:
-                break
             }
         }
     }
 
     private func handleAllInOne(
         _ choice: AllInOneChoice, windows: [WindowTarget], area: CGRect, display: DisplayInfo, frozen: CapturedFrame?,
-        app: String?, title: String?, copiesToClipboard: Bool
+        app: String?, title: String?, copiesToClipboard: Bool, desktopHide: TemporaryDesktopHide?
     ) {
         remember(area, on: display)
         switch choice {
@@ -196,6 +265,7 @@ final class CaptureCoordinator {
             previousArea = area
             let followUp = CaptureFollowUp(action: action)
             if !windows.isEmpty {
+                desktopHide?.release()
                 if windows.count == 1 {
                     Task { await captureWindow(windows[0], copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display) }
                 } else {
@@ -206,15 +276,25 @@ final class CaptureCoordinator {
             let window = overlay.window(framing: area)
             let appName = window?.ownerName ?? app, windowTitle = window.map(\.title) ?? title
             if let window {
+                desktopHide?.release()
                 Task { await captureWindow(window, copiesToClipboard: copiesToClipboard, followUp: followUp, clipTo: display) }
             } else if let frozen {
+                desktopHide?.release()
                 Task { await deliver(frozen, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
             } else {
-                Task { await captureArea(area, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                Task {
+                    defer { desktopHide?.release() }
+                    await captureArea(area, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp)
+                }
             }
-        case .text: allInOneText?(area, frozen)
-        case .scroll: allInOneScroll?(area)
-        case .record: break
+        case .text:
+            desktopHide?.release()
+            allInOneText?(area, frozen)
+        case .scroll:
+            desktopHide?.release()
+            allInOneScroll?(area)
+        case .record:
+            desktopHide?.release()
         }
     }
 
@@ -232,10 +312,17 @@ final class CaptureCoordinator {
         cancelSelfTimer()
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
-        overlay.onAnnotate = { [weak self] request in self?.annotateInPlace(request, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard) }
-        configureCaptureOverlay()
-        overlay.begin(mode: .area, purpose: .annotate) { [weak self] outcome in
-            if case .color(let color, let point, _, let modifiers, let keyboard) = outcome { self?.onColor?(color, point, modifiers, keyboard) }
+        runWithTemporaryDesktopCover { [weak self] desktopHide in
+            guard let self, !overlay.isActive else { desktopHide?.release(); return }
+            overlay.onAnnotate = { [weak self] request in
+                desktopHide?.release()
+                self?.annotateInPlace(request, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard)
+            }
+            configureCaptureOverlay()
+            overlay.begin(mode: .area, purpose: .annotate) { [weak self] outcome in
+                desktopHide?.release()
+                if case .color(let color, let point, _, let modifiers, let keyboard) = outcome { self?.onColor?(color, point, modifiers, keyboard) }
+            }
         }
     }
 
@@ -258,29 +345,39 @@ final class CaptureCoordinator {
         var actions = InPlaceAnnotationView.Actions(
             copy: { [weak self] result in
                 // The overlay goes first, so the screen comes back at once; the result renders after.
+                let captured = frame(result)
+                self?.noteLastArea(captured.frame)
                 self?.overlay.finishAnnotation()
-                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, copy: .always) }
+                Task { await self?.deliver(captured, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, copy: .always) }
             },
             save: { [weak self] result in
+                let captured = frame(result)
+                self?.noteLastArea(captured.frame)
                 self?.overlay.finishAnnotation()
-                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, savesCopy: true) }
+                Task { await self?.deliver(captured, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, savesCopy: true) }
             },
             openInEditor: { [weak self] result in
+                let captured = frame(result)
+                self?.noteLastArea(captured.frame)
                 self?.overlay.finishAnnotation()
-                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, playsSound: false, followUp: CaptureFollowUp(action: .annotate)) }
+                Task { await self?.deliver(captured, appName: appName, windowTitle: windowTitle, marks: result.document, playsSound: false, followUp: CaptureFollowUp(action: .annotate)) }
             },
             cancel: { [weak self] in self?.overlay.cancel() }
         )
         // Pin as Capture Area and Pin does (kept with the marks, no card, nothing copied), and Upload as the URL API's
         // upload does, offered only while there is somewhere to upload to.
         actions.pin = { [weak self] result in
+            let captured = frame(result)
+            self?.noteLastArea(captured.frame)
             self?.overlay.finishAnnotation()
-            Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, marks: result.document, followUp: CaptureFollowUp(action: .pin)) }
+            Task { await self?.deliver(captured, appName: appName, windowTitle: windowTitle, marks: result.document, followUp: CaptureFollowUp(action: .pin)) }
         }
         if canUpload?() == true {
             actions.upload = { [weak self] result in
+                let captured = frame(result)
+                self?.noteLastArea(captured.frame)
                 self?.overlay.finishAnnotation()
-                Task { await self?.deliver(frame(result), appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, followUp: CaptureFollowUp(action: .upload)) }
+                Task { await self?.deliver(captured, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, marks: result.document, followUp: CaptureFollowUp(action: .upload)) }
             }
         }
         let view = InPlaceAnnotationView(frame: request.frame.image, scale: scale, size: host.bounds.size, selection: area, actions: actions)
@@ -344,11 +441,14 @@ final class CaptureCoordinator {
         guard !overlay.isActive else { return followUp.finish(nil) }
         overlay.freezesScreen = freezes ?? settings.freezeScreen
         configureCaptureOverlay()
+        let initialDelay = delay ?? settings.selfTimerDelay
         // What is captured is the screen once the time is up: the frozen one, pointer or not, is only for choosing on.
-        overlay.begin(mode: .area, options: .init(recapturesLive: true)) { [weak self] outcome in
+        overlay.begin(mode: .area, options: .init(recapturesLive: true, selfTimerDelay: initialDelay)) { [weak self] outcome in
             guard let self else { return followUp.finish(nil) }
+            let seconds = self.overlay.currentSelfTimerDelay ?? initialDelay
             if let target = SelfTimerTarget(outcome) {
-                return countDown(to: target, seconds: delay ?? settings.selfTimerDelay, copiesToClipboard: copiesToClipboard, followUp: followUp)
+                if case .area(let rect) = target { noteLastArea(rect) }
+                return countDown(to: target, seconds: seconds, copiesToClipboard: copiesToClipboard, followUp: followUp)
             }
             if case .color(let color, let point, _, let modifiers, let keyboard) = outcome { onColor?(color, point, modifiers, keyboard) }
             followUp.finish(nil)
@@ -359,6 +459,10 @@ final class CaptureCoordinator {
     func cancelSelfTimer() {
         guard countdown.isRunning else { return }
         countdown.cancel()
+        finishCancelledSelfTimer()
+    }
+
+    private func finishCancelledSelfTimer() {
         timerFollowUp?.finish(nil)
         timerFollowUp = nil
         Log.capture.notice("Self-Timer cancelled")
@@ -370,7 +474,9 @@ final class CaptureCoordinator {
         VoiceOver.announce(keys.map { String(localized: "Capturing in \(seconds) seconds. Press \($0) again to cancel.") }
             ?? String(localized: "Capturing in \(seconds) seconds. Choose Cancel Self-Timer in the menu bar to cancel."))
         timerFollowUp = followUp
-        countdown.start(seconds: seconds, area: target.outline, layout: displays.layout) { [weak self] in
+        countdown.start(seconds: seconds, area: target.outline, layout: displays.layout, onCancel: { [weak self] in
+            self?.finishCancelledSelfTimer()
+        }) { [weak self] in
             guard let self else { return followUp.finish(nil) }
             timerFollowUp = nil
             // Another capture is being chosen: not captured under its overlay.
@@ -402,12 +508,14 @@ final class CaptureCoordinator {
     /// The area last chosen for a capture, in global points: what Capture Previous Area takes again.
     private(set) var previousArea: CGRect?
 
-    /// Captures the area chosen last, as it is on screen now. Does nothing, but beep, before any was chosen.
+    /// Captures the area chosen last, as it is on screen now, falling back to the remembered area across launches.
+    /// Does nothing, but beep, before any was chosen.
     func capturePreviousArea(followUp: CaptureFollowUp = .none) {
-        guard let rect = previousArea, !overlay.isActive else {
+        guard !overlay.isActive, let rect = previousArea ?? settings.allInOneArea?.area(in: displays.layout) else {
             NSSound.beep()
             return followUp.finish(nil)
         }
+        noteLastArea(rect)
         cancelSelfTimer()
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
@@ -421,22 +529,40 @@ final class CaptureCoordinator {
 
     /// Captures the whole display under the pointer.
     func captureFullscreen(followUp: CaptureFollowUp = .none) {
+        cancelSelfTimer()
+        if overlay.isActive { overlay.cancel() }
         guard let display = displays.layout.pointerDisplay else { return followUp.finish(nil) }
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         Task {
+            let desktopHide: TemporaryDesktopHide?
+            if settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons, !cover.isShown {
+                let token = TemporaryDesktopHide(cover)
+                await cover.waitForRefresh()
+                desktopHide = token
+            } else {
+                desktopHide = nil
+            }
             let probe = LatencyProbe("capture.fullscreen")
             do {
                 let frame = try await capturer.captureDisplay(
                     display, dynamicRange: ScreenCapturer.dynamicRange(wantsHDR: wantsHDR, on: display), showsCursor: settings.screenshotShowsCursor
                 )
+                desktopHide?.release()
                 probe.end()
                 await deliver(frame, appName: app, windowTitle: title, followUp: followUp)
             } catch {
-                Log.capture.error("Fullscreen capture failed: \(error.localizedDescription, privacy: .public)")
+                desktopHide?.release()
+                Log.capture.error("Fullscreen capture failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+                reportCaptureFailure()
                 followUp.finish(nil)
             }
         }
+    }
+
+    private func reportCaptureFailure() {
+        NSSound.beep()
+        VoiceOver.announce(String(localized: "The capture failed."))
     }
 
     /// Whether a capture asks for the extended-range copy of the screen: only a HEIC kept as the display shows it can
@@ -464,6 +590,14 @@ final class CaptureCoordinator {
         _ rect: CGRect, appName: String?, windowTitle: String? = nil, copiesToClipboard: Bool = true,
         followUp: CaptureFollowUp = .none, transientSnapshots: [TransientCaptureSnapshot] = []
     ) async {
+        let desktopHide: TemporaryDesktopHide?
+        if settings.hidesDesktopIconsWhileCapturing, let cover = desktopIcons, !cover.isShown {
+            let token = TemporaryDesktopHide(cover)
+            await cover.waitForRefresh()
+            desktopHide = token
+        } else {
+            desktopHide = nil
+        }
         let probe = LatencyProbe("capture.region")
         let cursor = settings.screenshotShowsCursor ? Self.cursorOverlay(at: NSEvent.mouseLocation) : nil
         let drawsCursor = !transientSnapshots.isEmpty && cursor != nil
@@ -479,10 +613,13 @@ final class CaptureCoordinator {
             } else {
                 frame = captured
             }
+            desktopHide?.release()
             probe.end()
             await deliver(frame, appName: appName, windowTitle: windowTitle, copiesToClipboard: copiesToClipboard, followUp: followUp)
         } catch {
-            Log.capture.error("Region capture failed: \(error.localizedDescription, privacy: .public)")
+            desktopHide?.release()
+            Log.capture.error("Region capture failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+            reportCaptureFailure()
             followUp.finish(nil)
         }
     }
@@ -531,43 +668,52 @@ final class CaptureCoordinator {
         let app = NSWorkspace.shared.frontmostApplication?.localizedName
         let title = frontWindowTitle()
         overlay.freezesScreen = freezes ?? settings.freezeScreen
-        configureCaptureOverlay()
-        overlay.begin(
-            mode: mode, choosing: area, includingOwnWindowID: includingLauncherWindowID, transientCaptureWantsHDR: wantsHDR
-        ) { [weak self] outcome in
-            guard let self else { return followUp.finish(nil) }
-            let transientSnapshots = overlay.transientCaptureSnapshots
-            if let area = outcome.takenArea { lastArea = area }
-            switch outcome {
-            case .region(let rect, _, _, let frozen?):
-                // The screen was held still: the selection is kept as it was seen.
-                previousArea = rect
-                Task { await self.deliver(frozen, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp) }
-            case .region(let rect, _, _, nil):
-                previousArea = rect
-                Task {
-                    await self.captureArea(
-                        rect, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard,
-                        followUp: followUp, transientSnapshots: transientSnapshots
-                    )
+        runWithTemporaryDesktopCover { [weak self] desktopHide in
+            guard let self, !overlay.isActive else { desktopHide?.release(); followUp.finish(nil); return }
+            configureCaptureOverlay()
+            overlay.begin(
+                mode: mode, choosing: area, includingOwnWindowID: includingLauncherWindowID, transientCaptureWantsHDR: wantsHDR
+            ) { [weak self] outcome in
+                guard let self else { desktopHide?.release(); return followUp.finish(nil) }
+                let transientSnapshots = overlay.transientCaptureSnapshots
+                if let area = outcome.takenArea { lastArea = area }
+                switch outcome {
+                case .region(let rect, _, _, let frozen?):
+                    // The screen was held still: the selection is kept as it was seen.
+                    desktopHide?.release()
+                    previousArea = rect
+                    Task { await self.deliver(frozen, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard, followUp: followUp) }
+                case .region(let rect, _, _, nil):
+                    previousArea = rect
+                    Task {
+                        defer { desktopHide?.release() }
+                        await self.captureArea(
+                            rect, appName: app, windowTitle: title, copiesToClipboard: copiesToClipboard,
+                            followUp: followUp, transientSnapshots: transientSnapshots
+                        )
+                    }
+                case .window(let target, let modifiers):
+                    // A window is captured on its own, frozen or not: with its shadow and its transparent
+                    // corners, which the frozen screen does not have.
+                    desktopHide?.release()
+                    Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers) }
+                case .windows(let targets, let modifiers):
+                    desktopHide?.release()
+                    Task { await self.captureWindows(targets, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers) }
+                case .color(let color, let point, _, let modifiers, let keyboard):
+                    desktopHide?.release()
+                    onColor?(color, point, modifiers, keyboard)
+                    followUp.finish(nil)
+                case .annotated, .record, .scroll, .allInOne, .allInOneWindows, .cancelled:
+                    desktopHide?.release()
+                    followUp.finish(nil)
                 }
-            case .window(let target, let modifiers):
-                // A window is captured on its own, frozen or not: with its shadow and its transparent
-                // corners, which the frozen screen does not have.
-                Task { await self.captureWindow(target, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers) }
-            case .windows(let targets, let modifiers):
-                Task { await self.captureWindows(targets, copiesToClipboard: copiesToClipboard, followUp: followUp, modifiers: modifiers) }
-            case .color(let color, let point, _, let modifiers, let keyboard):
-                onColor?(color, point, modifiers, keyboard)
-                followUp.finish(nil)
-            case .annotated, .record, .scroll, .allInOne, .allInOneWindows, .cancelled:
-                followUp.finish(nil)
             }
         }
     }
 
     /// Captures a window on its own, with its shadow while Settings keep it, on the background Settings choose for
-    /// windows; `modifiers` with Shift, as the window was clicked, takes it the other way round.
+    /// windows; `modifiers` with Option, as the window was clicked, takes it the other way round.
     private func captureWindow(
         _ target: WindowTarget, copiesToClipboard: Bool = true, followUp: CaptureFollowUp = .none,
         modifiers: NSEvent.ModifierFlags = [], clipTo: DisplayInfo? = nil
@@ -585,7 +731,7 @@ final class CaptureCoordinator {
             }
             let frame = captured
             probe.end()
-            let background = await windowBackground(for: frame, shiftHeld: modifiers.contains(.shift), pixelsPerPoint: captureScale)
+            let background = await windowBackground(for: frame, optionHeld: modifiers.contains(.option), pixelsPerPoint: captureScale)
             // The display's scale: the capture is larger than the window's frame by its shadow.
             await deliver(
                 frame, appName: target.ownerName, windowTitle: target.title, copiesToClipboard: copiesToClipboard, background: background,
@@ -595,7 +741,8 @@ final class CaptureCoordinator {
             tellWindowClosed(at: target.frame)
             followUp.finish(nil)
         } catch {
-            Log.capture.error("Window capture failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Window capture failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+            reportCaptureFailure()
             followUp.finish(nil)
         }
     }
@@ -612,16 +759,18 @@ final class CaptureCoordinator {
         do {
             let frame = try await capturer.captureWindows(targets, shadow: settings.windowShadow, layout: displays.layout, showsCursor: settings.screenshotShowsCursor)
             probe.end()
-            let background = await windowBackground(for: frame, shiftHeld: false)
+            let scale = displays.layout.display(id: frame.displayID)?.pixelsPerPoint
+            let background = await windowBackground(for: frame, optionHeld: modifiers.contains(.option), pixelsPerPoint: scale)
             await deliver(
                 frame, appName: first.ownerName, windowTitle: first.title, copiesToClipboard: copiesToClipboard, background: background,
-                pixelsPerPoint: displays.layout.display(id: frame.displayID)?.pixelsPerPoint, followUp: followUp
+                pixelsPerPoint: scale, followUp: followUp
             )
         } catch CaptureError.windowNotFound {
             tellWindowClosed(at: targets.combinedFrame ?? first.frame)
             followUp.finish(nil)
         } catch {
-            Log.capture.error("Multi-window capture failed: \(error.localizedDescription, privacy: .public)")
+            Log.capture.error("Multi-window capture failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+            reportCaptureFailure()
             followUp.finish(nil)
         }
     }
@@ -638,12 +787,12 @@ final class CaptureCoordinator {
         )
     }
 
-    /// What a window screenshot is put on: Settings' choice for windows, flipped by Shift as it was clicked. Rounded
+    /// What a window screenshot is put on: Settings' choice for windows, flipped by Option as it was clicked. Rounded
     /// Corners and Shadow is not put on a window, which keeps its own corners and shadow. The desktop picture is taken
     /// around the window as the display shows it now and kept with the pictures backgrounds use, so the capture can be
     /// marked up and kept the same later.
-    private func windowBackground(for frame: CapturedFrame, shiftHeld: Bool, pixelsPerPoint: CGFloat? = nil) async -> CaptureBackground {
-        let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automaticForWindows != nil, shiftHeld: shiftHeld)
+    private func windowBackground(for frame: CapturedFrame, optionHeld: Bool, pixelsPerPoint: CGFloat? = nil) async -> CaptureBackground {
+        let resolved = settings.windowBackground.resolved(automaticPreset: BackdropPresets.shared.automaticForWindows != nil, optionHeld: optionHeld)
         switch resolved {
         case .none: return .none
         case .preset: return .automatic
@@ -723,7 +872,8 @@ final class CaptureCoordinator {
     /// settings say. `marks` are drawn on it first (in-place annotation); the background chosen for
     /// every screenshot is set under them. Returns its record.
     /// `followUp`'s action comes on top of the settings: copy copies whatever they say, save saves; annotate and
-    /// pin keep the capture as the editor and Capture Area and Pin do, off the clipboard and without a card. A capture
+    /// pin keep the capture as the editor and Capture Area and Pin do, off the clipboard, unsaved, and without a card;
+    /// upload skips copying the image when Settings copy the uploaded link instead. A capture
     /// for the editor that can't be kept opens there all the same, outside History until History takes it, so what was
     /// drawn on it is not lost.
     /// `pixelsPerPoint` is the capture's scale where its frame does not give it (a window's, larger by its shadow).
@@ -734,13 +884,14 @@ final class CaptureCoordinator {
         background: CaptureBackground = .automatic, pixelsPerPoint: CGFloat? = nil, followUp: CaptureFollowUp = .none
     ) async -> HistoryItem? {
         let action = followUp.action
+        let carded = showsCard && action != .annotate && action != .pin
         let copying: Copy = switch action {
         case .copy: .always
         case .annotate, .pin: .never
-        case .save, .upload, nil: copy
+        case .upload: settings.copyLinkAfterUpload ? .never : copy
+        case .save, nil: copy
         }
-        let saving = savesCopy || action == .save
-        let carded = showsCard && action != .annotate && action != .pin
+        let saving = savesCopy || action == .save || (settings.saveAfterCapture && carded)
         if settings.playSounds, playsSound { shutter?.play() }
         let probe = LatencyProbe("capture.deliver")
         // The picture still to be put on the clipboard, with the file beside it, once the file is there.
@@ -764,14 +915,14 @@ final class CaptureCoordinator {
         var document: Data?
         var added: HistoryItem?
         do {
-            let encoded = try await ImageExporter.encode(frame.image, as: .png)
+            let encoded = try await ImageExporter.encode(frame.image, as: .png, pixelsPerPoint: Double(scale))
             png = encoded
             // Marks drawn in place, and the background chosen for every screenshot, are drawn in first. The
             // capture's file then shows them while the capture and the document stay beside it, as edits
             // do, so the editor can change or remove them.
             var shown = (image: frame.image, png: encoded)
             if let composed = try await composed(frame.image, scale: scale, marks: marks, background: background) {
-                shown = (composed.image, try await ImageExporter.encode(composed.image, as: .png))
+                shown = (composed.image, try await ImageExporter.encode(composed.image, as: .png, pixelsPerPoint: Double(scale)))
                 document = composed.document
             }
             let copies = switch copying {
@@ -811,7 +962,7 @@ final class CaptureCoordinator {
                 displayID: frame.displayID
             )
             var saveFailure: ExportFailure?
-            if settings.saveAfterCapture || saving {
+            if saving {
                 // Asking for the name is for someone at the keyboard: All-In-One's Save is asked, a save the URL API or a
                 // shortcut asked for is not.
                 let saved = await files.saveScreenshot(
@@ -868,7 +1019,7 @@ final class CaptureCoordinator {
                 // already has of it, which the editor holds from now on, or adding the capture as taken first.
                 let marked = document.flatMap { try? JSONDecoder().decode(AnnotationDocument.self, from: $0) } ?? marks
                 openNotKeptInEditor(frame.image, marked, scale, name, added) { [png] in
-                    try add(png ?? ImageExporter.encoded(frame.image, as: .png))
+                    try add(png ?? ImageExporter.encoded(frame.image, as: .png, pixelsPerPoint: Double(scale)))
                 }
                 notice.show(String(localized: "The capture couldn’t be added to History. It’s open in the editor."), near: NSEvent.mouseLocation)
             } else {

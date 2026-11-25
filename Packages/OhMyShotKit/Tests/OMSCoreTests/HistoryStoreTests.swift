@@ -479,6 +479,43 @@ struct HistoryStoreTests {
         #expect(!store.hasStudioProject(item))
     }
 
+    @Test func movingAStudioRecordingToTrashTrashesItsProjectInsteadOfDeletingIt() throws {
+        let store = makeStore()
+        defer { try? FileManager.default.removeItem(at: store.directory) }
+        let trashDir = FileManager.default.temporaryDirectory.appending(path: "HistoryStoreTrash-\(UUID().uuidString)", directoryHint: .isDirectory)
+        try FileManager.default.createDirectory(at: trashDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: trashDir) }
+
+        let item = try store.add(data: Data([1, 2, 3]), name: "Studio Demo", fileExtension: "mp4", kind: .recording, pixelWidth: 1600, pixelHeight: 1000, appName: nil, duration: 4)
+        let source = try store.studioSource(for: item)
+        let projectMarker = store.studioURL(for: item).appending(path: "project.json")
+        try Data("{\"padding\":0.1}".utf8).write(to: projectMarker)
+        #expect(HistoryStore.hasStudioProject(forFileAt: store.fileURL(for: item)))
+        #expect(HistoryStore.studioURL(forFileAt: store.fileURL(for: item)) == store.studioURL(for: item))
+        #expect(FileManager.default.contents(atPath: source.path(percentEncoded: false)) == Data([1, 2, 3]))
+
+        var trashed: [URL] = []
+        try store.moveToTrash(item) { url in
+            let destination = trashDir.appending(path: url.lastPathComponent)
+            try FileManager.default.moveItem(at: url, to: destination)
+            trashed.append(destination)
+        }
+
+        // Removed from the history folder, and safely moved into Trash with its project contents intact.
+        #expect(store.items().isEmpty)
+        #expect(!store.hasStudioProject(item))
+        #expect(!FileManager.default.fileExists(atPath: store.fileURL(for: item).path(percentEncoded: false)))
+        #expect(trashed.count == 2)
+        let trashedFile = trashed[0]
+        let trashedStudio = trashed[1]
+        #expect(trashedFile.lastPathComponent == item.fileName)
+        #expect(trashedStudio.lastPathComponent == "\(item.fileName).studio")
+        #expect(FileManager.default.fileExists(atPath: trashedFile.path(percentEncoded: false)))
+        #expect(FileManager.default.fileExists(atPath: trashedStudio.path(percentEncoded: false)))
+        #expect(FileManager.default.contents(atPath: trashedStudio.appending(path: "source.mp4").path(percentEncoded: false)) == Data([1, 2, 3]))
+        #expect(FileManager.default.contents(atPath: trashedStudio.appending(path: "project.json").path(percentEncoded: false)) == Data("{\"padding\":0.1}".utf8))
+    }
+
     @Test func aStudioProjectThatLostItsRecordingIsNotGivenTheMovieInstead() throws {
         let store = makeStore()
         defer { try? FileManager.default.removeItem(at: store.directory) }

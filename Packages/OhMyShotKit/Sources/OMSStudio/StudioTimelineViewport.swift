@@ -17,6 +17,8 @@ nonisolated struct StudioTimelineViewport: Equatable, Sendable {
     var isFit: Bool { span >= duration }
     var canZoomIn: Bool { span > min(duration, 1) + 0.000_001 }
     var maximumStart: Double { max(duration - span, 0) }
+    /// Current horizontal magnification (`1.0` when fit to the full recording).
+    var zoomLevel: Double { span > 0 && duration > 0 ? duration / span : 1 }
 
     func position(of time: Double, width: Double) -> Double {
         span > 0 ? (time - start) / span * max(width, 0) : 0
@@ -39,9 +41,21 @@ nonisolated struct StudioTimelineViewport: Equatable, Sendable {
     /// Keep the playhead at the same place on screen while zooming. An offscreen playhead is centered first.
     mutating func zoom(by factor: Double, around time: Double) {
         guard duration > 0, factor.isFinite, factor > 0 else { return }
+        setSpan(span / factor, around: time)
+    }
+
+    /// Sets the visible duration directly while keeping `time` anchored at `anchorFraction` (or its current screen
+    /// position when `anchorFraction` is nil, centered if offscreen). Used for smooth trackpad pinch-to-zoom.
+    mutating func setSpan(_ newSpan: Double, around time: Double, anchorFraction: Double? = nil) {
+        guard duration > 0, newSpan.isFinite, newSpan > 0 else { return }
         let anchor = min(max(time, 0), duration)
-        let fraction = contains(anchor, anchor) && span > 0 ? (anchor - start) / span : 0.5
-        span = min(duration, max(min(duration, 1), span / factor))
+        let fraction: Double
+        if let anchorFraction, anchorFraction.isFinite {
+            fraction = min(max(anchorFraction, 0), 1)
+        } else {
+            fraction = contains(anchor, anchor) && span > 0 ? (anchor - start) / span : 0.5
+        }
+        span = min(duration, max(min(duration, 1), newSpan))
         start = min(max(anchor - fraction * span, 0), maximumStart)
     }
 

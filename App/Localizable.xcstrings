@@ -485,6 +485,7 @@
       }
     },
     "Allowing this lets every script and command-line tool that uses open or osascript take screenshots and open files in OhMyShot. You can remove this later in Settings › Automation." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -1953,6 +1954,40 @@
         }
       }
     },
+    "Choose an area of the screen and annotate it right in place." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Elige un área de la pantalla y anótala directamente sobre ella."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Choisissez une zone de l’écran et annotez-la directement sur place."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面の範囲を選択して、その場で注釈を付けます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "选择屏幕上的一个区域并原地标注。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選擇螢幕上的一個區域並直接就地標註。"
+          }
+        }
+      }
+    },
     "Choose an area of the screen and capture it. The screenshot is passed to the next action." : {
       "localizations" : {
         "es" : {
@@ -2327,6 +2362,74 @@
         }
       }
     },
+    "Command: %@\n\nAllowing this lets every script and command-line tool that uses open or osascript take screenshots and open files in OhMyShot. You can remove this later in Settings › Automation." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando: %@\n\nSi lo permites, cualquier script o herramienta de línea de comandos que use open u osascript podrá hacer capturas de pantalla y abrir archivos en OhMyShot. Puedes retirarlo más tarde en Ajustes › Automatización."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commande : %@\n\nSi vous l’autorisez, tous les scripts et outils en ligne de commande qui utilisent open ou osascript pourront prendre des captures d’écran et ouvrir des fichiers dans OhMyShot. Vous pourrez le retirer plus tard dans Réglages › Automatisation."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コマンド：%@\n\nこれを許可すると、openやosascriptを使うすべてのスクリプトおよびコマンドラインツールが、OhMyShotでスクリーンショットの撮影やファイルの表示を行えるようになります。あとから「設定」›「自動化」で取り消せます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "命令：%@\n\n允许后，所有使用 open 或 osascript 的脚本和命令行工具都能截图并在 OhMyShot 中打开文件。你之后可以在“设置 › 自动化”中移除此权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指令：%@\n\n允許後，所有使用 open 或 osascript 的腳本和命令列工具都能截圖並在 OhMyShot 中打開檔案。你之後可以在「設定」›「自動化」中移除此權限。"
+          }
+        }
+      }
+    },
+    "Command: %@\n\nIt will be able to take screenshots and open files in OhMyShot. You can remove its access later in Settings › Automation." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comando: %@\n\nPodrá hacer capturas de pantalla y abrir archivos en OhMyShot. Puedes retirarle el acceso más tarde en Ajustes › Automatización."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Commande : %@\n\nIl pourra prendre des captures d’écran et ouvrir des fichiers dans OhMyShot. Vous pourrez lui retirer cet accès plus tard dans Réglages › Automatisation."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "コマンド：%@\n\nOhMyShotでスクリーンショットの撮影やファイルの表示を行えるようになります。あとから「設定」›「自動化」でアクセスを取り消せます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "命令：%@\n\n它将能够截图并在 OhMyShot 中打开文件。你之后可以在“设置 › 自动化”中移除它的访问权限。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "指令：%@\n\n它將能夠截圖並在 OhMyShot 中打開檔案。你之後可以在「設定」›「自動化」中移除其權限。"
+          }
+        }
+      }
+    },
     "Copied %@" : {
       "localizations" : {
         "es" : {
@@ -2361,6 +2464,108 @@
         }
       }
     },
+    "Copied %lld codes" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld códigos copiados"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld codes copiés"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld個のコードをコピーしました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷贝 %lld 个码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷貝 %lld 個碼"
+          }
+        }
+      }
+    },
+    "Copied QR code" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código QR copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code QR copié"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "QRコードをコピーしました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷贝二维码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷貝 QR 碼"
+          }
+        }
+      }
+    },
+    "Copied barcode" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Código de barras copiado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Code-barres copié"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "バーコードをコピーしました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷贝条形码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已拷貝條碼"
+          }
+        }
+      }
+    },
     "Copy" : {
       "localizations" : {
         "es" : {
@@ -2391,6 +2596,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拷貝"
+          }
+        }
+      }
+    },
+    "Couldn’t delete from %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se pudo eliminar de %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de supprimer de %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@から削除できませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法从 %@ 删除"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法從 %@ 刪除"
           }
         }
       }
@@ -2673,6 +2912,40 @@
         }
       }
     },
+    "Dismiss" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Cerrar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fermer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じる"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "關閉"
+          }
+        }
+      }
+    },
     "Displays" : {
       "localizations" : {
         "es" : {
@@ -2809,6 +3082,40 @@
         }
       }
     },
+    "Drag over text on screen to translate it on this Mac." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Arrastra sobre un texto de la pantalla para traducirlo en este Mac."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Faites glisser le pointeur sur du texte à l’écran pour le traduire sur ce Mac."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面上のテキストをドラッグして選択し、このMac上で翻訳します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在屏幕上拖过文字，在这台 Mac 上翻译。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在螢幕上拖移選取文字，在這台 Mac 上進行翻譯。"
+          }
+        }
+      }
+    },
     "Draw on Screen" : {
       "localizations" : {
         "es" : {
@@ -2839,6 +3146,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "螢幕畫筆"
+          }
+        }
+      }
+    },
+    "Draw over the screen, or stop drawing while active." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dibuja sobre la pantalla o deja de dibujar si ya está activo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Dessiner sur l’écran, ou arrêter de dessiner si le mode est actif."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面上に描画します。描画中の場合は描画を終了します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在屏幕上绘制，正在绘制时则停止绘制。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在螢幕上繪製，或在繪製中停止。"
           }
         }
       }
@@ -3666,6 +4007,7 @@
       }
     },
     "It will be able to take screenshots and open files in OhMyShot. You can remove its access later in Settings › Automation." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -4253,6 +4595,74 @@
         }
       }
     },
+    "Measure Screen" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Medir pantalla"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesurer l’écran"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面を計測"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测量屏幕"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "測量螢幕"
+          }
+        }
+      }
+    },
+    "Measure distances and element sizes on screen." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mide distancias y tamaños de elementos en la pantalla."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mesurer des distances et la taille des éléments à l’écran."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面上の距離や要素のサイズを計測します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "测量屏幕上的距离和元素尺寸。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "測量螢幕上的距離與元素大小。"
+          }
+        }
+      }
+    },
     "Microphone Only" : {
       "localizations" : {
         "es" : {
@@ -4317,6 +4727,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "「系統設定」中已關閉麥克風取用權限。將在無麥克風的情況下錄製。"
+          }
+        }
+      }
+    },
+    "Microphone muted" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Micrófono silenciado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Micro coupé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクをミュートにしました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风已静音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麥克風已靜音"
+          }
+        }
+      }
+    },
+    "Microphone unmuted" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Micrófono activado"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Micro réactivé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "マイクのミュートを解除しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "麦克风已取消静音"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已取消麥克風靜音"
           }
         }
       }
@@ -4595,6 +5073,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "磁碟空間不足，無法錄製"
+          }
+        }
+      }
+    },
+    "Nothing changed in the last 15 seconds" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nada ha cambiado en los últimos 15 segundos"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Rien n’a changé au cours des 15 dernières secondes"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "直近15秒間に変化はありませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最近 15 秒内没有任何变化"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "最後 15 秒內沒有任何變化"
           }
         }
       }
@@ -5405,6 +5917,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "拾取顏色"
+          }
+        }
+      }
+    },
+    "Pick a color from the screen and copy it to the clipboard." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Selecciona un color de la pantalla y cópialo en el portapapeles."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Prélever une couleur à l’écran et la copier dans le presse-papiers."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "画面から色を取得してクリップボードにコピーします。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "从屏幕上取色并拷贝到剪贴板。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "從螢幕上拾取顏色並拷貝到剪貼簿。"
           }
         }
       }
@@ -6825,6 +7371,108 @@
         }
       }
     },
+    "Recovered Studio recording restored." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha restaurado la grabación de Studio recuperada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement Studio récupéré et restauré."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中断したStudio収録を復元しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已恢复中断的 Studio 录制。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已還原中斷的 Studio 錄影。"
+          }
+        }
+      }
+    },
+    "Recovered recording restored without Studio pointer data." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha restaurado la grabación recuperada sin los datos del puntero de Studio."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement récupéré et restauré sans les données du pointeur Studio."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中断した収録を復元しました（Studioポインタデータなし）。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已恢复中断的录制（不含 Studio 指针数据）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已還原中斷的錄影（不含 Studio 指標資料）。"
+          }
+        }
+      }
+    },
+    "Recovered recording restored." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Se ha restaurado la grabación recuperada."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrement récupéré et restauré."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "中断した収録を復元しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已恢复中断的录制。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "已還原中斷的錄影。"
+          }
+        }
+      }
+    },
     "Redo" : {
       "localizations" : {
         "es" : {
@@ -6928,6 +7576,74 @@
         }
       }
     },
+    "Replay is off" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Repetición desactivada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Le replay est désactivé"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リプレイはオフです"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "回放已关闭"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重播已關閉"
+          }
+        }
+      }
+    },
+    "Restore Closed Pin" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurar imagen fijada cerrada"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Restaurer l’épingle fermée"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "閉じたピンを復元"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢复已关闭的贴图"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "恢復已關閉的釘選圖片"
+          }
+        }
+      }
+    },
     "Restore Recently Closed" : {
       "localizations" : {
         "es" : {
@@ -6958,6 +7674,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "恢復最近關閉的項目"
+          }
+        }
+      }
+    },
+    "Retry" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reintentar"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Réessayer"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "再試行"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重试"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "重試"
           }
         }
       }
@@ -7166,6 +7916,40 @@
         }
       }
     },
+    "Save Replay" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guardar repetición"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer le replay"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リプレイを保存"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储回放"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存重播"
+          }
+        }
+      }
+    },
     "Save a Copy as Project…" : {
       "localizations" : {
         "es" : {
@@ -7196,6 +7980,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "將拷貝儲存為專案…"
+          }
+        }
+      }
+    },
+    "Save the last 15 seconds buffered by Replay." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Guarda los últimos 15 segundos almacenados por Repetición."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enregistrer les 15 dernières secondes mises en mémoire tampon par Replay."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "リプレイで保持されている直近15秒を保存します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存储“回放”缓冲的最后 15 秒。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "儲存重播暫存的最後 15 秒。"
           }
         }
       }
@@ -7370,6 +8188,40 @@
         }
       }
     },
+    "Selected microphone unavailable. Using default microphone." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El micrófono seleccionado no está disponible. Se usará el micrófono predeterminado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Micro sélectionné indisponible. Utilisation du micro par défaut."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "選択したマイクを利用できません。デフォルトのマイクを使用します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所选麦克风不可用，已改用默认麦克风。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "所選麥克風無法使用。已改用預設麥克風。"
+          }
+        }
+      }
+    },
     "Self-Timer" : {
       "localizations" : {
         "es" : {
@@ -7434,6 +8286,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "已取消定時器。"
+          }
+        }
+      }
+    },
+    "Sending to %@… · Esc" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando a %@… · Esc"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoi vers %@… · Échap"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@へ送信中… · Esc"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在发送至 %@… · Esc"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在傳送至 %@… · Esc"
           }
         }
       }
@@ -7673,6 +8559,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "顯示釘選圖片"
+          }
+        }
+      }
+    },
+    "Skip This Version" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Omitir esta versión"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Ignorer cette version"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "このバージョンをスキップ"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "跳过此版本"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "略過此版本"
           }
         }
       }
@@ -8017,6 +8937,40 @@
         }
       }
     },
+    "System audio stopped arriving." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "El audio del sistema ha dejado de llegar."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "L’audio du système ne parvient plus."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "システムオーディオが届かなくなりました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系统音频已停止传入。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "系統音訊已停止傳入。"
+          }
+        }
+      }
+    },
     "Text from %@" : {
       "localizations" : {
         "es" : {
@@ -8119,6 +9073,40 @@
         }
       }
     },
+    "The Studio project couldn’t be opened" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido abrir el proyecto de Studio"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible d’ouvrir le projet Studio"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "スタジオプロジェクトを開けませんでした"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法打开 Studio 项目"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法打開 Studio 專案"
+          }
+        }
+      }
+    },
     "The capture couldn’t be added to History. It’s open in the editor." : {
       "localizations" : {
         "es" : {
@@ -8183,6 +9171,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "無法保留擷取內容。"
+          }
+        }
+      }
+    },
+    "The capture failed." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La captura ha fallado."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "La capture a échoué."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "キャプチャに失敗しました。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "截图失败。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "擷取失敗。"
           }
         }
       }
@@ -8834,6 +9856,108 @@
         }
       }
     },
+    "Upload ${image}" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subir ${image}"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléverser ${image}"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "${image}をアップロード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传${image}"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上傳${image}"
+          }
+        }
+      }
+    },
+    "Upload Image" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Subir imagen"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléverser une image"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "イメージをアップロード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传图像"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上傳影像"
+          }
+        }
+      }
+    },
+    "Upload an image to your default upload destination and return its link." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Sube una imagen a tu destino de subida predeterminado y devuelve su enlace."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Téléverser une image vers votre destination de téléversement par défaut et renvoyer son lien."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "イメージをデフォルトのアップロード先にアップロードし、そのリンクを返します。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "将图像上传到你的默认上传目标并返回其链接。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "將影像上傳到你的預設上傳目的地，並傳回其連結。"
+          }
+        }
+      }
+    },
     "Upload failed. %@" : {
       "localizations" : {
         "es" : {
@@ -8864,6 +9988,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "上傳失敗。%@"
+          }
+        }
+      }
+    },
+    "Upload to %@ failed" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Error al subir a %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Échec de l’envoi vers %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%@へのアップロードに失敗しました"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上传至 %@ 失败"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "上傳至 %@ 失敗"
           }
         }
       }

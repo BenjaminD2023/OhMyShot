@@ -56,6 +56,7 @@ final class CaptureRetention {
 
     /// With history off, a capture lives as long as something holds it (`heldCaptureIDs`); deletes it once nothing does.
     func releaseIfUnheld(_ id: UUID) {
+        clipboard.check()
         guard settings.historyRetention == .never, !heldCaptureIDs(for: .never).contains(id), let entry = history.item(id: id) else { return }
         history.delete(entry)
         historyChanged([id])
@@ -73,8 +74,10 @@ final class CaptureRetention {
     /// takes over from one under way.
     func removeExpired() {
         expiry?.cancel()
-        let retention = settings.historyRetention, keeping = heldCaptureIDs(for: retention), now = Date.now
+        let retention = settings.historyRetention
         clipboard.updatePolling(for: retention)
+        clipboard.check()
+        let keeping = heldCaptureIDs(for: retention), now = Date.now
         expiry = Task { [weak self, history] in
             let expired = await history.loadExpired(retention: retention, keeping: keeping, now: now)
             guard let self, !Task.isCancelled, settings.historyRetention == retention else { return }

@@ -35,6 +35,12 @@ nonisolated final class PinArchive: Sendable {
         var pinnedAt: TimeInterval?
         /// Whether a capture's background is required for handover. Nil in lists written before this was recorded.
         var requiresBackground: Bool?
+        /// Per-pin shadow override; nil follows global Settings.
+        var shadowOverride: Bool?
+        /// Per-pin border override; nil follows global Settings.
+        var borderOverride: Bool?
+        /// Whether a picture pin was rotated or flipped in place (its archived PNG already holds the transformed image).
+        var isTransformed: Bool?
     }
 
     struct Manifest: Codable, Equatable, Sendable {
@@ -193,7 +199,10 @@ nonisolated final class PinArchive: Sendable {
 extension PinArchive.Record {
     /// A pin as it is kept, with its window's place, zoom, opacity, and lock. A color whose color space has no name to keep
     /// it by (a profile of its own) is kept as it looks, in extended sRGB; nil when it can't be.
-    init?(_ pin: PinController.Pin, frame: CGRect, zoom: CGFloat, opacity: CGFloat, locked: Bool) {
+    init?(
+        _ pin: PinController.Pin, frame: CGRect, zoom: CGFloat, opacity: CGFloat, locked: Bool,
+        shadowOverride: Bool? = nil, borderOverride: Bool? = nil, isTransformed: Bool? = nil
+    ) {
         let content: Content
         switch pin.content {
         case .image(_, let scale):
@@ -209,7 +218,8 @@ extension PinArchive.Record {
         }
         self.init(
             id: pin.id, content: content, origin: pin.origin, frame: frame, zoom: zoom, opacity: opacity, locked: locked,
-            pinnedAt: pin.pinnedAt.timeIntervalSinceReferenceDate, requiresBackground: pin.requiresBackground
+            pinnedAt: pin.pinnedAt.timeIntervalSinceReferenceDate, requiresBackground: pin.requiresBackground,
+            shadowOverride: shadowOverride, borderOverride: borderOverride, isTransformed: isTransformed
         )
     }
 

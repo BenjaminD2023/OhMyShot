@@ -1,4 +1,5 @@
 import AppKit
+import Foundation
 import OMSCore
 
 /// How pins look, from Settings; every pin takes it again when it changes.
@@ -14,14 +15,22 @@ struct PinAppearance: Equatable {
 /// in front. Its shadow is the system window shadow, as the Translation Lens's, and lies outside the
 /// window, so nothing around a pin catches the pointer.
 final class PinWindow: NSPanel, NSWindowDelegate {
-    let pin: PinController.Pin
+    private(set) var pin: PinController.Pin
     /// The pin's size in points at 100 percent.
-    let baseSize: CGSize
+    private(set) var baseSize: CGSize
     private(set) var zoom: CGFloat
     private var previousZoom: CGFloat?
     private(set) var opacity: CGFloat = 1
     private(set) var isLocked = false
     private(set) var lockBadgePanel: NSPanel?
+    private var baseAppearance: PinAppearance
+    private(set) var shadowOverride: Bool?
+    private(set) var borderOverride: Bool?
+    private(set) var rotationSteps = 0
+    private(set) var flippedHorizontal = false
+    private(set) var flippedVertical = false
+    private(set) var isTransformed = false
+    private var tempDragFileURL: URL?
     private let pinView: PinView
     private let actions: PinController.Actions
 
@@ -29,10 +38,26 @@ final class PinWindow: NSPanel, NSWindowDelegate {
     var onCloseAll: (() -> Void)?
     /// Locked or unlocked: the menu bar's Unlock Pins follows.
     var onChange: (() -> Void)?
-    /// Moved, zoomed, or faded: what is kept for the next launch follows.
+    /// Moved, zoomed, faded, or per-pin appearance toggled: what is kept for the next launch follows.
     var onAdjust: (() -> Void)?
+    /// Picture replaced in place (edited or transformed): re-archives the PNG for relaunch persistence.
+    var onImageUpdated: ((PinWindow) -> Void)?
     /// Clicked, so in front of the other pins: the order kept for the next launch follows.
     var onRaise: ((PinWindow) -> Void)?
+    var onTranslateImage: ((CGImage) -> Void)?
+    var hasTranslateImageHandler: (() -> Bool)?
+
+    var resolvedAppearance: PinAppearance {
+        PinAppearance(
+            cornerRadius: baseAppearance.cornerRadius,
+            shadow: shadowOverride ?? baseAppearance.shadow,
+            border: borderOverride ?? baseAppearance.border
+        )
+    }
+
+    var showsShadow: Bool { resolvedAppearance.shadow }
+    var showsBorder: Bool { resolvedAppearance.border }
+    var canTranslate: Bool { isPicture && (actions.translate != nil || hasTranslateImageHandler?() == true) }
 
     /// `textReader` reads a picture's text for Live Text. `opacity` is the picture's, as a pin brought back after a
     /// relaunch had it.
@@ -43,6 +68,7 @@ final class PinWindow: NSPanel, NSWindowDelegate {
         self.pin = pin
         baseSize = Self.baseSize(of: pin.content)
         self.zoom = zoom
+        self.baseAppearance = appearance
         self.actions = actions
         pinView = PinView(content: pin.content, appearance: appearance, textReader: textReader)
         super.init(contentRect: frame, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -54,10 +80,11 @@ final class PinWindow: NSPanel, NSWindowDelegate {
         hidesOnDeactivate = false
         isReleasedWhenClosed = false
         animationBehavior = .none
+        pinView.pinWindow = self
         pinView.frame = CGRect(origin: .zero, size: frame.size)
         pinView.autoresizingMask = [.width, .height]
         contentView = pinView
-        pinView.pinWindow = self
+        pinView.needsLayout = true
         self.opacity = PinGeometry.clamp(opacity, to: PinGeometry.opacityRange)
         pinView.setPictureOpacity(self.opacity)
         delegate = self
@@ -129,7 +156,10 @@ final class PinWindow: NSPanel, NSWindowDelegate {
 
     /// The pin as it is kept for the next launch.
     var record: PinArchive.Record? {
-        PinArchive.Record(pin, frame: frame, zoom: zoom, opacity: opacity, locked: isLocked)
+        PinArchive.Record(
+            pin, frame: frame, zoom: zoom, opacity: opacity, locked: isLocked,
+            shadowOverride: shadowOverride, borderOverride: borderOverride, isTransformed: isTransformed ? true : nil
+        )
     }
 
     func windowDidMove(_ notification: Notification) {
@@ -141,9 +171,81 @@ final class PinWindow: NSPanel, NSWindowDelegate {
     }
 
     func apply(_ appearance: PinAppearance) {
-        hasShadow = appearance.shadow
-        pinView.apply(appearance)
+        baseAppearance = appearance
+        let resolved = resolvedAppearance
+        hasShadow = resolved.shadow
+        pinView.apply(resolved)
         invalidateShadow()
+    }
+
+    func toggleShadow() {
+        shadowOverride = !showsShadow
+        apply(baseAppearance)
+        onAdjust?()
+    }
+
+    func toggleBorder() {
+        borderOverride = !showsBorder
+        apply(baseAppearance)
+        onAdjust?()
+    }
+
+    /// Restores persisted per-pin appearance overrides and transform metadata from `PinArchive.Record`.
+    func restoreArchiveOverrides(shadow: Bool?, border: Bool?, isTransformed: Bool?) {
+        shadowOverride = shadow
+        borderOverride = border
+        self.isTransformed = isTransformed == true
+        apply(baseAppearance)
+    }
+
+    /// Rotates or flips a picture pin in place, updating its size, frame, Live Text, and archive cleanly.
+    func transformImage(_ change: PictureChange) {
+        guard case .image(let image, let scale) = pin.content,
+              let transformed = change.apply(to: image) else { return }
+        switch change {
+        case .rotateRight: rotationSteps = (rotationSteps + 1) % 4
+        case .rotateLeft: rotationSteps = (rotationSteps + 3) % 4
+        case .flipHorizontal: flippedHorizontal.toggle()
+        case .flipVertical: flippedVertical.toggle()
+        case .scaleToOneX: break
+        }
+        isTransformed = true
+        // Transformed pixels diverge from any history capture file, so handovers use this pin's own pixels.
+        updateImage(transformed, scale: scale, pinnedAt: .distantPast, clearBackground: true)
+    }
+
+    /// Captures all state needed to restore this pin if closed accidentally.
+    func closedSnapshot() -> PinController.ClosedSnapshot {
+        PinController.ClosedSnapshot(
+            content: pin.content,
+            origin: pin.origin,
+            pinnedAt: pin.pinnedAt,
+            onBackground: pin.onBackground,
+            requiresBackground: pin.requiresBackground,
+            frame: frame,
+            zoom: zoom,
+            opacity: opacity,
+            shadowOverride: shadowOverride,
+            borderOverride: borderOverride,
+            rotationSteps: rotationSteps,
+            flippedHorizontal: flippedHorizontal,
+            flippedVertical: flippedVertical,
+            isTransformed: isTransformed
+        )
+    }
+
+    /// Restores opacity, per-pin style overrides, and transform metadata without flashing readings.
+    func restoreState(from snapshot: PinController.ClosedSnapshot) {
+        opacity = PinGeometry.clamp(snapshot.opacity, to: PinGeometry.opacityRange)
+        pinView.setPictureOpacity(opacity)
+        shadowOverride = snapshot.shadowOverride
+        borderOverride = snapshot.borderOverride
+        rotationSteps = snapshot.rotationSteps
+        flippedHorizontal = snapshot.flippedHorizontal
+        flippedVertical = snapshot.flippedVertical
+        isTransformed = snapshot.isTransformed
+        apply(baseAppearance)
+        updateAccessibilityValue()
     }
 
     // MARK: Zoom, opacity, place
@@ -176,8 +278,54 @@ final class PinWindow: NSPanel, NSWindowDelegate {
 
     /// Returns a file URL suitable for dragging this picture pin into another app, or nil when nothing is to go.
     func fileForDrag() -> URL? {
-        guard let fileForDrag = actions.fileForDrag else { return pin.ownFile() }
-        return fileForDrag(pin)
+        if !isTransformed, let provider = actions.fileForDrag {
+            return provider(pin)
+        }
+        guard case .image(let image, let scale) = pin.content else { return nil }
+        if !isTransformed, case .file(let url) = pin.origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
+            return url
+        }
+        if let existing = tempDragFileURL, FileManager.default.fileExists(atPath: existing.path(percentEncoded: false)) {
+            return existing
+        }
+        let directory = ExportedFiles.standardFolder.appending(path: "Pins", directoryHint: .isDirectory)
+        let tempURL = directory.appending(path: "OhMyShot Pin \(pin.id.uuidString).png")
+        do {
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            try ImageExporter.write(ImageExporter.encoded(image, as: .png, pixelsPerPoint: Double(scale)), to: tempURL)
+            tempDragFileURL = tempURL
+            return tempURL
+        } catch {
+            return nil
+        }
+    }
+
+    /// Removes any temporary drag file created by this pin window itself.
+    func cleanupDragFiles() {
+        guard let url = tempDragFileURL else { return }
+        tempDragFileURL = nil
+        try? FileManager.default.removeItem(at: url)
+    }
+
+    /// Refreshes a picture pin in place with an updated image and scale.
+    func updateImage(_ image: CGImage, scale: CGFloat, pinnedAt: Date = .now, clearBackground: Bool = true) {
+        guard case .image = pin.content else { return }
+        let updatedContent = PinController.Content.image(image, scale: scale)
+        pin = PinController.Pin(
+            id: pin.id, content: updatedContent, origin: pin.origin, pinnedAt: pinnedAt,
+            onBackground: clearBackground ? nil : pin.onBackground,
+            requiresBackground: clearBackground ? false : pin.requiresBackground
+        )
+        baseSize = Self.baseSize(of: updatedContent)
+        let center = CGPoint(x: frame.midX, y: frame.midY)
+        let next = PinGeometry.zoomed(frame, to: CGSize(width: baseSize.width * zoom, height: baseSize.height * zoom), around: center)
+        cleanupDragFiles()
+        pinView.updateImage(image, scale: scale)
+        setFrame(next, display: true)
+        updateLockBadgePanelFrame()
+        invalidateShadow()
+        updateAccessibilityValue()
+        onImageUpdated?(self)
     }
 
     /// Fades the picture only: its readings, buttons, and ring stay solid, so the reading that says how
@@ -192,8 +340,40 @@ final class PinWindow: NSPanel, NSWindowDelegate {
     }
 
     func move(by delta: CGVector) {
-        setFrameOrigin(CGPoint(x: frame.minX + delta.dx, y: frame.minY + delta.dy))
+        move(to: CGPoint(x: frame.minX + delta.dx, y: frame.minY + delta.dy))
+    }
+
+    func move(to origin: CGPoint) {
+        setFrameOrigin(origin)
         updateLockBadgePanelFrame()
+    }
+
+    /// Hides or shows the pin together with its floating lock badge panel.
+    func setWindowHidden(_ hidden: Bool) {
+        if hidden {
+            if let panel = lockBadgePanel {
+                if panel.parent != nil { removeChildWindow(panel) }
+                panel.orderOut(nil)
+            }
+            orderOut(nil)
+        } else {
+            show()
+            if isLocked {
+                if lockBadgePanel == nil { installLockBadgePanel() }
+                updateLockBadgePanelFrame()
+                if let panel = lockBadgePanel {
+                    if panel.parent == nil { addChildWindow(panel, ordered: .above) }
+                    panel.orderFrontRegardless()
+                }
+            }
+        }
+    }
+
+    /// Explicitly removes any child lock badge panel, cleans up temp drag files, and orders out the window.
+    func tearDown() {
+        removeLockBadgePanel()
+        cleanupDragFiles()
+        orderOut(nil)
     }
 
     /// Lets every click through to what is under the pin, except on its lock badge, which unlocks this pin alone.
@@ -222,6 +402,8 @@ final class PinWindow: NSPanel, NSWindowDelegate {
         let button = CardButton(style: .round, title: String(localized: "Unlock", bundle: .module), symbolName: "lock.fill")
         button.target = self
         button.action = #selector(unlockFromBadge)
+        button.setAccessibilityLabel(String(localized: "Unlock", bundle: .module))
+        button.toolTip = String(localized: "Unlock Pin", bundle: .module)
         button.frame = CGRect(x: 0, y: 0, width: 24, height: 24)
         let badgeRect = convertToScreen(pinView.lockMarkFrame)
         let panel = NSPanel(contentRect: badgeRect, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: false)
@@ -290,11 +472,16 @@ final class PinWindow: NSPanel, NSWindowDelegate {
         pinView.showReading(String(localized: "Copied", bundle: .module))
     }
 
+    /// Copies a color pin's value in the requested `ColorFormat`.
+    func copyColor(format: ColorFormat) {
+        guard case .color(let color) = pin.content else { return }
+        Self.copy(color.string(in: format))
+        pinView.showReading(String(localized: "Copied", bundle: .module))
+    }
+
     /// Copies a color pin's value as rgb().
     func copyRGB() {
-        guard case .color(let color) = pin.content else { return }
-        Self.copy(color.rgb)
-        pinView.showReading(String(localized: "Copied", bundle: .module))
+        copyColor(format: .rgb)
     }
 
     private static func copy(_ text: String) {
@@ -337,8 +524,18 @@ final class PinWindow: NSPanel, NSWindowDelegate {
         if isPicture { actions.recognizeText(pin) }
     }
 
+    func translatePin() {
+        guard case .image(let image, _) = pin.content else { return }
+        if let translate = actions.translate {
+            translate(pin)
+        } else {
+            onTranslateImage?(image)
+        }
+    }
+
     func closePin() {
         removeLockBadgePanel()
+        cleanupDragFiles()
         onClose?(self)
     }
 

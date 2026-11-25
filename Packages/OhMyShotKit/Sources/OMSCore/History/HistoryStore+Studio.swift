@@ -3,6 +3,16 @@ import Foundation
 /// A Studio recording's project, kept beside it in the history, and the movie exported from Studio that takes the
 /// recording's place.
 extension HistoryStore {
+    /// A Studio recording's project folder beside any history file at `fileURL`.
+    public static func studioURL(forFileAt fileURL: URL) -> URL {
+        fileURL.deletingLastPathComponent().appending(path: "\(fileURL.lastPathComponent).studio", directoryHint: .isDirectory)
+    }
+
+    /// Whether the history file at `fileURL` has a Studio project beside it.
+    public static func hasStudioProject(forFileAt fileURL: URL) -> Bool {
+        FileManager.default.fileExists(atPath: studioURL(forFileAt: fileURL).path(percentEncoded: false))
+    }
+
     /// A Studio recording's project, a folder beside it: what the pointer did while recording, the source
     /// movie once an export has taken its place, and the Studio window's settings.
     public func studioURL(for item: HistoryItem) -> URL {

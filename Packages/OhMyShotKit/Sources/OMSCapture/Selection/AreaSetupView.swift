@@ -21,6 +21,8 @@ class AreaSetupView<Bar: NSView>: NSView {
     let bar: Bar
     /// The drag adjusting the frame, while one goes on.
     private(set) var adjustment: AreaFrame.Adjustment?
+    /// The local area before a drag outside the frame began selecting a new one, restored on Escape or right-click.
+    private var preSelectArea: CGRect?
     /// Finds the codes in the area on a frozen screen, for chips over them; set by the overlay for the setups that
     /// take a picture (All-In-One's frame), never for a recording's or a scrolling capture's, which show the live
     /// screen.
@@ -308,6 +310,7 @@ class AreaSetupView<Bar: NSView>: NSView {
             return
         }
         // Outside the frame: a new area.
+        preSelectArea = adjustableArea.map { AreaFrame.local($0, on: display) }
         begin(.selecting(start: point))
     }
 
@@ -340,6 +343,7 @@ class AreaSetupView<Bar: NSView>: NSView {
 
     override func mouseUp(with event: NSEvent) {
         guard adjustment != nil else { return }
+        preSelectArea = nil
         adjustment = nil
         hideEdgeLoupe()
         chrome.showsThirds = false
@@ -348,6 +352,62 @@ class AreaSetupView<Bar: NSView>: NSView {
         NSAccessibility.post(element: self, notification: .valueChanged)
         adjustmentEnded()
         refreshCodes()
+    }
+
+    /// Ends an active drag adjustment and restores the area as it was before the drag began.
+    private func cancelAdjustment() {
+        guard let current = adjustment else { return }
+        switch current {
+        case .moving(_, let original), .resizing(_, let original, _):
+            setArea(original)
+        case .selecting:
+            if let previous = preSelectArea {
+                setArea(previous)
+            }
+        }
+        preSelectArea = nil
+        adjustment = nil
+        hideEdgeLoupe()
+        chrome.showsThirds = false
+        placeBar()
+        refreshCodes()
+        NSAccessibility.post(element: self, notification: .valueChanged)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        if codeChips.isShowingCard {
+            codeChips.dismissCard()
+        } else if adjustment != nil {
+            cancelAdjustment()
+        } else {
+            onCancel?()
+        }
+    }
+
+    /// Moves the area by `step` points the arrow's way, or with `resizing` moves its right or bottom edge.
+    func nudge(_ keyCode: UInt16, by step: CGFloat, resizing: Bool) {
+        guard let area = adjustableArea else { return }
+        var rect = AreaFrame.local(area, on: display)
+        let (dx, dy): (CGFloat, CGFloat) = switch keyCode {
+        case 123: (-step, 0)
+        case 124: (step, 0)
+        case 125: (0, step)
+        default: (0, -step)
+        }
+        if resizing, let ratio = keptRatio {
+            // With a shape kept, right and down grow the area, left and up shrink it, both sides together.
+            rect.size.width += dx != 0 ? dx : dy
+            rect.size.height = rect.width / ratio
+        } else if resizing {
+            rect.size.width += dx
+            rect.size.height += dy
+        } else {
+            rect = AreaFrame.placed(rect.offsetBy(dx: dx, dy: dy), in: bounds)
+        }
+        if setArea(rect) {
+            adjustmentEnded()
+            NSAccessibility.post(element: self, notification: .valueChanged)
+        }
     }
 
     /// ? shows the frame's keys (its VoiceOver help) by the display's edge, or puts them away; any other key puts them
@@ -368,16 +428,16 @@ class AreaSetupView<Bar: NSView>: NSView {
             if codeChips.isShowingCard {
                 codeChips.dismissCard()
             } else if adjustment != nil {
-                adjustment = nil
-                refreshCodes()
-                hideEdgeLoupe()
-                chrome.showsThirds = false
-                placeBar()
+                cancelAdjustment()
             } else {
                 onCancel?()
             }
         case 36, 76: // Return, Enter
             primaryAction()
+        case 123, 124, 125, 126: // Arrow keys: move (1 pt / 10 pt with Shift) or resize (with Option).
+            guard adjustableArea != nil, !(window?.firstResponder is NSText) else { return super.keyDown(with: event) }
+            let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            nudge(event.keyCode, by: flags.contains(.shift) ? 10 : 1, resizing: flags.contains(.option))
         default:
             let character = event.charactersIgnoringModifiers?.lowercased()
             // Q goes through the codes' cards, one after another: the keyboard's way to the chips.

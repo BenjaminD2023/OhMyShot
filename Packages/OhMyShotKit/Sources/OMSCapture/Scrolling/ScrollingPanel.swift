@@ -48,18 +48,26 @@ public final class ScrollingPanel {
     /// Auto-scroll was turned on or off from the bar.
     public var onAutoScroll: ((Bool) -> Void)?
     public var onSpeedChanged: ((Double) -> Void)?
+    /// Auto-scroll direction was chosen explicitly from the direction menu.
+    public var onDirectionChanged: ((AutoScroller.Direction) -> Void)?
 
     /// The preview's size in points: across the scroll, and the most along it.
     public static let previewAcross: CGFloat = 156
     public static let previewAlong: CGFloat = 560
 
     private let window: PanelWindow
+    private let moveObserver = PanelMoveObserver()
     private let content = PanelContentView()
     private let card = CardView()
     private let bar = ScrollingControls()
     private let speedControl = ScrollSpeedControl()
     private var area: CGRect = .zero
     private var displayFrame: CGRect = .zero
+    /// Top-left corner of the visible card/bar box after the user drags the panel, so `layout()` keeps it there.
+    private var userTopLeft: CGPoint?
+    private var contentOffset: CGPoint = .zero
+    private var contentSize: CGSize = .zero
+    private var isLayingOut = false
     private var axis: ScrollStitcher.Axis?
     private var preview: CGImage?
     private var size: (width: Int, height: Int)?
@@ -83,6 +91,8 @@ public final class ScrollingPanel {
     public init() {
         window = PanelWindow(contentRect: .zero)
         window.contentView = content
+        window.delegate = moveObserver
+        moveObserver.onDidMove = { [weak self] in self?.panelDidMove() }
         content.addSubview(card)
         content.addSubview(bar)
         content.addSubview(speedControl)
@@ -91,6 +101,7 @@ public final class ScrollingPanel {
         bar.onDone = { [weak self] in self?.onDone?() }
         bar.onCancel = { [weak self] in self?.cancelPressed() }
         bar.onAutoScroll = { [weak self] on in self?.onAutoScroll?(on) }
+        bar.onDirectionChanged = { [weak self] direction in self?.onDirectionChanged?(direction) }
     }
 
     /// The preview's size in pixels on `display`, for the capture to make it at.
@@ -106,6 +117,7 @@ public final class ScrollingPanel {
     public func show(beside area: CGRect, displayFrame: CGRect, doneKeys: String?) {
         self.area = area
         self.displayFrame = displayFrame
+        userTopLeft = nil
         bar.setDoneKeys(doneKeys)
         window.orderFrontRegardless()
         layout()
@@ -163,6 +175,23 @@ public final class ScrollingPanel {
         bar.setDirection(direction)
     }
 
+    /// Initializes the speed slider to the remembered speed multiplier.
+    public func setAutoScrollSpeed(_ speed: Double) {
+        speedControl.setSpeed(speed)
+    }
+
+    /// Records the user's dragged position so subsequent preview updates do not snap the panel back.
+    private func panelDidMove() {
+        guard !isLayingOut, !contentSize.width.isZero, !contentSize.height.isZero else { return }
+        let visibleFrame = CGRect(
+            x: window.frame.minX + contentOffset.x,
+            y: window.frame.minY + contentOffset.y,
+            width: contentSize.width,
+            height: contentSize.height
+        )
+        userTopLeft = CGPoint(x: visibleFrame.minX, y: visibleFrame.maxY)
+    }
+
     /// Says Auto-scroll needs Accessibility, until scrolling by hand shows the capture going on without it.
     public func showNeedsAccessibility() {
         needsAccessibility = true
@@ -198,6 +227,7 @@ public final class ScrollingPanel {
         cancelAsked = false
         bar.setCancelAsked(false)
         tookOverShown?.cancel()
+        userTopLeft = nil
         window.orderOut(nil)
         preview = nil
         card.picture = nil
@@ -261,15 +291,36 @@ public final class ScrollingPanel {
         let barSize = bar.fittingSize
         let width = max(cardSize.width, barSize.width)
         let height = cardSize.height + 10 + barSize.height
-        let frame = Self.place(CGSize(width: width, height: height), beside: area, sideways: sideways, on: displayFrame)
+        let boxSize = CGSize(width: width, height: height)
+        let frame: CGRect
+        if let userTopLeft {
+            let hostDisplay = NSScreen.screens.first { $0.frame.contains(userTopLeft) }?.frame ?? displayFrame
+            frame = Self.placePinned(boxSize, topLeft: userTopLeft, on: hostDisplay)
+        } else {
+            frame = Self.place(boxSize, beside: area, sideways: sideways, on: displayFrame)
+        }
         let outer = Self.withShadowRoom(frame, clear: area)
         // Where the card and bar's box sits in the window, past the shadow's room.
         let x = frame.minX - outer.minX, y = frame.minY - outer.minY
+        contentOffset = CGPoint(x: x, y: y)
+        contentSize = boxSize
         card.frame = CGRect(x: x + (width - cardSize.width) / 2, y: y + barSize.height + 10, width: cardSize.width, height: cardSize.height)
         speedControl.isHidden = !hasAutoControls
         speedControl.frame = CGRect(x: card.frame.minX + 12, y: card.frame.minY + 8, width: cardSize.width - 24, height: 40)
         bar.frame = CGRect(x: x + (width - barSize.width) / 2, y: y, width: barSize.width, height: barSize.height).integral
+        isLayingOut = true
         window.setFrame(outer, display: false)
+        isLayingOut = false
+    }
+
+    /// Keeps a user-dragged panel anchored at `topLeft` while growing or shrinking, clamped inside `display`.
+    static func placePinned(_ size: CGSize, topLeft: CGPoint, on display: CGRect) -> CGRect {
+        var room = display.insetBy(dx: 8, dy: 8)
+        if room.isNull || room.isEmpty { room = display }
+        var rect = CGRect(x: topLeft.x, y: topLeft.y - size.height, width: size.width, height: size.height)
+        rect.origin.x = min(max(rect.minX, room.minX), max(room.minX, room.maxX - rect.width))
+        rect.origin.y = min(max(rect.minY, room.minY), max(room.minY, room.maxY - rect.height))
+        return rect.integral
     }
 
     /// Room around the card and bar for their shadows, which the window would otherwise cut off square at its edges:
@@ -334,7 +385,22 @@ public final class ScrollingPanel {
     public func debugPressCancel() {
         cancelPressed()
     }
+
+    /// Simulates choosing an auto-scroll direction from the panel's direction menu, for tests.
+    func debugSelectDirection(_ direction: AutoScroller.Direction) {
+        bar.selectDirection(direction)
+    }
+
+    /// Whether the panel is anchored to a user-dragged position, for tests.
+    var debugHasUserPosition: Bool { userTopLeft != nil }
     #endif
+}
+
+private final class PanelMoveObserver: NSObject, NSWindowDelegate {
+    var onDidMove: (() -> Void)?
+    func windowDidMove(_ notification: Notification) {
+        onDidMove?()
+    }
 }
 
 /// A panel that never takes the keyboard and floats with the area's outline, over menus, on every Space.
@@ -347,6 +413,7 @@ private final class PanelWindow: NSPanel {
         level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue + 1)
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .stationary, .ignoresCycle]
         hidesOnDeactivate = false
+        isMovableByWindowBackground = true
         animationBehavior = .none
         isReleasedWhenClosed = false
         becomesKeyOnlyIfNeeded = true
@@ -361,6 +428,7 @@ private final class PanelWindow: NSPanel {
 /// Lets the first click through to the buttons: the panel is never key.
 private final class PanelContentView: NSView {
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
+    override var mouseDownCanMoveWindow: Bool { true }
 }
 
 /// The card: the picture so far, its size in pixels, and a hint.
@@ -456,6 +524,8 @@ private final class CardView: NSView {
         needsLayout = true
     }
 
+    override var mouseDownCanMoveWindow: Bool { true }
+
     /// The card's size for a picture shown at `picture` points.
     func fittingSize(for picture: CGSize) -> CGSize {
         let width = max(picture.width, 120) + 2 * Self.inset
@@ -533,20 +603,29 @@ private final class ScrollSpeedControl: NSView {
         value.stringValue = speed.formatted(.number.precision(.fractionLength(0...2))) + "×"
         onChange?(speed)
     }
+
+    func setSpeed(_ speed: Double) {
+        let clamped = min(max(speed, slider.minValue), slider.maxValue)
+        slider.doubleValue = clamped
+        value.stringValue = clamped.formatted(.number.precision(.fractionLength(0...2))) + "×"
+    }
 }
 
-/// The bar under the card: Done, Auto-scroll/Pause, Cancel.
-private final class ScrollingControls: CapsuleBar {
+/// The bar under the card: Done, Auto-scroll/Pause, direction selector, Cancel.
+private final class ScrollingControls: CapsuleBar, NSMenuDelegate {
     var onDone: (() -> Void)?
     var onCancel: (() -> Void)?
     var onAutoScroll: ((Bool) -> Void)?
+    var onDirectionChanged: ((AutoScroller.Direction) -> Void)?
 
     private var done: BarButton?
     private var autoScroll: BarButton?
+    private var directionButton: BarButton?
     private var cancel: BarButton?
     private var isAutoScrolling = false
     private var hasStarted = false
     private var direction: AutoScroller.Direction = .down
+    private var menuLevel: NSWindow.Level?
 
     override init() {
         super.init()
@@ -575,6 +654,14 @@ private final class ScrollingControls: CapsuleBar {
         autoScroll.setAccessibilityLabel(String(localized: "Auto-scroll", bundle: .module))
         autoScroll.setAccessibilityRole(.button)
         self.autoScroll = autoScroll
+        let directionButton = addChip(
+            symbol: Self.directionArrowSymbol(for: .down), title: nil,
+            help: Self.directionHelp(for: .down), target: self, action: #selector(directionClicked(_:))
+        )
+        directionButton.setAccessibilityLabel(String(localized: "Auto-scroll direction", bundle: .module))
+        directionButton.setAccessibilityValue(Self.directionName(for: .down))
+        directionButton.setAccessibilityRole(.popUpButton)
+        self.directionButton = directionButton
         addDivider()
         cancel = addChip(symbol: "xmark", title: nil, help: String(localized: "Cancel the scrolling capture", bundle: .module), target: self, action: #selector(cancelClicked))
         setAccessibilityLabel(String(localized: "Scrolling Capture", bundle: .module))
@@ -616,15 +703,32 @@ private final class ScrollingControls: CapsuleBar {
 
     /// Auto-scroll points the way the capture has been going, which Resume goes on.
     func setDirection(_ direction: AutoScroller.Direction) {
-        guard direction != self.direction, let autoScroll else { return }
+        guard direction != self.direction else { return }
         self.direction = direction
-        if !isAutoScrolling {
-            autoScroll.image = NSImage(systemSymbolName: Self.symbol(for: direction), accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        if let autoScroll {
+            if !isAutoScrolling {
+                autoScroll.image = NSImage(systemSymbolName: Self.symbol(for: direction), accessibilityDescription: nil)?
+                    .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+            }
+            autoScroll.toolTip = Self.help(for: direction, on: isAutoScrolling)
+            autoScroll.setAccessibilityHelp(autoScroll.toolTip)
         }
-        autoScroll.toolTip = Self.help(for: direction, on: isAutoScrolling)
-        autoScroll.setAccessibilityHelp(autoScroll.toolTip)
+        if let directionButton {
+            directionButton.image = NSImage(systemSymbolName: Self.directionArrowSymbol(for: direction), accessibilityDescription: Self.directionName(for: direction))?
+                .withSymbolConfiguration(.init(pointSize: 15, weight: .medium))
+            let help = Self.directionHelp(for: direction)
+            directionButton.toolTip = help
+            directionButton.setAccessibilityHelp(help)
+            directionButton.setAccessibilityValue(Self.directionName(for: direction))
+        }
     }
+
+    func selectDirection(_ chosen: AutoScroller.Direction) {
+        setDirection(chosen)
+        onDirectionChanged?(chosen)
+    }
+
+    private static let allDirections: [AutoScroller.Direction] = [.down, .up, .right, .left]
 
     /// The arrow Auto-scroll wears on the bar before the capture, turned the way the app will scroll: the same
     /// command in both places, and no triangle that reads as a pop-up menu's.
@@ -635,6 +739,28 @@ private final class ScrollingControls: CapsuleBar {
         case .left: "arrow.left.circle"
         case .right: "arrow.right.circle"
         }
+    }
+
+    private static func directionArrowSymbol(for direction: AutoScroller.Direction) -> String {
+        switch direction {
+        case .down: "arrow.down"
+        case .up: "arrow.up"
+        case .left: "arrow.left"
+        case .right: "arrow.right"
+        }
+    }
+
+    private static func directionName(for direction: AutoScroller.Direction) -> String {
+        switch direction {
+        case .down: String(localized: "Down", bundle: .module)
+        case .up: String(localized: "Up", bundle: .module)
+        case .right: String(localized: "Right", bundle: .module)
+        case .left: String(localized: "Left", bundle: .module)
+        }
+    }
+
+    private static func directionHelp(for direction: AutoScroller.Direction) -> String {
+        String(localized: "Auto-scroll direction: \(directionName(for: direction))", bundle: .module)
     }
 
     private static func help(for direction: AutoScroller.Direction, on: Bool) -> String {
@@ -655,7 +781,38 @@ private final class ScrollingControls: CapsuleBar {
         onAutoScroll?(!isAutoScrolling)
     }
 
+    @objc private func directionClicked(_ sender: NSButton) {
+        let menu = NSMenu()
+        menu.delegate = self
+        menu.addItem(.sectionHeader(title: String(localized: "Auto-scroll Direction", bundle: .module)))
+        for (index, option) in Self.allDirections.enumerated() {
+            let item = NSMenuItem(title: Self.directionName(for: option), action: #selector(directionChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.tag = index
+            item.state = option == direction ? .on : .off
+            item.image = NSImage(systemSymbolName: Self.directionArrowSymbol(for: option), accessibilityDescription: nil)?
+                .withSymbolConfiguration(.init(pointSize: 12, weight: .medium))
+            menu.addItem(item)
+        }
+        menu.popUp(under: sender)
+    }
+
+    @objc private func directionChosen(_ sender: NSMenuItem) {
+        guard Self.allDirections.indices.contains(sender.tag) else { return }
+        selectDirection(Self.allDirections[sender.tag])
+    }
+
     @objc private func cancelClicked() {
         onCancel?()
+    }
+
+    func menuWillOpen(_ menu: NSMenu) {
+        menuLevel = window?.level
+        window?.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
+    }
+
+    func menuDidClose(_ menu: NSMenu) {
+        if let menuLevel { window?.level = menuLevel }
+        menuLevel = nil
     }
 }

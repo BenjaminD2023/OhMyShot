@@ -41,6 +41,8 @@ final class AnnotationCoordinator {
     var uploadFile: ((UUID, URL, UUID?, Double?) -> Void)?
     /// Whether the upload of that identity is under way.
     var isUploading: ((UUID) -> Bool)?
+    /// Opens text recognition on an editor's rendered capture: the picture, its pixels per point, and its title.
+    var recognizeText: ((CGImage, CGFloat, String) -> Void)?
 
     init(history: HistoryStore) {
         self.history = history
@@ -124,8 +126,21 @@ final class AnnotationCoordinator {
             self?.onEditing?(id, false)
             MemoryRelief.endEventWait()
         }
+        cascadeIfNeeded(editor)
         editors[id] = editor
         editor.show()
+    }
+
+    /// Cascades a newly opened editor window from the frontmost existing open editor so multiple windows stay visible.
+    private func cascadeIfNeeded(_ editor: AnnotationEditorWindowController) {
+        guard let newWindow = editor.window else { return }
+        let existing = (Array(editors.values) + Array(projectEditors.values))
+            .compactMap(\.window)
+            .filter { $0 !== newWindow && $0.isVisible }
+        let reference = NSApp.orderedWindows.first { candidate in existing.contains { $0 === candidate } } ?? existing.last
+        if let reference {
+            editor.cascade(from: reference)
+        }
     }
 
     /// Opens a capture History couldn't take in the editor all the same, so what was drawn on it is not lost with it:
@@ -174,6 +189,7 @@ final class AnnotationCoordinator {
             if inHistory { self?.onEditing?(id, false) }
             MemoryRelief.endEventWait()
         }
+        cascadeIfNeeded(editor)
         editors[id] = editor
         editor.show()
     }
@@ -205,6 +221,11 @@ final class AnnotationCoordinator {
         actions.uploadMenu = { [weak coordinator] in coordinator?.uploadMenu?() ?? .hidden }
         actions.upload = { [weak coordinator] file, destination in coordinator?.uploadFile?(uploadID(), file, destination, scale()) }
         actions.isUploading = { [weak coordinator] in coordinator?.isUploading?(uploadID()) ?? false }
+        if coordinator.recognizeText != nil {
+            actions.recognizeText = { [weak coordinator] image, scale, title in
+                coordinator?.recognizeText?(image, scale, title)
+            }
+        }
         return actions
     }
 
@@ -254,8 +275,11 @@ final class AnnotationCoordinator {
             let capture = opened.project.capture
             let capturePNG = opened.project.capturePNG
             let picture = opened.picture
-            // Image Size changes the document's scale, so each keep records it for the outcomes that follow.
-            var projectScale = Double(opened.project.document.scale)
+            // Image Size changes the document's scale, so read the live document scale rather than waiting for a keep.
+            let fallbackScale = opened.project.document.scale
+            let currentScale: () -> Double = { [weak self] in
+                Double(self?.projectEditors[file]?.session.document.scale ?? fallbackScale)
+            }
             // A project is in no history, so its uploads go under an identity of their own.
             let uploadID = UUID()
             let editor = AnnotationEditorWindowController(
@@ -270,22 +294,23 @@ final class AnnotationCoordinator {
                             let preview = try AnnotationProject(capture: capture, document: document, capturePNG: capturePNG)
                                 .keep(at: file, preview: png, previewURL: picture)
                             Log.capture.notice("Kept the marks in the project \(file.lastPathComponent, privacy: .private): \(document.items.count, privacy: .public) mark(s)")
-                            projectScale = Double(document.scale)
                             return preview
                         } catch {
                             Log.capture.error("Keeping the project failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
                             return nil
                         }
                     },
-                    save: { [weak self] picture in await self?.saveFile?(picture, projectScale) },
-                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: { projectScale }, entry: { nil }, uploadID: { uploadID }
+                    save: { [weak self] picture in await self?.saveFile?(picture, currentScale()) },
+                    coordinator: self, name: file.deletingPathExtension().lastPathComponent, scale: currentScale, entry: { nil }, uploadID: { uploadID }
                 )
             )
+            editor.confirmsSaveOnClose = true
             editor.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
                 self?.projectEditors[file] = nil
                 ProjectPicture.remove(picture)
                 MemoryRelief.endEventWait()
             }
+            cascadeIfNeeded(editor)
             projectEditors[file] = editor
             // The title bar shows the project's icon, to drag or to find in Finder.
             editor.window?.representedURL = file

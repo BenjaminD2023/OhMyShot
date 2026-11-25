@@ -120,6 +120,36 @@ struct AutomationURLParserTests {
         #expect(AutomationCommand.pin(file: file).fileURLs == [file])
         #expect(AutomationCommand.captureFullscreen(action: nil).fileURLs.isEmpty)
     }
+
+    @Test func extendedCommandsParseWithExpectedRegionsAndScreenAccess() {
+        let rect = CGRect(x: 10, y: 20, width: 300, height: 200)
+        let region = AutomationRegion(rect: rect, display: 2)
+
+        #expect(parse("ohmyshot://annotate-area") == .success(.annotateArea(AutomationRegion())))
+        #expect(parse("ohmyshot://annotate-area?x=10&y=20&width=300&height=200&display=2") == .success(.annotateArea(region)))
+        #expect(parse("ohmyshot://annotate-area?x=10") == .failure(.missingParameter("y")))
+
+        #expect(parse("ohmyshot://translate-area") == .success(.translateArea(AutomationRegion())))
+        #expect(parse("ohmyshot://translate-area?x=10&y=20&width=300&height=200&display=2") == .success(.translateArea(region)))
+
+        #expect(parse("ohmyshot://pick-color") == .success(.pickColor))
+        #expect(parse("ohmyshot://measure") == .success(.measure))
+        #expect(parse("ohmyshot://draw-on-screen") == .success(.drawOnScreen))
+        #expect(parse("ohmyshot://save-replay") == .success(.saveReplay))
+
+        #expect(AutomationCommand.annotateArea(AutomationRegion()).readsScreen)
+        #expect(AutomationCommand.translateArea(AutomationRegion()).readsScreen)
+        #expect(AutomationCommand.pickColor.readsScreen)
+        #expect(AutomationCommand.measure.readsScreen)
+        #expect(AutomationCommand.saveReplay.readsScreen)
+        #expect(!AutomationCommand.drawOnScreen.readsScreen)
+
+        for cmd: AutomationCommand in [
+            .annotateArea(region), .translateArea(region), .pickColor, .measure, .drawOnScreen, .saveReplay,
+        ] {
+            #expect(cmd.fileURLs.isEmpty)
+        }
+    }
 }
 
 /// URL areas are in their display's own points, from its bottom-left corner.
@@ -194,5 +224,71 @@ struct AutomationGateTests {
     @Test func refusedCallersAreNotAskedAgain() {
         let decision = AutomationGate.evaluate(caller: raycast, isEnabled: true, approvedCallers: [], deniedCallers: [raycast.identifier])
         #expect(decision == .deny(reason: "Raycast was already refused"))
+    }
+}
+
+struct SharingP1FixesTests {
+    @Test func customDraftValidatesShareXTemplateSyntax() {
+        var draft = UploadDestinationDraft(kind: .customHTTP)
+        draft.name = "Uploader"
+        draft.requestURL = "https://example.com/upload"
+        draft.urlTemplate = "{json:data.link}"
+        #expect(draft.firstIssue() == nil)
+
+        // Response-only function in requestURL is rejected.
+        draft.requestURL = "https://example.com/{response}"
+        #expect(draft.firstIssue() != nil)
+
+        // Unterminated brace in urlTemplate is rejected.
+        draft.requestURL = "https://example.com/upload"
+        draft.urlTemplate = "{json:data.link"
+        #expect(draft.firstIssue() != nil)
+
+        // Unsupported function in header value is rejected.
+        draft.urlTemplate = "{json:data.link}"
+        draft.headers = [.init(name: "Authorization", value: "{unknown:abc}")]
+        #expect(draft.firstIssue() != nil)
+
+        // Valid request-scope function in header value passes.
+        draft.headers = [.init(name: "X-Name", value: "{filename}")]
+        #expect(draft.firstIssue() == nil)
+    }
+
+    @Test func secretMissingErrorUsesLocalizedFieldLabels() {
+        let s3Secret = UploadError.secretMissing(field: SecretField.s3SecretAccessKey).errorDescription ?? ""
+        #expect(!s3Secret.contains("s3.secretAccessKey"))
+        #expect(s3Secret.contains("Secret key"))
+
+        let s3Access = UploadError.secretMissing(field: SecretField.s3AccessKeyID).errorDescription ?? ""
+        #expect(!s3Access.contains("s3.accessKeyID"))
+        #expect(s3Access.contains("Access key ID"))
+
+        let dav = UploadError.secretMissing(field: SecretField.webDAVPassword).errorDescription ?? ""
+        #expect(!dav.contains("webdav.password"))
+        #expect(dav.contains("Password"))
+
+        let header = UploadError.secretMissing(field: SecretField.header("X-API-Key")).errorDescription ?? ""
+        #expect(!header.contains("header:"))
+        #expect(header.contains("X-API-Key"))
+    }
+
+    @Test func testUploadDeletesTemporaryObjectOnS3AndWebDAV() async throws {
+        let secrets = InMemorySecretStore()
+        let uploader = Uploader(secrets: secrets, resources: ActiveResources(), sessionConfiguration: StubURLProtocol.configuration)
+
+        let s3Host = "s3-test-cleanup.test"
+        let s3Dest = UploadDestination(name: "S3", configuration: .s3(S3Settings(endpoint: URL(string: "https://\(s3Host)")!, bucket: "bk")))
+        try secrets.setSecret("ak", field: SecretField.s3AccessKeyID, of: s3Dest.id)
+        try secrets.setSecret("sk", field: SecretField.s3SecretAccessKey, of: s3Dest.id)
+        StubURLProtocol.install(host: s3Host) { _ in (200, [:], "") }
+        _ = try await uploader.testUpload(to: s3Dest)
+        #expect(StubURLProtocol.requests(host: s3Host).map(\.method) == ["PUT", "DELETE"])
+
+        let davHost = "dav-test-cleanup.test"
+        let davDest = UploadDestination(name: "DAV", configuration: .webDAV(WebDAVSettings(baseURL: URL(string: "https://\(davHost)/dav")!, username: "u")))
+        try secrets.setSecret("pw", field: SecretField.webDAVPassword, of: davDest.id)
+        StubURLProtocol.install(host: davHost) { _ in (201, [:], "") }
+        _ = try await uploader.testUpload(to: davDest)
+        #expect(StubURLProtocol.requests(host: davHost).map(\.method) == ["PUT", "DELETE"])
     }
 }

@@ -207,4 +207,84 @@ struct EditorKeepingTests {
         #expect(controller.fileForDragging() == nil)
         #expect(controller.session.hasUnkeptChanges)
     }
+
+    @Test func documentEditedFollowsUnkeptStateAndProjectCloseConfirmsBeforeOverwriting() async throws {
+        var keepCount = 0
+        var pinnedKept: Bool?
+        var actions = AnnotationEditorWindowController.Actions(keep: { _, _, _ in
+            keepCount += 1
+            return URL.temporaryDirectory.appending(path: "project-kept.png")
+        }, save: { _ in nil })
+        actions.copy = { _, _, _ in true }
+        actions.pin = { _, _, kept in pinnedKept = kept }
+
+        let controller = makeEditor(actions: actions)
+        let window = try #require(controller.window)
+        defer { window.delegate = nil; controller.close() }
+        controller.confirmsSaveOnClose = true
+        #expect(!window.isDocumentEdited)
+
+        step(controller.session) { controller.session.crop(to: CGRect(x: 10, y: 10, width: 120, height: 70)) }
+        #expect(window.isDocumentEdited)
+
+        // Copying or pinning from an external project does not silently overwrite the `.ohmyshot` file.
+        await controller.copy(thenClose: false).value
+        #expect(keepCount == 0 && controller.session.hasUnkeptChanges && window.isDocumentEdited)
+        await controller.pin().value
+        #expect(keepCount == 0 && pinnedKept == false && controller.session.hasUnkeptChanges)
+
+        // Closing with Cancel leaves the window open and untouched.
+        var promptCount = 0
+        controller.confirmSaveOnClose = { _, respond in
+            promptCount += 1
+            respond(.cancel)
+        }
+        #expect(!controller.windowShouldClose(window))
+        #expect(!(await controller.closeBeforeQuitting()))
+        #expect(promptCount == 1 && keepCount == 0 && !controller.didClose)
+
+        // Choosing Don't Save closes without calling keep.
+        var closed = false
+        controller.onClose = { closed = true }
+        controller.confirmSaveOnClose = { _, respond in
+            promptCount += 1
+            respond(.dontSave)
+        }
+        #expect(!controller.windowShouldClose(window))
+        #expect(await controller.closeBeforeQuitting())
+        #expect(promptCount == 2 && keepCount == 0 && closed)
+
+        // Choosing Save calls keep and clears isDocumentEdited.
+        let second = makeEditor(actions: actions)
+        let secondWindow = try #require(second.window)
+        defer { secondWindow.delegate = nil; second.close() }
+        second.confirmsSaveOnClose = true
+        step(second.session) { second.session.crop(to: CGRect(x: 10, y: 10, width: 120, height: 70)) }
+        var secondClosed = false
+        second.onClose = { secondClosed = true }
+        second.confirmSaveOnClose = { _, respond in respond(.save) }
+        #expect(!second.windowShouldClose(secondWindow))
+        #expect(await second.closeBeforeQuitting())
+        #expect(keepCount == 1 && !second.session.hasUnkeptChanges && !secondWindow.isDocumentEdited && secondClosed)
+    }
+
+    @Test func recognizeTextReflectsConfiguredCallbackAndRendersEditedCapture() async throws {
+        let bare = makeEditor()
+        defer { bare.window?.delegate = nil; bare.close() }
+        #expect(!bare.offersRecognizeText)
+
+        var recognized: (image: CGImage, scale: CGFloat, title: String)?
+        var actions = AnnotationEditorWindowController.Actions(keep: { _, _, _ in nil }, save: { _ in nil })
+        actions.recognizeText = { image, scale, title in
+            recognized = (image, scale, title)
+        }
+        let wired = makeEditor(actions: actions)
+        defer { wired.window?.delegate = nil; wired.close() }
+        #expect(wired.offersRecognizeText)
+        step(wired.session) { wired.session.crop(to: CGRect(x: 10, y: 10, width: 120, height: 70)) }
+
+        await wired.recognizeText().value
+        let result = try #require(recognized)
+        #expect(result.image.width == 120 && result.image.height == 70 && result.scale == 2 && result.title == "Keeping test")
+    }
 }

@@ -14,6 +14,9 @@ final class CardStackView: NSView {
     /// What a card's buttons, menu, or VoiceOver asked of its capture. The keys arrive apart (`onKey`): the card that
     /// has the keyboard is the owner's to know, and a command from a key gives the keyboard back where a click does not.
     var onCommand: ((CardCommand, QuickAccessItem) -> Void)?
+    /// Direct Translate action for screenshot cards.
+    var onTranslate: ((QuickAccessItem) -> Void)?
+    var hasTranslate: (() -> Bool)?
     /// The file to hand to another app for a capture, dragged out or shared; nil when the copy Settings ask for could not
     /// be made, and then nothing goes.
     var fileToHandOver: ((QuickAccessItem) -> URL?)?
@@ -173,6 +176,10 @@ final class CardStackView: NSView {
         cards[id]?.setCountdown(state)
     }
 
+    func setCountdownDisplay(_ display: CaptureCardView.CountdownDisplay?, for id: UUID) {
+        cards[id]?.setCountdownDisplay(display)
+    }
+
     /// Shades a card moved to the Trash under "Moved to Trash" and Undo while it waits to go, or brings it back.
     func setTrashing(_ trashing: Bool, for id: UUID) {
         cards[id]?.isTrashing = trashing
@@ -256,6 +263,8 @@ final class CardStackView: NSView {
     private func makeCard(for item: QuickAccessItem) -> CaptureCardView {
         let card = CaptureCardView(item: item, size: size)
         card.onCommand = { [weak self, weak card] command in card.map { self?.onCommand?(command, $0.item) } }
+        card.hasTranslate = { [weak self] in self?.hasTranslate?() ?? false }
+        card.onTranslate = { [weak self, weak card] in card.map { self?.onTranslate?($0.item) } }
         card.pictureOffer = { [weak self, weak card] in card.flatMap { self?.pictureOffer($0.item) } ?? .unsupported }
         card.cardCount = { [weak self] in self?.cardCount() ?? 1 }
         card.onHold = { [weak self, weak card] hold, on in card.map { self?.onHold?($0.item.id, hold, on) } }

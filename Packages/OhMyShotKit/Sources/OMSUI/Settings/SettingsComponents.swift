@@ -177,10 +177,12 @@ struct GroupHelp: View {
 /// each field has its own.
 struct InfoButton: View {
     let text: Text
+    let topic: Text?
     @State private var isShown = false
 
-    init(_ text: Text) {
+    init(_ text: Text, topic: Text? = nil) {
         self.text = text
+        self.topic = topic
     }
 
     var body: some View {
@@ -191,6 +193,10 @@ struct InfoButton: View {
                     .frame(width: 260, alignment: .leading)
                     .padding(14)
             }
+            .accessibilityLabel(
+                topic.map { Text("More information about \($0)", bundle: .module) }
+                    ?? Text("More information", bundle: .module)
+            )
             .accessibilityHint(text)
     }
 }
@@ -239,6 +245,8 @@ struct SettingsTestRow: View {
     var help: Text?
     /// Whether a success is a link, which can be selected and is cut in the middle when long; else a sentence.
     var succeedsWithLink = false
+    /// Optional cancellation action offered while `state == .running`.
+    var cancel: (() -> Void)? = nil
     let run: () -> Void
 
     var body: some View {
@@ -247,12 +255,18 @@ struct SettingsTestRow: View {
                 if let help {
                     button
                         .help(help)
-                    InfoButton(help)
+                    InfoButton(help, topic: title)
                 } else {
                     button
                 }
                 if state == .running {
                     ProgressView().controlSize(.small)
+                    if let cancel {
+                        Button(action: cancel) {
+                            Text("Cancel", bundle: .module)
+                        }
+                        .controlSize(.small)
+                    }
                 }
             }
             switch state {

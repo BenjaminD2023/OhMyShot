@@ -6,7 +6,7 @@ import Foundation
 /// line, and the translation is laid out across the paragraph's box.
 public struct TranslationUnit: Sendable, Equatable {
     /// Why a unit is left as read.
-    public enum Skip: Sendable, Equatable {
+    public enum Skip: Sendable, Equatable, Hashable {
         /// Figures, times, symbols, and figures with an abbreviation ("5 GB", "iOS 26"): nothing to
         /// translate, and a model asked anyway spells the abbreviation out ("5千兆字节").
         case figures
@@ -16,6 +16,10 @@ public struct TranslationUnit: Sendable, Equatable {
         case code
         /// Vertical text, which the overlay cannot lay out.
         case vertical
+        /// A display formula set apart on its own line: mathematical notation stays as read.
+        case formula
+        /// A merged table row (`TableMerge`), whose box spans the table: redrawn, one run of text would cover its cells.
+        case table
     }
 
     /// The lines it is made of, as indices into the lines it was grouped from, in reading order.
@@ -85,9 +89,10 @@ public enum TranslationUnits {
     }
 
     private static func skip(_ text: String, members: [OCRLine], isCode: Bool, technical: Bool) -> TranslationUnit.Skip? {
-        // A formula set apart is left as it is on the image, as code is; so is a table's row (TableMerge), whose box spans
+        // A formula set apart is left as it is on the image; so is a merged table row (TableMerge), whose box spans
         // the table: redrawn, one run of text would cover its cells.
-        if members.count == 1, members[0].math == .display || members[0].isTableRow { return .code }
+        if members.count == 1, members[0].math == .display { return .formula }
+        if members.count == 1, members[0].isTableRow { return .table }
         // A line of code among prose ("let x = 1" in a tutorial) is left as it is too.
         if isCode || members.count == 1 && TextAssembler.isCodeLike(TextAssembler.withoutMath(members[0])) { return .code }
         if members.contains(where: isVertical) { return .vertical }

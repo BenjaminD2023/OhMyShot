@@ -19,10 +19,18 @@ public final class ColorCardHUD {
     private var anchor: CGRect = .zero
     private var dismissal: Task<Void, Never>?
     private var hovering = false
+    private var interacted = false
+    private var dragging = false
+    private var hasBeenMoved = false
     private var picking = false
     private var windowLease: ActiveResources.Lease?
+    private lazy var escapeKey = EscapeHotKey { [weak self] in self?.dismiss() }
 
     public init() {}
+
+    isolated deinit {
+        escapeKey.disarm()
+    }
 
     public var isShowing: Bool { panel != nil }
 
@@ -32,6 +40,10 @@ public final class ColorCardHUD {
     public func show(_ color: ScreenColor, near point: CGPoint, format: ColorFormat, fromKeyboard: Bool = false) {
         anchor = CGRect(x: point.x - 12, y: point.y - 12, width: 24, height: 24)
         picking = false
+        hovering = false
+        interacted = false
+        dragging = false
+        hasBeenMoved = false
         let isNew = panel == nil
         let panel = self.panel ?? makePanel()
         card?.show(color, format: format)
@@ -45,6 +57,7 @@ public final class ColorCardHUD {
             panel.makeKey()
             panel.makeFirstResponder(card?.firstControl)
         }
+        updateEscapeKey()
         announce(card?.accessibilityLabel() ?? "")
         scheduleDismissal()
     }
@@ -64,6 +77,7 @@ public final class ColorCardHUD {
     /// Holds the card while a second color is picked, or lets it go on as before.
     public func setPickingContrast(_ picking: Bool) {
         self.picking = picking
+        updateEscapeKey()
         scheduleDismissal()
     }
 
@@ -73,12 +87,18 @@ public final class ColorCardHUD {
         guard let card, let panel else { return }
         card.showContrast(with: other)
         place(panel)
+        updateEscapeKey()
         announce(card.contrastSummary ?? "")
         scheduleDismissal()
     }
 
     public func dismiss() {
         dismissal?.cancel()
+        escapeKey.disarm()
+        hovering = false
+        interacted = false
+        dragging = false
+        hasBeenMoved = false
         guard let panel else { return }
         self.panel = nil
         card = nil
@@ -111,6 +131,17 @@ public final class ColorCardHUD {
         }
         card.onHover = { [weak self] inside in
             self?.hovering = inside
+            if !inside { self?.interacted = false }
+            self?.updateEscapeKey()
+            self?.scheduleDismissal()
+        }
+        card.onDragStateChange = { [weak self] isDragging in
+            self?.dragging = isDragging
+            if isDragging {
+                self?.hasBeenMoved = true
+                self?.interacted = true
+            }
+            self?.updateEscapeKey()
             self?.scheduleDismissal()
         }
         card.onResize = { [weak self] in
@@ -120,6 +151,11 @@ public final class ColorCardHUD {
         let panel = ColorCardPanel()
         panel.onCancel = { [weak self] in self?.dismiss() }
         panel.onCopy = { [weak card] in card?.copyLead() }
+        panel.onClick = { [weak self] in
+            self?.interacted = true
+            self?.updateEscapeKey()
+            self?.scheduleDismissal()
+        }
         panel.contentView = card
         self.panel = panel
         self.card = card
@@ -127,11 +163,22 @@ public final class ColorCardHUD {
     }
 
     /// Below the point, centered on it; above when there is no room below; kept on screen.
+    /// If the user dragged the card elsewhere, keeps its top-left corner in place while resizing.
     private func place(_ panel: NSPanel) {
         guard let card else { return }
         let size = card.fittingSize()
-        let screen = NSScreen.screens.first { $0.frame.intersects(anchor) } ?? NSScreen.main
         let margin = ColorCard.margin
+        if hasBeenMoved {
+            let current = panel.frame
+            let screen = NSScreen.screens.first { $0.frame.intersects(current) } ?? NSScreen.main
+            let visible = (screen?.visibleFrame ?? current).insetBy(dx: 8 - margin, dy: 8 - margin)
+            var origin = CGPoint(x: current.minX, y: current.maxY - size.height)
+            origin.x = min(max(origin.x, visible.minX), visible.maxX - size.width)
+            origin.y = min(max(origin.y, visible.minY), visible.maxY - size.height)
+            panel.setFrame(CGRect(origin: origin, size: size).integral, display: true)
+            return
+        }
+        let screen = NSScreen.screens.first { $0.frame.intersects(anchor) } ?? NSScreen.main
         let visible = (screen?.visibleFrame ?? anchor).insetBy(dx: 8 - margin, dy: 8 - margin)
         var origin = CGPoint(x: anchor.midX - size.width / 2, y: anchor.minY - 6 - size.height + margin)
         if origin.y < visible.minY {
@@ -163,11 +210,24 @@ public final class ColorCardHUD {
         card?.layer?.add(rise, forKey: "rise")
     }
 
-    /// Gone after 15 s left alone, held while hovered or while a second color is picked; with VoiceOver,
+    /// Arms Escape without stealing focus whenever the card is hovered or clicked (and not already key).
+    private func updateEscapeKey() {
+        guard let panel, !picking else {
+            escapeKey.disarm()
+            return
+        }
+        if !panel.takesKeys, hovering || interacted {
+            escapeKey.arm()
+        } else {
+            escapeKey.disarm()
+        }
+    }
+
+    /// Gone after 15 s left alone, held while hovered, dragged, or while a second color is picked; with VoiceOver,
     /// a minute, long enough to reach its buttons.
     private func scheduleDismissal() {
         dismissal?.cancel()
-        guard !hovering, !picking, panel != nil else { return }
+        guard !hovering, !picking, !dragging, panel != nil else { return }
         let delay: Duration = NSWorkspace.shared.isVoiceOverEnabled ? .seconds(60) : .seconds(15)
         dismissal = Task { [weak self] in
             try? await Task.sleep(for: delay)
@@ -188,6 +248,7 @@ final class ColorCardPanel: NSPanel {
     var takesKeys = false
     var onCancel: (() -> Void)?
     var onCopy: (() -> Void)?
+    var onClick: (() -> Void)?
 
     init() {
         super.init(contentRect: .zero, styleMask: [.borderless, .nonactivatingPanel], backing: .buffered, defer: true)
@@ -198,7 +259,7 @@ final class ColorCardPanel: NSPanel {
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .ignoresCycle]
         hidesOnDeactivate = false
         becomesKeyOnlyIfNeeded = true
-        isMovable = false
+        isMovable = true
         isReleasedWhenClosed = false
         animationBehavior = .none
         autorecalculatesKeyViewLoop = true
@@ -212,6 +273,9 @@ final class ColorCardPanel: NSPanel {
     override var canBecomeKey: Bool { takesKeys }
 
     override func sendEvent(_ event: NSEvent) {
+        if event.type == .leftMouseDown {
+            onClick?()
+        }
         if event.type == .keyDown, event.keyCode == 53 {
             onCancel?()
             return
@@ -228,6 +292,12 @@ final class ColorCardPanel: NSPanel {
     }
 }
 
+/// A static label that passes mouse events through to its parent card (for header dragging and
+/// whole-row click-to-copy) while remaining readable to VoiceOver.
+private final class PassThroughLabel: NSTextField {
+    override func hitTest(_ point: NSPoint) -> NSView? { nil }
+}
+
 /// The card itself, in the text result card's materials: a swatch and the hex; a row for each notation
 /// with its copy button; the contrast against a second color once there is one; Contrast… and Pin.
 final class ColorCard: NSView {
@@ -235,8 +305,12 @@ final class ColorCard: NSView {
     var onContrast: (() -> Void)?
     var onPin: ((ScreenColor) -> Void)?
     var onHover: ((Bool) -> Void)?
+    /// The card's header started or finished being dragged.
+    var onDragStateChange: ((Bool) -> Void)?
     /// The card changed height (the contrast came in); the panel takes its new size.
     var onResize: (() -> Void)?
+    /// Destination pasteboard for copies; tests override to avoid mutating the general clipboard.
+    var pasteboard: NSPasteboard = .general
 
     /// Room for the shadow to fade out completely: twice its blur plus its drop.
     static let margin: CGFloat = Theme.Shadow.radius * 2 + Theme.Shadow.drop
@@ -248,10 +322,10 @@ final class ColorCard: NSView {
 
     private let background = CALayer()
     private let swatch = CALayer()
-    private let title = NSTextField(labelWithString: "")
-    private let subtitle = NSTextField(labelWithString: "")
+    private let title = PassThroughLabel(labelWithString: "")
+    private let subtitle = PassThroughLabel(labelWithString: "")
     private let closeButton = CardButton(style: .chipIcon, title: String(localized: "Close", bundle: .module), symbolName: "xmark")
-    private var rows: [(format: ColorFormat, label: NSTextField, value: NSTextField, copy: CardButton)] = []
+    private(set) var rows: [(format: ColorFormat, label: NSTextField, value: NSTextField, copy: CardButton, highlight: CALayer)] = []
     private let firstDivider = CALayer()
     private let secondDivider = CALayer()
     // Contrast.
@@ -275,6 +349,12 @@ final class ColorCard: NSView {
     private var other: ScreenColor?
     private var swapped = false
     private var copyFeedback: [ColorFormat: Task<Void, Never>] = [:]
+    private(set) var headerDragRect: CGRect = .zero
+    private var hoveredRowIndex: Int?
+    private var pressedRowIndex: Int?
+    private var isDraggingHeader = false
+    private var dragStartScreen: CGPoint?
+    private var dragStartWindowOrigin: CGPoint?
 
     override var isFlipped: Bool { true }
 
@@ -304,10 +384,14 @@ final class ColorCard: NSView {
         subtitle.font = Theme.Typeface.label(size: 11, weight: .medium)
         subtitle.textColor = .secondaryLabelColor
         for format in ColorFormat.allCases {
-            let label = NSTextField(labelWithString: format.title)
+            let highlight = CALayer()
+            highlight.cornerRadius = 6
+            highlight.cornerCurve = .continuous
+            layer?.addSublayer(highlight)
+            let label = PassThroughLabel(labelWithString: format.title)
             label.font = Theme.Typeface.label(size: 11, weight: .medium)
             label.textColor = .secondaryLabelColor
-            let value = NSTextField(labelWithString: "")
+            let value = PassThroughLabel(labelWithString: "")
             value.font = Theme.Typeface.reading(size: 12, weight: .medium)
             value.textColor = .labelColor
             value.lineBreakMode = .byTruncatingMiddle
@@ -315,7 +399,7 @@ final class ColorCard: NSView {
             copy.target = self
             copy.action = #selector(copyRow(_:))
             copy.tag = rows.count
-            rows.append((format, label, value, copy))
+            rows.append((format, label, value, copy, highlight))
             for view in [label, value, copy] as [NSView] { addSubview(view) }
         }
         for label in [otherLabel, wcagLabel, apcaLabel] {
@@ -505,15 +589,20 @@ final class ColorCard: NSView {
         title.frame = CGRect(x: textLeft - 2, y: titleY, width: closeButton.frame.minX - 8 - textLeft, height: 19)
         subtitle.frame = CGRect(x: textLeft - 2, y: y + 19, width: right - textLeft + 2, height: 15)
         y += 34 + 5
+        headerDragRect = CGRect(x: card.minX, y: card.minY, width: card.width, height: y - card.minY)
         CATransaction.begin()
         CATransaction.setDisableActions(true)
         firstDivider.frame = CGRect(x: left, y: y, width: right - left, height: 1 / (window?.backingScaleFactor ?? 2))
         CATransaction.commit()
         y += 5
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
         for row in rows {
+            row.highlight.frame = CGRect(x: card.minX + 8, y: y, width: card.width - 16, height: Self.rowHeight)
             layoutRow(label: row.label, value: row.value, trailing: row.copy, y: y, left: left, right: right)
             y += Self.rowHeight
         }
+        CATransaction.commit()
         if showsContrast {
             y += 5
             CATransaction.begin()
@@ -573,29 +662,125 @@ final class ColorCard: NSView {
         firstDivider.backgroundColor = divider
         secondDivider.backgroundColor = divider
         CATransaction.commit()
+        updateRowHighlights()
+    }
+
+    private func updateRowHighlights() {
+        let dark = effectiveAppearance.isDark
+        let increaseContrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        for (index, row) in rows.enumerated() {
+            if pressedRowIndex == index && hoveredRowIndex == index {
+                row.highlight.backgroundColor = Theme.ChipFill.selectedColor(dark: dark, contrast: increaseContrast)
+            } else if hoveredRowIndex == index {
+                row.highlight.backgroundColor = Theme.ChipFill.hoverColor(dark: dark, contrast: increaseContrast)
+            } else {
+                row.highlight.backgroundColor = nil
+            }
+        }
+        CATransaction.commit()
     }
 
     // MARK: Pointer and actions
 
+    func rowIndex(at point: CGPoint) -> Int? {
+        rows.indices.first { rows[$0].highlight.frame.contains(point) }
+    }
+
+    func isInHeaderDragArea(_ point: CGPoint) -> Bool {
+        headerDragRect.contains(point) && !closeButton.frame.contains(point)
+    }
+
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         trackingAreas.forEach(removeTrackingArea)
-        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .mouseMoved, .activeAlways, .inVisibleRect], owner: self))
     }
 
-    override func mouseEntered(with event: NSEvent) { onHover?(true) }
-    override func mouseExited(with event: NSEvent) { onHover?(false) }
+    override func mouseEntered(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        hoveredRowIndex = rowIndex(at: point)
+        updateRowHighlights()
+        onHover?(true)
+    }
+
+    override func mouseMoved(with event: NSEvent) {
+        let point = convert(event.locationInWindow, from: nil)
+        let index = rowIndex(at: point)
+        if index != hoveredRowIndex {
+            hoveredRowIndex = index
+            updateRowHighlights()
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if hoveredRowIndex != nil {
+            hoveredRowIndex = nil
+            updateRowHighlights()
+        }
+        onHover?(false)
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool { true }
 
     override func mouseDown(with event: NSEvent) {
-        // Clicking the card must not bring this app in front of the one being worked in.
+        // Clicking or dragging the card must not bring this app in front of the one being worked in.
         NSApp.preventWindowOrdering()
+        let point = convert(event.locationInWindow, from: nil)
+        if let index = rowIndex(at: point) {
+            pressedRowIndex = index
+            hoveredRowIndex = index
+            updateRowHighlights()
+            return
+        }
+        if isInHeaderDragArea(point), let origin = window?.frame.origin {
+            isDraggingHeader = true
+            dragStartScreen = NSEvent.mouseLocation
+            dragStartWindowOrigin = origin
+            onDragStateChange?(true)
+        }
     }
 
-    @objc private func copyRow(_ sender: CardButton) {
-        guard let color, rows.indices.contains(sender.tag) else { return }
-        let row = rows[sender.tag]
-        let pasteboard = NSPasteboard.general
+    override func mouseDragged(with event: NSEvent) {
+        if isDraggingHeader, let startScreen = dragStartScreen, let startOrigin = dragStartWindowOrigin {
+            let current = NSEvent.mouseLocation
+            window?.setFrameOrigin(CGPoint(
+                x: startOrigin.x + (current.x - startScreen.x),
+                y: startOrigin.y + (current.y - startScreen.y)
+            ))
+            return
+        }
+        if pressedRowIndex != nil {
+            let point = convert(event.locationInWindow, from: nil)
+            hoveredRowIndex = rowIndex(at: point)
+            updateRowHighlights()
+        }
+    }
+
+    override func mouseUp(with event: NSEvent) {
+        if isDraggingHeader {
+            isDraggingHeader = false
+            dragStartScreen = nil
+            dragStartWindowOrigin = nil
+            onDragStateChange?(false)
+            return
+        }
+        if let pressed = pressedRowIndex {
+            pressedRowIndex = nil
+            let point = convert(event.locationInWindow, from: nil)
+            let released = rowIndex(at: point)
+            hoveredRowIndex = released
+            updateRowHighlights()
+            if released == pressed {
+                copyRow(at: pressed)
+            }
+        }
+    }
+
+    func copyRow(at index: Int) {
+        guard let color, rows.indices.contains(index) else { return }
+        let row = rows[index]
         pasteboard.clearContents()
         pasteboard.setString(color.string(in: row.format), forType: .string)
         // The button says it is done for a moment, as the translation lens's copy button does.
@@ -607,6 +792,10 @@ final class ColorCard: NSView {
             self.rows.first { $0.format == row.format }?.copy.symbolName = "doc.on.doc"
         }
         VoiceOver.announce(String(localized: "Copied \(color.string(in: row.format))", bundle: .module), from: self)
+    }
+
+    @objc private func copyRow(_ sender: CardButton) {
+        copyRow(at: sender.tag)
     }
 
     @objc private func close() { onClose?() }

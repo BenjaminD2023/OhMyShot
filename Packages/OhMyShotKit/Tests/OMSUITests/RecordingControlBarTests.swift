@@ -35,4 +35,27 @@ struct RecordingControlBarTests {
         #expect(!view.debugPausedLook.pulses)
         #expect(view.debugPausedLook.resumeLit)
     }
+
+    @Test func microphoneChipTogglesMuteAndDrawChipTracksCallback() {
+        var muteClicks = 0
+        let withMicAndDraw = ControlBarView(
+            actions: RecordingControlBar.Actions(
+                pause: {}, resume: {}, restart: {}, delete: {}, stop: {},
+                toggleMicrophoneMute: { muteClicks += 1 },
+                drawOnScreen: {}
+            ),
+            showsMicrophone: true
+        )
+        #expect(withMicAndDraw.debugHasDrawButton)
+        #expect(!withMicAndDraw.debugMicrophoneMuted)
+        withMicAndDraw.debugClickMicrophone()
+        #expect(muteClicks == 1)
+        withMicAndDraw.updateMicrophone(muted: true)
+        #expect(withMicAndDraw.debugMicrophoneMuted)
+        withMicAndDraw.updateMicrophone(muted: false)
+        #expect(!withMicAndDraw.debugMicrophoneMuted)
+
+        let withoutDraw = bar()
+        #expect(!withoutDraw.debugHasDrawButton)
+    }
 }

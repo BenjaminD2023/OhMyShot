@@ -255,6 +255,79 @@ struct ModelPackTests {
         #expect(pack.url(of: pack.files[0], at: pack.mirrors[0]).absoluteString == "https://h.test/org/repo/resolve/abc123/rec/model%201.bin")
     }
 
+    @Test func customMirrorRewritesHuggingFaceFirstAndIgnoresInvalidURLs() {
+        let hfPack = pack(hosts: ["huggingface.co"], files: ["LICENSE.txt": Data([1])])
+        let original = hfPack.mirrors
+
+        // Nil, empty, or invalid / plain-http values are ignored.
+        for bad in [nil, "", "   ", "http://hf-mirror.com", "not a url", "https://user:pass@hf-mirror.com", "https://hf-mirror.com?a=1", "https://hf-mirror.com/a/../b"] {
+            #expect(hfPack.resolvedMirrors(customMirror: bad) == original, "\(String(describing: bad))")
+        }
+
+        // Valid https mirror is tried first, then falls back to huggingface.co.
+        let basic = hfPack.resolvedMirrors(customMirror: "https://hf-mirror.com")
+        #expect(basic.map(\.absoluteString) == [
+            "https://hf-mirror.com/org/repo/resolve/abc123/",
+            "https://huggingface.co/org/repo/resolve/abc123/",
+        ])
+
+        // Trailing slashes and whitespace / uppercase scheme & host are normalized.
+        let normalized = hfPack.resolvedMirrors(customMirror: "  HTTPS://HF-MIRROR.COM///  ")
+        #expect(normalized == basic)
+
+        // Path-prefixed mirror preserves its prefix without double slashes.
+        let prefixed = hfPack.resolvedMirrors(customMirror: "https://mirror.example.com/hf/")
+        #expect(prefixed.map(\.absoluteString) == [
+            "https://mirror.example.com/hf/org/repo/resolve/abc123/",
+            "https://huggingface.co/org/repo/resolve/abc123/",
+        ])
+
+        // Setting huggingface.co itself does not duplicate the entry.
+        #expect(hfPack.resolvedMirrors(customMirror: "https://huggingface.co/") == original)
+
+        // Non-HuggingFace mirrors are left untouched.
+        let otherPack = pack(hosts: ["other.test"], files: ["LICENSE.txt": Data([1])])
+        #expect(otherPack.resolvedMirrors(customMirror: "https://hf-mirror.com") == otherPack.mirrors)
+    }
+
+    @Test func customMirrorIsTriedBeforeHuggingFaceDuringDownload() async throws {
+        let rig = try rig()
+        let mirrorHost = "custom-hf-mirror.test"
+        PackStubProtocol.install(host: mirrorHost, .init(files: rig.files.mapKeys { "org/repo/resolve/abc123/\($0)" }))
+        let pack = pack(hosts: ["huggingface.co"], files: rig.files)
+        let downloader = ModelPackDownloader(
+            store: rig.store,
+            resources: rig.resources,
+            sessionConfiguration: PackStubProtocol.configuration,
+            availableSpace: { _ in 1 << 40 },
+            customMirror: { "https://\(mirrorHost)/" }
+        )
+
+        _ = try await downloader.download(pack)
+        #expect(PackStubProtocol.requests(host: mirrorHost).count == pack.files.count)
+        #expect(rig.store.receipt(of: pack) != nil)
+    }
+
+    @MainActor
+    @Test func licenseOrFallbackUsesBundledApache2WhenUnreachable() async throws {
+        let rig = try rig()
+        let host = "packs-license-offline.test"
+        PackStubProtocol.install(host: host, .init(status: 503))
+        let pack = pack(hosts: [host], files: rig.files)
+        let center = ModelPackCenter(packs: [pack], store: rig.store, downloader: rig.downloader)
+
+        let offline = try await center.licenseOrFallback(of: pack)
+        #expect(offline.isFallback)
+        #expect(offline.text.contains("Apache License"))
+        #expect(offline.text.contains("SHA-256"))
+
+        // Once reachable, the pack's own LICENSE.txt is returned instead of the fallback.
+        PackStubProtocol.install(host: host, .init(files: rig.files.mapKeys { "org/repo/resolve/abc123/\($0)" }))
+        let live = try await center.licenseOrFallback(of: pack)
+        #expect(!live.isFallback)
+        #expect(live.text == String(decoding: rig.files["LICENSE.txt"]!, as: UTF8.self))
+    }
+
     // MARK: Downloading
 
     @Test func aPackComesDownChecksOutAndIsInstalled() async throws {
@@ -522,8 +595,49 @@ struct ModelPackTests {
         await center.refresh()
         #expect(removals == 1)
         #expect(rig.store.receipt(of: old) == nil)
+        #expect(center.state(of: new) == .updateAvailable(from: "1", carried: new.size))
         await center.refresh()
         #expect(removals == 1)
+
+        // Updating clears the update-origin marker and installs cleanly.
+        center.download(new)
+        try await waitUntil { if case .installed = center.state(of: new) { true } else { false } }
+        #expect(rig.store.updateOrigin(of: new) == nil)
+        #expect(!FileManager.default.fileExists(atPath: rig.store.folder(of: new).appending(path: ModelPackStore.updateOriginName).path(percentEncoded: false)))
+    }
+
+    @MainActor
+    @Test func preparingStateRunsBeforeInstalled() async throws {
+        let rig = try rig()
+        let host = "packs-preparing.test"
+        PackStubProtocol.install(host: host, .init(files: rig.files.mapKeys { "org/repo/resolve/abc123/\($0)" }))
+        let pack = pack(hosts: [host], files: rig.files)
+        let center = ModelPackCenter(packs: [pack], store: rig.store, downloader: rig.downloader)
+        let continuePrepare = Mutex<CheckedContinuation<Void, Never>?>(nil)
+        var installedCount = 0
+        center.prepareInstalled = { _, _ in
+            await withCheckedContinuation { continuation in
+                continuePrepare.withLock { $0 = continuation }
+            }
+        }
+        center.onInstalled = { _, _ in installedCount += 1 }
+
+        center.download(pack)
+        try await waitUntil { if case .preparing = center.state(of: pack) { true } else { false } }
+        #expect(installedCount == 0)
+        #expect(center.installedFolder(of: pack) == nil)
+        // Refresh while preparing must not overwrite `.preparing`.
+        await center.refresh()
+        if case .preparing = center.state(of: pack) { } else { Issue.record("expected preparing") }
+
+        let resume = continuePrepare.withLock { current -> CheckedContinuation<Void, Never>? in
+            defer { current = nil }
+            return current
+        }
+        resume?.resume()
+        try await waitUntil { if case .installed = center.state(of: pack) { true } else { false } }
+        #expect(installedCount == 1)
+        #expect(center.installedFolder(of: pack) == rig.store.folder(of: pack))
     }
 
     @MainActor

@@ -194,7 +194,7 @@ public enum PictureExport {
     @concurrent
     public static func clipboardPicture(_ image: CGImage, pixelsPerPoint: Double?, output: ScreenshotOutput) async -> (image: CGImage, png: Data)? {
         let prepared = prepare(image, pixelsPerPoint: pixelsPerPoint, output: output.with(format: .png))
-        guard prepared.isComplete, let png = try? await ImageExporter.encode(prepared.image, as: .png) else { return nil }
+        guard prepared.isComplete, let png = try? await ImageExporter.encode(prepared.image, as: .png, pixelsPerPoint: prepared.pixelsPerPoint) else { return nil }
         return (prepared.image, png)
     }
 
