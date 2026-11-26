@@ -27,7 +27,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/badge/Download_for_macOS-3D7FEA?style=flat-square&logo=apple&logoColor=white" width="246" alt="Download OhMyShot for macOS"></a>
+  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/badge/Download_for_macOS-3D7FEA?style=flat-square&logo=apple&logoColor=white" height="34" alt="Download OhMyShot for macOS"></a>&ensp;
+  <a href="https://www.ohmyshot.org/"><img src="https://img.shields.io/badge/Try_Interactive_Browser_Demo-185368?style=flat-square&logo=safari&logoColor=white" height="34" alt="Try the interactive browser demo on ohmyshot.org"></a>
 </p>
 
 <p align="center">
@@ -44,6 +45,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.ohmyshot.org/">Website &amp; Demo</a>&ensp;·&ensp;
   <a href="#why-ohmyshot">Why OhMyShot</a>&ensp;·&ensp;
   <a href="#features">Features</a>&ensp;·&ensp;
   <a href="#power-budget">Power budget</a>&ensp;·&ensp;
@@ -81,9 +83,12 @@
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>🔒 Private by default</h3>
-      Everything is read on your Mac. There is no OhMyShot server: uploads go only to storage you own, and a cloud OCR
-      model runs only with your own API key, when you turn it on.
+      <h3>🔒 Local-first &amp; transparent</h3>
+      Captures, recognized text, file names, and clipboard contents stay on your Mac by default — they leave your Mac
+      only when you explicitly share them (via email, macOS Share, or uploads to storage you own) or enable cloud OCR
+      with your own API key, and are never sent to MMFoundation. Release builds send <a href="#optional-usage-data">anonymous daily usage counts</a> (on by default
+      since v0.3.0, one-click opt-out in Settings › General › Usage Data;
+      <a href="https://www.ohmyshot.org/privacy/">Privacy Notice</a>).
     </td>
     <td width="50%" valign="top">
       <h3>🍎 Native, free, and open</h3>
@@ -99,57 +104,69 @@
   <tr>
     <td width="50%" valign="top">
       <h3>📸 Screenshots</h3>
-      Area, window (with or without its shadow, on a background), full display, the previous area, and a self-timer.
-      Areas can cross displays, and the screen freezes while you choose. All-In-One sets up any of them from one bar.
+      Area, window (with or without its shadow, on a background), full display, the previous area, and an interactive
+      self-timer (<code>D</code> or <code>1</code>–<code>5</code> on screen, <code>Esc</code> to cancel). Areas can
+      cross displays, and the screen freezes while you choose. All-In-One sets up any of them from one bar.
     </td>
     <td width="50%" valign="top">
       <h3>🗂️ Quick Access and Capture History</h3>
-      A card for each capture to copy, save, mark up, pin, upload, or drag out, and a history you can search by the
-      text in the pictures.
+      A card for each capture (dockable to any of the four screen corners) to copy, save, mark up, pin, upload, or drag
+      out, plus a searchable history with text-in-image search, date and app filters, multi-select, 5-second Undo Trash,
+      and multi-column collages.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <h3>✏️ Annotation</h3>
-      An editor, or drawing straight on the frozen selection: arrows, shapes, text, a highlighter that snaps to text,
-      counters, blur and pixelation (with redaction suggestions from the text it reads), crops, backgrounds, combined
-      images, and project files you can open again.
+      An editor, or drawing straight on the frozen selection: arrows, shapes with adjustable corner radius, text, a
+      highlighter that snaps to text, counters, Magnifier, Erase, blur and pixelation (with redaction suggestions from
+      recognized text), tool locking, cross-editor copy/paste, crops, backgrounds, and <code>.ohmyshot</code> project
+      files you can open again.
     </td>
     <td width="50%" valign="top">
       <h3>🔤 Text from pixels</h3>
-      Capture Text copies the text in an area; the Recognized Text window shows it beside the picture with tables, links,
-      and codes, and translates it, also over the original. Optional model packs read Chinese a second time, formulas as
-      LaTeX, and tables and charts. <a href="Docs/ocr.md">How it works →</a>
+      Capture Text copies text from any area (stripping narrow code-editor gutter line numbers); the zoomable Recognized
+      Text window supports inline table editing with CSV/TSV export, link and QR/barcode actions, and Translation Lens
+      over the original image. Optional on-device model packs improve CJK accuracy, convert formulas to LaTeX with
+      configurable delimiters, and read tables and charts (with custom download mirror support).
+      <a href="Docs/ocr.md">How it works →</a>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <h3>🎬 Recording and Studio</h3>
-      Screen, window, or area to MP4 or GIF, with system audio, microphone, camera, clicks, and keys. Studio edits a
-      recording afterwards, with automatic zooms that follow the cursor. On macOS 27, with Replay on, the last 15 seconds
-      can be saved at any time.
+      Screen, window, or area to MP4 or GIF (with frame-rate and size presets), with system audio, live microphone meter
+      and mute, camera (with background blur or removal), clicks, and keys. Studio edits recordings with timeline audio
+      waveforms, master fades, non-destructive crop, draggable speed stretches (0.5×–4×) and cuts, cursor-following or
+      fixed zooms, and portable <code>.omsstudio</code> project packages. On macOS 27, with Replay on, the last 15
+      seconds can be saved at any time.
     </td>
     <td width="50%" valign="top">
       <h3>📌 Pins, color, and measuring</h3>
-      Always-on-top pictures, text, and colors; a screen color picker and a pixel ruler that snaps to edges.
-      <a href="Docs/measurement-snapping.md">Edge snapping →</a>
+      Always-on-top pictures, text, and wide-gamut colors (restore up to 5 recently closed pins); a screen color picker
+      and a pixel ruler that snaps to edges. <a href="Docs/measurement-snapping.md">Edge snapping →</a>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <h3>📜 Scrolling capture</h3>
-      Scroll by hand or let Auto-scroll do it, into one long picture.
+      Four-direction scrolling (down, up, left, or right) by hand or with adjustable-speed Auto-scroll, stitched into
+      one long picture.
     </td>
     <td width="50%" valign="top">
       <h3>☁️ Sharing</h3>
-      Uploads to your own S3-compatible, WebDAV, or custom HTTP storage; printing, email, and the Share menu.
+      Uploads to your own S3-compatible (including Cloudflare R2), WebDAV, or custom HTTP storage (ShareX
+      <code>.sxcu</code> import supported); printing, email, and the Share menu.
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>⚙️ Automation</h3>
-      CleanShot X–compatible URL commands under <code>ohmyshot://</code>, actions in Shortcuts and Spotlight, and a
-      Raycast extension. <a href="Docs/automation.md">URL commands →</a>
+      <h3>⚙️ Automation &amp; CleanShot X migration</h3>
+      Drop-in CleanShot X URL compatibility: swap <code>cleanshot://</code> to <code>ohmyshot://</code> in existing
+      scripts and workflows, plus OhMyShot commands (<code>capture-formula</code>, <code>annotate-area</code>,
+      <code>translate-area</code>, <code>pick-color</code>, <code>measure</code>, <code>draw-on-screen</code>,
+      <code>save-replay</code>, <code>pin-from-clipboard</code>, <code>toggle-pins</code>), Shortcuts and Spotlight
+      actions, and a Raycast extension. <a href="Docs/automation.md">URL commands →</a>
     </td>
     <td width="50%" valign="top">
       <h3>🌐 Languages</h3>
@@ -159,8 +176,14 @@
   </tr>
 </table>
 
-OhMyShot also appears in other apps' Share menu (to mark up or pin a picture; switch it on in System Settings ›
-General › Login Items & Extensions › Sharing) and in Finder's Open With for images.
+OhMyShot also appears in other apps' Share menu (to mark up, pin, or recognize text in a picture; switch it on in
+System Settings › General › Login Items & Extensions › Sharing) and in Finder's Open With for images.
+
+<p align="center">
+  <img src="Docs/assets/measurement-snapping.gif" width="560" alt="OhMyShot's Measure tool snapping pixel measurements to UI element edges">
+  <br>
+  <sub>Measure snaps to UI edges in real pixels — <a href="https://www.ohmyshot.org/#try">try Capture Area, OCR, Measure, and Pick Color live in your browser →</a></sub>
+</p>
 
 ## Power budget
 
@@ -177,7 +200,7 @@ Every milestone is gated on measured numbers. The latest, with Debug builds on a
 | Shortcut → frozen picture | p95 < 150 ms | **p95 47.7 ms** ✅ |
 | Text from a 1000 × 600 px area | < 300 ms | p50 187 ms ✅, p95 370 ms ❌ |
 | Recording 1080p at 60 fps | < 15% CPU | 15.7% ❌ |
-| App size, without model packs | < 30 MB | 37 MB (14 MB zipped) ❌ |
+| App size, without model packs | < 30 MB | 37 MB installed (v0.5.0 release: 14.5 MB DMG / 18.2 MB ZIP) ❌ |
 
 Model packs run in a helper process that exits when it is done, so they cost the app's own memory nothing. The full
 log, with methods, dates, and caveats, is in [Docs/perf.md](Docs/perf.md); measure your own Mac with
@@ -187,7 +210,7 @@ log, with methods, dates, and caveats, is in [Docs/perf.md](Docs/perf.md); measu
 
 ### Install
 
-1. Download `OhMyShot-<version>.dmg` from the [latest release](https://github.com/MMFoundation/OhMyShot/releases/latest).
+1. Download `OhMyShot-<version>.dmg` from [ohmyshot.org](https://www.ohmyshot.org/download/) or the [latest GitHub release](https://github.com/MMFoundation/OhMyShot/releases/latest).
 2. Open it and drag OhMyShot onto Applications.
 3. Open OhMyShot. A getting-started guide walks you through allowing Screen Recording and your first capture.
 
@@ -227,13 +250,14 @@ app after every rebuild and loses it. To keep it, copy `Config/Signing.local.xcc
 
 ### Updates
 
-Release builds check for updates with [Sparkle](https://sparkle-project.org) about once a day (Settings › General ›
-Updates), using signed appcasts attached to this repository's GitHub releases; Debug builds never check. How releases
-are made, signed, and notarized is in [Docs/release.md](Docs/release.md).
+Release builds check for updates with [Sparkle](https://sparkle-project.org) about every six hours (Settings › General ›
+Updates), fetching the EdDSA-signed appcast via `www.ohmyshot.org` (which streams the GitHub release appcast
+unchanged, with a direct GitHub fallback on transport failure). Nothing downloads or installs before you confirm it;
+Debug builds never check. How releases are made, signed, and notarized is in [Docs/release.md](Docs/release.md).
 
 ### Optional usage data
 
-Settings › General › Usage Data is on by default and can be turned off there at any time; Reset to Default Settings keeps that choice. While it is on, OhMyShot sends `www.ohmyshot.org`
+Settings › General › Usage Data is on by default since v0.3.0 and can be turned off there at any time; Reset to Default Settings keeps that choice. See the full [Privacy Notice](https://www.ohmyshot.org/privacy/) for retention details. While it is on, OhMyShot sends `www.ohmyshot.org`
 one report for each UTC day, updated as the day goes on, under a random ID that changes each UTC day. It says:
 
 - how many times each feature was used (named as its keyboard shortcut is, `captureArea`), and whether from a shortcut, the
@@ -248,7 +272,7 @@ one report for each UTC day, updated as the day goes on, under a random ID that 
 - on how many of the 28 days before it something was used, counted on the Mac from the days it has seen while the setting
   was on.
 
-Reports exclude captures, recognized text, file and window names, and persistent device identifiers. The website merges
+Reports exclude captures, recognized text, file and window names, clipboard contents, and persistent device identifiers. The website merges
 each report into daily totals, every detail counted on its own, and keeps the daily ID only to merge retries.
 When the app runs, it retries unsent counts from the last seven UTC days and drops older reports. Turning the setting off stops sending
 and clears the local report file, with the days it was used. Debug builds leave the reporting service inactive.
@@ -272,7 +296,8 @@ and clears the local report file, with the days it was used. Debug builds leave 
 Contributions are welcome, whether code, translations, bug reports, or measurements from a Mac other than ours.
 
 - **Report a bug or ask for a feature** in [Issues](https://github.com/MMFoundation/OhMyShot/issues). Include
-  your macOS version, your displays, and the steps that lead to the problem.
+  your macOS version, your displays, and the steps that lead to the problem. For security vulnerabilities, please
+  follow [SECURITY.md](SECURITY.md) instead of opening a public issue.
 - **Ask a question or talk with us** on MMFoundation's [Discord](https://mmfoundation.dev/discord).
 - **Translate.** You don't need Xcode: [Docs/localization.md](Docs/localization.md) explains how.
 - **Send a pull request.** Run `Scripts/test.sh` before you push, and write commit messages as

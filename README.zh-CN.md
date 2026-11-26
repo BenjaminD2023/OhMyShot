@@ -20,7 +20,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD_macOS_%E7%89%88-3D7FEA?style=flat-square&logo=apple&logoColor=white" width="182" alt="下载 macOS 版 OhMyShot"></a>
+  <a href="https://github.com/MMFoundation/OhMyShot/releases/latest"><img src="https://img.shields.io/badge/%E4%B8%8B%E8%BD%BD_macOS_%E7%89%88-3D7FEA?style=flat-square&logo=apple&logoColor=white" height="34" alt="下载 macOS 版 OhMyShot"></a>&ensp;
+  <a href="https://www.ohmyshot.org/zh/"><img src="https://img.shields.io/badge/%E5%AE%98%E7%BD%91%E5%9C%A8%E7%BA%BF%E4%BD%93%E9%AA%8C-185368?style=flat-square&logo=safari&logoColor=white" height="34" alt="在 ohmyshot.org 在线体验交互演示"></a>
 </p>
 
 <p align="center">
@@ -37,6 +38,7 @@
 </p>
 
 <p align="center">
+  <a href="https://www.ohmyshot.org/zh/">官网与在线演示</a>&ensp;·&ensp;
   <a href="#why-ohmyshot">为什么选择 OhMyShot</a>&ensp;·&ensp;
   <a href="#features">功能</a>&ensp;·&ensp;
   <a href="#power-budget">功耗预算</a>&ensp;·&ensp;
@@ -73,9 +75,9 @@
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>🔒 默认保护隐私</h3>
-      所有识别都在本机完成。OhMyShot 没有自己的服务器：上传只会传到你自己的存储；云端 OCR 模型只有在你填入自己的
-      API Key 并主动开启后才会使用。
+      <h3>🔒 本地优先，数据透明</h3>
+      截图、录屏、识别出的文字、文件名和剪贴板内容默认留在你的 Mac 上，绝不发送给 MMFoundation——只有当你主动分享（如通过邮件、macOS 系统共享或上传到你自己的存储），或主动开启填写了个人
+      API Key 的云端 OCR 模型时才会离开本机。正式版默认发送<a href="#optional-usage-data">匿名每日使用计数</a>（自 v0.3.0 起默认开启，可在「设置 › 通用 › 使用数据」一键关闭，详见<a href="https://www.ohmyshot.org/zh/privacy/">隐私声明</a>）。
     </td>
     <td width="50%" valign="top">
       <h3>🍎 原生、免费、开源</h3>
@@ -93,51 +95,49 @@
   <tr>
     <td width="50%" valign="top">
       <h3>📸 截图</h3>
-      区域、窗口（可带或不带阴影，可加背景）、全屏、上次区域，以及定时截图。区域可以跨显示器，选择时屏幕会冻结。
-      「多合一」在一条工具栏里完成以上所有设置。
+      区域、窗口（可带或不带阴影，可加背景）、全屏、上次区域，以及可在屏幕上直接调整倒计时（按 <code>D</code> 或 <code>1</code>–<code>5</code>，<code>Esc</code> 取消）的定时截图。区域可以跨显示器，选择时屏幕会冻结。「多合一」在一条工具栏里完成以上所有设置。
     </td>
     <td width="50%" valign="top">
       <h3>🗂️ 快速访问与截图历史</h3>
-      每次截图都会出现一张卡片，可以复制、保存、标注、贴图、上传或直接拖出；截图历史可以按图中文字搜索。
+      每次截图都会出现一张卡片（支持屏幕四角停靠），可以复制、保存、标注、贴图、上传或直接拖出；截图历史支持按图中文字搜索、按日期与应用筛选、多选、5 秒内撤销删除以及多列拼图。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <h3>✏️ 标注</h3>
-      在编辑器里标注，或直接在冻结的选区上绘制：箭头、形状、文字、自动对齐文字的荧光笔、步骤编号、模糊和像素化（会根据识别出的文字给出打码建议）、裁剪、背景、拼图，以及可再次打开的项目文件。
+      在编辑器里标注，或直接在冻结的选区上绘制：箭头、可调圆角的形状、文字、自动对齐文字的荧光笔、步骤编号、放大镜、擦除、模糊和像素化（会根据识别出的文字给出打码建议）、双击锁定工具、跨编辑器拷贝粘贴标注、裁剪、背景，以及可再次打开的 <code>.ohmyshot</code> 项目文件。
     </td>
     <td width="50%" valign="top">
       <h3>🔤 文字识别</h3>
-      「截取文字」复制区域内的文字；「识别的文字」窗口把文字和原图并排显示，能识别表格、链接、条码和二维码，并可翻译，译文也可以直接覆盖在原图上。可选模型包能对中文做二次识别，把公式转成 LaTeX，并读取表格和图表。
+      「截取文字」复制区域内的文字（自动剔除代码截图窄边栏行号）；可缩放的「识别的文字」窗口支持内联编辑表格并导出标准 CSV/TSV、识别链接与条码/二维码，以及在原图上直接覆盖译文的翻译透镜。可选端侧模型包能对中文做二次识别、按自定义分隔符把公式转成 LaTeX 并读取表格和图表（支持自定义下载镜像）。
       <a href="Docs/ocr.md">工作原理 →</a>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <h3>🎬 录屏与 Studio</h3>
-      录制屏幕、窗口或区域，导出 MP4 或 GIF，可录系统声音、麦克风、摄像头，并显示点击和按键。
-      Studio 用于录制后的剪辑，能自动跟随光标缩放。在 macOS 27 上开启 Replay 后，随时可以保存最近 15 秒。
+      录制屏幕、窗口或区域，导出 MP4 或自定义帧率/尺寸的 GIF，可录系统声音、录前测音并实时静音的麦克风、支持背景模糊/抠像的摄像头，并显示点击和按键。Studio 剪辑支持时间轴音频波形、主音量淡入淡出、无损裁切、直接拖移的变速段（0.5×–4×）与剪辑点、光标跟随或定点缩放，以及可迁移的 <code>.omsstudio</code> 项目包。在 macOS 27 上开启 Replay 后，随时可保存最近 15 秒。
     </td>
     <td width="50%" valign="top">
       <h3>📌 贴图、取色与测量</h3>
-      把图片、文字和颜色置顶贴在屏幕上；屏幕取色器，以及能自动吸附边缘的像素标尺。
+      把图片、文字和广色域颜色置顶贴在屏幕上（可恢复最近关闭的 5 张贴图）；屏幕取色器，以及能自动吸附边缘的像素标尺。
       <a href="Docs/measurement-snapping.md">边缘吸附 →</a>
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
       <h3>📜 滚动截图</h3>
-      手动滚动或交给「自动滚动」，拼成一张长图。
+      支持向下、向上、向左、向右四方向滚动截图，手动滚动或交给可调速的「自动滚动」，拼成一张长图。
     </td>
     <td width="50%" valign="top">
       <h3>☁️ 分享</h3>
-      上传到你自己的 S3 兼容存储、WebDAV 或自定义 HTTP 接口；也支持打印、邮件和系统分享菜单。
+      上传到你自己的 S3 兼容存储（含 Cloudflare R2）、WebDAV 或自定义 HTTP 接口（支持导入 ShareX <code>.sxcu</code> 配置）；也支持打印、邮件和系统分享菜单。
     </td>
   </tr>
   <tr>
     <td width="50%" valign="top">
-      <h3>⚙️ 自动化</h3>
-      兼容 CleanShot X 的 URL 命令（<code>ohmyshot://</code>），支持快捷指令和聚焦搜索，并提供 Raycast 扩展。
+      <h3>⚙️ 自动化与 CleanShot X 迁移</h3>
+      无缝兼容 CleanShot X 的 URL 命令：把现有脚本或工作流中的 <code>cleanshot://</code> 改为 <code>ohmyshot://</code> 即可使用，并扩展了 <code>capture-formula</code>、<code>annotate-area</code>、<code>translate-area</code>、<code>pick-color</code>、<code>measure</code>、<code>draw-on-screen</code>、<code>save-replay</code>、<code>pin-from-clipboard</code>、<code>toggle-pins</code> 等专属命令；同时支持快捷指令、聚焦搜索和 Raycast 扩展。
       <a href="Docs/automation.md">URL 命令 →</a>
     </td>
     <td width="50%" valign="top">
@@ -148,8 +148,14 @@
   </tr>
 </table>
 
-OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；在「系统设置 › 通用 › 登录项与扩展 › 共享」中开启），
+OhMyShot 还会出现在其他 App 的分享菜单中（用来标注、贴图或直接识别文字；在「系统设置 › 通用 › 登录项与扩展 › 共享」中开启），
 以及访达中图片的「打开方式」里。
+
+<p align="center">
+  <img src="Docs/assets/measurement-snapping.gif" width="560" alt="OhMyShot 测量工具自动吸附界面元素边缘的像素标尺演示">
+  <br>
+  <sub>像素标尺自动吸附界面边缘 —— <a href="https://www.ohmyshot.org/zh/#try">前往官网在浏览器中直接体验截图、OCR、测量与取色 →</a></sub>
+</p>
 
 <a id="power-budget"></a>
 
@@ -168,7 +174,7 @@ OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；
 | 快捷键 → 冻结画面 | p95 < 150 ms | **p95 47.7 ms** ✅ |
 | 识别约 1000 × 600 px 区域的文字 | < 300 ms | p50 187 ms ✅，p95 370 ms ❌ |
 | 录制 1080p 60 fps | CPU < 15% | 15.7% ❌ |
-| App 体积（不含模型包） | < 30 MB | 37 MB（压缩后 14 MB）❌ |
+| App 体积（不含模型包） | < 30 MB | 解压后约 37 MB（v0.5.0 安装包：14.5 MB DMG / 18.2 MB ZIP）❌ |
 
 模型包在独立的辅助进程中运行，用完即退出，不占用 App 自身的内存。完整记录（含测量方法、日期和注意事项）见
 [Docs/perf.md](Docs/perf.md)；也可以用 `Scripts/power-sample.sh` 和 `Scripts/latency.sh` 在自己的 Mac 上测量。
@@ -179,7 +185,7 @@ OhMyShot 还会出现在其他 App 的分享菜单中（用来标注或贴图；
 
 ### 安装
 
-1. 从[最新版本](https://github.com/MMFoundation/OhMyShot/releases/latest)下载 `OhMyShot-<版本号>.dmg`。
+1. 从[官网](https://www.ohmyshot.org/zh/download/)或 [GitHub 最新版本](https://github.com/MMFoundation/OhMyShot/releases/latest)下载 `OhMyShot-<版本号>.dmg`。
 2. 打开后把 OhMyShot 拖到「应用程序」文件夹。
 3. 打开 OhMyShot，新手引导会带你开启屏幕录制权限，并完成第一次截图。
 
@@ -219,12 +225,15 @@ Development 团队（免费的个人团队即可）。
 
 ### 更新
 
-正式版通过 [Sparkle](https://sparkle-project.org) 大约每天检查一次更新（「设置 › 通用 › 更新」），读取附在本仓库
-GitHub Releases 上的签名 appcast；Debug 版从不检查更新。发布、签名和公证的流程见 [Docs/release.md](Docs/release.md)。
+正式版通过 [Sparkle](https://sparkle-project.org) 大约每 6 小时检查一次更新（「设置 › 通用 › 更新」），经由
+`www.ohmyshot.org` 获取附在 GitHub Releases 上未经修改的 EdDSA 签名 appcast（传输失败时自动回退直连 GitHub）。
+在你确认前绝不会下载或安装任何更新；Debug 版从不检查更新。发布、签名和公证的流程见 [Docs/release.md](Docs/release.md)。
+
+<a id="optional-usage-data"></a>
 
 ### 可选的使用数据
 
-「设置 › 通用 › 使用数据」默认开启，随时可以在那里关闭，「重置为默认设置」也不会改动这个选择。开启时，OhMyShot 每个 UTC 日向 `www.ohmyshot.org`
+「设置 › 通用 › 使用数据」自 v0.3.0 起默认开启，随时可以在那里关闭，「重置为默认设置」也不会改动这个选择。数据保留周期等详情见完整[隐私声明](https://www.ohmyshot.org/zh/privacy/)。开启时，OhMyShot 每个 UTC 日向 `www.ohmyshot.org`
 发送一份报告，当天内随使用更新，并带有每个 UTC 日更换的随机 ID。报告包含：
 
 - 各功能的使用次数（以其快捷键的名称命名，如 `captureArea`），以及是通过快捷键、菜单栏还是自动化（URL API 与快捷指令）启动；
@@ -234,7 +243,7 @@ GitHub Releases 上的签名 appcast；Debug 版从不检查更新。发布、�
 - 首次运行 OhMyShot 大约在多久以前（首日、一周、一个月、三个月、一年），依据其「应用程序支持」文件夹的创建时间；
 - 此前 28 天中有几天使用过，由 Mac 根据设置开启期间记下的日期统计。
 
-报告不包含捕捉内容、识别出的文字、文件名、窗口标题或持久的设备标识符。网站会把每份报告计入每日汇总，每项信息分别单独计数，
+报告不包含捕捉内容、识别出的文字、文件名、窗口标题、剪贴板内容或持久的设备标识符。网站会把每份报告计入每日汇总，每项信息分别单独计数，
 每日 ID 只用于合并重试。应用运行时会重试最近七个 UTC 日内未发送的报告，并清除更早的报告。关闭此设置会停止发送，并清除本地报告文件及其中的使用日期。
 Debug 版不会启用报告服务。
 
@@ -261,7 +270,7 @@ Debug 版不会启用报告服务。
 欢迎任何形式的贡献：代码、翻译、Bug 反馈，或者在你的 Mac 上测得的性能数据。
 
 - **反馈 Bug 或提出功能建议**：请到 [Issues](https://github.com/MMFoundation/OhMyShot/issues)，中文或英文均可。
-  请写明 macOS 版本、显示器配置和复现步骤。
+  请写明 macOS 版本、显示器配置和复现步骤。如果涉及安全漏洞，请按 [SECURITY.md](SECURITY.md) 私下报告，不要直接提交公开 Issue。
 - **提问或交流**：请到 MMFoundation 的 [Discord](https://mmfoundation.dev/discord)。
 - **参与翻译**：不需要 Xcode，详见 [Docs/localization.md](Docs/localization.md)。
 - **提交 Pull Request**：推送前请运行 `Scripts/test.sh`，提交信息遵循
