@@ -3,6 +3,7 @@ import CoreMedia
 import Foundation
 import OMSCore
 import OSLog
+import Synchronization
 
 /// Makes the file a recording is kept as from the movie written while recording: an MP4, which every player
 /// and upload form takes, with one audio track.
@@ -65,7 +66,14 @@ public enum RecordingFinisher {
     /// Sound at full volume is copied as it was encoded when it is one track; at a lower volume, or mixed from
     /// more tracks, it is decoded and encoded again.
     @concurrent
-    public static func finish(_ source: URL, to destination: URL, audio: AudioTracks = .all, volume: Double = 1) async throws -> Movie {
+    public static func finish(
+        _ source: URL,
+        to destination: URL,
+        audio: AudioTracks = .all,
+        volume: Double = 1,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> Movie {
+        try Task.checkCancellation()
         let asset = AVURLAsset(url: source)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { throw FinishError.noVideo }
         let allAudio = try await asset.loadTracks(withMediaType: .audio)
@@ -76,6 +84,7 @@ public enum RecordingFinisher {
         }
         let duration = try await asset.load(.duration)
         let size = try await videoTrack.load(.naturalSize)
+        try Task.checkCancellation()
 
         let reader = try AVAssetReader(asset: asset)
         let videoOutput = AVAssetReaderTrackOutput(track: videoTrack, outputSettings: nil)
@@ -110,14 +119,18 @@ public enum RecordingFinisher {
         }
         if let audioInput { try add(audioInput, to: writer) }
 
+        try Task.checkCancellation()
         guard reader.startReading() else { throw FinishError.readingFailed(String(describing: reader.error)) }
         guard writer.startWriting() else { throw FinishError.writingFailed(String(describing: writer.error)) }
         writer.startSession(atSourceTime: .zero)
-        let videoPump = Pump(output: videoOutput, input: videoInput, label: "video")
+        let videoPump = Pump(
+            output: videoOutput, input: videoInput, label: "video",
+            onSample: sampleProgress(totalSeconds: duration.seconds, report: progress)
+        )
         let audioPump = audioOutput.flatMap { output in audioInput.map { Pump(output: output, input: $0, label: "audio") } }
         return try await write(
             video: videoPump, audio: audioPump, from: reader, with: writer, endingAt: duration, to: destination,
-            pixelWidth: Int(size.width.rounded()), pixelHeight: Int(size.height.rounded())
+            pixelWidth: Int(size.width.rounded()), pixelHeight: Int(size.height.rounded()), progress: progress
         )
     }
 
@@ -151,25 +164,58 @@ public enum RecordingFinisher {
         return output
     }
 
+    /// Maps written video timestamps to monotonically increasing progress values in `0...0.99`, throttled to
+    /// ~1% steps so progress observers stay responsive without flooding.
+    static func sampleProgress(
+        totalSeconds: Double,
+        report: (@Sendable (Double) -> Void)?
+    ) -> (@Sendable (CMTime) -> Void)? {
+        guard let report else { return nil }
+        let total = max(totalSeconds, 0.001)
+        let lastReported = Mutex<Double>(-1)
+        return { time in
+            let fraction = min(max(time.seconds / total, 0), 0.99)
+            let shouldReport = lastReported.withLock { last in
+                guard last < 0 || fraction >= last + 0.01 else { return false }
+                last = fraction
+                return true
+            }
+            if shouldReport { report(fraction) }
+        }
+    }
+
     /// Runs the pumps, ends the movie `end` into it, and says what was written at `destination`, the writer's file.
     static func write(
         video: Pump, audio: Pump?, from reader: AVAssetReader, with writer: AVAssetWriter, endingAt end: CMTime, to destination: URL,
-        pixelWidth: Int, pixelHeight: Int
+        pixelWidth: Int, pixelHeight: Int, progress: (@Sendable (Double) -> Void)? = nil
     ) async throws -> Movie {
         // Both at once: the writer interleaves the tracks and waits for whichever is behind.
-        async let videoPumped: Void = video.run()
-        async let audioPumped: Void = audio?.run() ?? ()
-        _ = await (videoPumped, audioPumped)
+        await withTaskCancellationHandler {
+            async let videoPumped: Void = video.run()
+            async let audioPumped: Void = audio?.run() ?? ()
+            _ = await (videoPumped, audioPumped)
+        } onCancel: {
+            video.cancel()
+            audio?.cancel()
+        }
 
+        if Task.isCancelled {
+            reader.cancelReading()
+            writer.cancelWriting()
+            try? FileManager.default.removeItem(at: destination)
+            throw CancellationError()
+        }
         guard reader.status != .failed else {
             writer.cancelWriting()
             throw FinishError.readingFailed(String(describing: reader.error))
         }
         writer.endSession(atSourceTime: end)
         await writer.finishWriting()
+        try Task.checkCancellation()
         guard writer.status == .completed else {
             throw FinishError.writingFailed(String(describing: writer.error))
         }
+        progress?(1)
         let bytes = (try? destination.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0
         let turn = writer.inputs.first { $0.mediaType == .video }?.transform ?? .identity
         let shown = CGRect(x: 0, y: 0, width: pixelWidth, height: pixelHeight).applying(turn)
@@ -189,46 +235,90 @@ final class Pump: @unchecked Sendable {
     private let transform: ((CMSampleBuffer) -> CMSampleBuffer?)?
     /// Given the last sample written, one more to write before the track ends.
     private let ending: ((CMSampleBuffer) -> CMSampleBuffer?)?
+    /// Called on `queue` with the presentation timestamp of each sample written.
+    private let onSample: (@Sendable (CMTime) -> Void)?
+    /// Set from any thread on task cancellation; checked synchronously inside the pump loop.
+    private let cancelled = Mutex(false)
     /// Touched only on `queue`.
     private var isDone = false
     private var last: CMSampleBuffer?
+    private var continuation: CheckedContinuation<Void, Never>?
 
     init(
         output: AVAssetReaderOutput, input: AVAssetWriterInput, label: String,
-        transform: ((CMSampleBuffer) -> CMSampleBuffer?)? = nil, ending: ((CMSampleBuffer) -> CMSampleBuffer?)? = nil
+        transform: ((CMSampleBuffer) -> CMSampleBuffer?)? = nil,
+        ending: ((CMSampleBuffer) -> CMSampleBuffer?)? = nil,
+        onSample: (@Sendable (CMTime) -> Void)? = nil
     ) {
         self.output = output
         self.input = input
         self.transform = transform
         self.ending = ending
+        self.onSample = onSample
         queue = DispatchQueue(label: "OhMyShot.finish.\(label)")
+    }
+
+    private var isCancelled: Bool {
+        cancelled.withLock { $0 }
+    }
+
+    func cancel() {
+        cancelled.withLock { $0 = true }
+        queue.async { [self] in
+            finishIfNeeded(markInputFinished: false)
+        }
     }
 
     func run() async {
         await withCheckedContinuation { (continuation: CheckedContinuation<Void, Never>) in
-            input.requestMediaDataWhenReady(on: queue) { [self] in
-                guard !isDone else { return }
-                while input.isReadyForMoreMediaData {
-                    guard let sample = output.copyNextSampleBuffer() else {
-                        if let last, let final = ending?(last) {
-                            input.append(final)
+            queue.async { [self] in
+                guard !isDone, !isCancelled else {
+                    isDone = true
+                    continuation.resume()
+                    return
+                }
+                self.continuation = continuation
+                input.requestMediaDataWhenReady(on: queue) { [self] in
+                    guard !isDone else { return }
+                    if isCancelled {
+                        finishIfNeeded(markInputFinished: false)
+                        return
+                    }
+                    while input.isReadyForMoreMediaData {
+                        if isCancelled {
+                            finishIfNeeded(markInputFinished: false)
+                            return
                         }
-                        input.markAsFinished()
-                        isDone = true
-                        continuation.resume()
-                        return
+                        guard let sample = output.copyNextSampleBuffer() else {
+                            if let last, let final = ending?(last) {
+                                input.append(final)
+                            }
+                            finishIfNeeded(markInputFinished: true)
+                            return
+                        }
+                        // The reader also hands out markers that hold no media.
+                        guard CMSampleBufferGetDataBuffer(sample) != nil || CMSampleBufferGetImageBuffer(sample) != nil else { continue }
+                        guard let changed = transform.map({ $0(sample) }) ?? sample else { continue }
+                        if !input.append(changed) {
+                            finishIfNeeded(markInputFinished: false)
+                            return
+                        }
+                        last = changed
+                        onSample?(changed.presentationTimeStamp)
                     }
-                    // The reader also hands out markers that hold no media.
-                    guard CMSampleBufferGetDataBuffer(sample) != nil || CMSampleBufferGetImageBuffer(sample) != nil else { continue }
-                    guard let changed = transform.map({ $0(sample) }) ?? sample else { continue }
-                    if !input.append(changed) {
-                        isDone = true
-                        continuation.resume()
-                        return
-                    }
-                    last = changed
                 }
             }
         }
+    }
+
+    private func finishIfNeeded(markInputFinished: Bool) {
+        guard !isDone else { return }
+        if markInputFinished {
+            input.markAsFinished()
+        }
+        isDone = true
+        let active = continuation
+        continuation = nil
+        active?.resume()
     }
 }

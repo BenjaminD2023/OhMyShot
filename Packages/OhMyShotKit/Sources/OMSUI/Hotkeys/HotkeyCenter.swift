@@ -44,8 +44,14 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case pinFromClipboard
     /// Hides every pin, or shows them again where they were.
     case togglePins
+    /// Hides or shows desktop icons.
+    case toggleDesktopIcons
     /// Choose an area, a window, or a display, and record it; pressed again while recording, stops.
     case recordScreen
+    /// Pauses or resumes the recording currently in progress.
+    case pauseRecording
+    /// Mutes or unmutes the microphone during an active recording.
+    case toggleRecordingMicrophone
     /// Saves the last 15 seconds of each display the replay keeps (macOS 27).
     case saveReplay
     case openHistory
@@ -55,6 +61,8 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
     case annotateLatestCapture
     /// Opens the clipboard's picture in the annotation editor.
     case openFromClipboard
+    /// Opens the Recognized Text window on the clipboard's picture.
+    case recognizeClipboard
     /// Gives the newest Quick Access card the keyboard, without bringing the app forward: Copy, Save, Annotate,
     /// Quick Look, and the rest are then a key away (Escape gives the keyboard back).
     case controlQuickAccess
@@ -107,12 +115,16 @@ public enum CaptureShortcut: String, CaseIterable, Sendable {
         case .drawOnScreen: String(localized: "Draw on Screen", bundle: .module)
         case .pinFromClipboard: String(localized: "Pin from Clipboard", bundle: .module)
         case .togglePins: String(localized: "Hide or Show Pins", bundle: .module)
+        case .toggleDesktopIcons: String(localized: "Hide or Show Desktop Icons", bundle: .module)
         case .recordScreen: String(localized: "Record Screen", bundle: .module)
+        case .pauseRecording: String(localized: "Pause or Resume Recording", bundle: .module)
+        case .toggleRecordingMicrophone: String(localized: "Mute or Unmute Microphone", bundle: .module)
         case .saveReplay: String(localized: "Save Last 15 Seconds", bundle: .module)
         case .openHistory: String(localized: "Open Capture History", bundle: .module)
         case .copyLatestCapture: String(localized: "Copy Latest Capture", bundle: .module)
         case .annotateLatestCapture: String(localized: "Annotate Latest Capture", bundle: .module)
         case .openFromClipboard: String(localized: "Open from Clipboard", bundle: .module)
+        case .recognizeClipboard: String(localized: "Recognize Text from Clipboard", bundle: .module)
         case .controlQuickAccess: String(localized: "Control Quick Access", bundle: .module)
         case .restoreRecentlyClosed: String(localized: "Restore Recently Closed", bundle: .module)
         }
@@ -161,17 +173,30 @@ public final class HotkeyCenter {
         KeyboardShortcuts.getShortcut(for: shortcut.name)?.description
     }
 
+    /// Restores every available shortcut to its default keys (and clears shortcuts without defaults).
+    public func resetToDefaults() {
+        for shortcut in CaptureShortcut.allCases where shortcut.isAvailable {
+            KeyboardShortcuts.setShortcut(defaultShortcut(for: shortcut), for: shortcut.name)
+        }
+        defaults.set(CaptureShortcut.allCases.filter(\.isAvailable).map(\.rawValue).sorted(), forKey: "installedDefaultShortcuts")
+    }
+
     /// The recorder has already saved the new assignment. Give it sole ownership of the keys so one
     /// press cannot start two actions, including actions currently hidden from the Settings pane.
+    /// Returns the names whose shortcuts were cleared.
+    @discardableResult
     static func clearOtherAssignments(
         of shortcut: KeyboardShortcuts.Shortcut?,
         keeping name: KeyboardShortcuts.Name,
         among names: [KeyboardShortcuts.Name] = CaptureShortcut.allCases.map(\.name)
-    ) {
-        guard let shortcut else { return }
+    ) -> [KeyboardShortcuts.Name] {
+        guard let shortcut else { return [] }
+        var cleared: [KeyboardShortcuts.Name] = []
         for other in names where other != name && KeyboardShortcuts.getShortcut(for: other) == shortcut {
             KeyboardShortcuts.setShortcut(nil, for: other)
+            cleared.append(other)
         }
+        return cleared
     }
 
     /// Starts listening. The handler runs on key down, so the overlay can appear before the keys are
@@ -208,7 +233,8 @@ public final class HotkeyCenter {
         case .scrollingCapture: profile == .development ? KeyboardShortcuts.Shortcut(.equal, modifiers: modifiers) : nil
         case .captureWindow, .capturePreviousArea, .selfTimer, .captureAreaAndCopy, .captureAreaAndSave, .captureAreaAndAnnotate, .captureAreaAndUpload,
              .captureFullscreenAndUpload, .captureTextJoined, .captureFormula, .openHistory, .copyLatestCapture, .annotateLatestCapture,
-             .openFromClipboard, .controlQuickAccess, .drawOnScreen, .pinFromClipboard, .togglePins, .restoreRecentlyClosed: nil
+             .openFromClipboard, .recognizeClipboard, .controlQuickAccess, .drawOnScreen, .pinFromClipboard, .togglePins, .toggleDesktopIcons,
+             .pauseRecording, .toggleRecordingMicrophone, .restoreRecentlyClosed: nil
         }
     }
 }

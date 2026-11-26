@@ -32,6 +32,7 @@ struct RecordingFormatTests {
     }
 }
 
+@Suite(.serialized)
 struct RecordingWriterTests {
     @Test func aStillScreenLastsUntilTheEnd() async throws {
         let url = TestMedia.temporaryMovie()
@@ -240,5 +241,61 @@ struct RecordingWriterTests {
         let stats = await writer.currentStatistics
         #expect(stats.start != nil)
         #expect(stats.framesWritten >= 10)
+    }
+
+    @Test func mutingMicrophoneLiveSilencesMicWhilePreservingSystemAudio() async throws {
+        let sample = TestMedia.audio(at: 0, channels: 1)
+        #expect((AudioLevel.rms(of: sample) ?? 0) > 0.01)
+        let silent = try #require(RecordingWriter.silenced(sample, at: TestMedia.time(0)))
+        #expect(AudioLevel.rms(of: silent) == 0)
+        #expect(CMSampleBufferGetNumSamples(silent) == CMSampleBufferGetNumSamples(sample))
+
+        let url = TestMedia.temporaryMovie()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let writer = try TestMedia.writer(url: url, audio: RecordingAudio(system: true, microphone: .systemDefault))
+        try await TestMedia.append(TestMedia.frame(at: 0), to: writer)
+
+        var seconds = 0.0
+        while seconds < 2.0 {
+            writer.isMicrophoneMuted = seconds >= 1.0
+            await writer.appendAudio(TestMedia.audio(at: seconds, channels: 2), to: .systemAudio)
+            await writer.appendAudio(TestMedia.audio(at: seconds, channels: 1), to: .microphone)
+            seconds += 0.02
+        }
+        let statistics = try await writer.finish(at: TestMedia.time(2))
+        #expect(abs(statistics.duration.seconds - 2) < 0.001)
+
+        // Read back decoded PCM from both tracks in the muted second [1.2, 1.8) and unmuted [0.1, 0.8).
+        let asset = AVURLAsset(url: url)
+        let audioTracks = try await asset.loadTracks(withMediaType: .audio)
+        #expect(audioTracks.count == 2)
+        func peakRMS(of track: AVAssetTrack, in range: ClosedRange<Double>) async throws -> Float {
+            let reader = try AVAssetReader(asset: asset)
+            reader.timeRange = CMTimeRange(
+                start: CMTime(seconds: range.lowerBound, preferredTimescale: 48_000),
+                end: CMTime(seconds: range.upperBound, preferredTimescale: 48_000)
+            )
+            let output = AVAssetReaderTrackOutput(track: track, outputSettings: [
+                AVFormatIDKey: kAudioFormatLinearPCM,
+                AVSampleRateKey: 48_000,
+                AVLinearPCMBitDepthKey: 32,
+                AVLinearPCMIsFloatKey: true,
+                AVLinearPCMIsNonInterleaved: false,
+                AVLinearPCMIsBigEndianKey: false,
+            ])
+            reader.add(output)
+            #expect(reader.startReading())
+            var peak: Float = 0
+            while let buffer = output.copyNextSampleBuffer() {
+                if let rms = AudioLevel.rms(of: buffer) { peak = max(peak, rms) }
+            }
+            return peak
+        }
+        let systemMutedWindow = try await peakRMS(of: audioTracks[0], in: 1.2...1.8)
+        let micUnmutedWindow = try await peakRMS(of: audioTracks[1], in: 0.1...0.8)
+        let micMutedWindow = try await peakRMS(of: audioTracks[1], in: 1.2...1.8)
+        #expect(systemMutedWindow > 0.01)
+        #expect(micUnmutedWindow > 0.01)
+        #expect(micMutedWindow < 0.001)
     }
 }

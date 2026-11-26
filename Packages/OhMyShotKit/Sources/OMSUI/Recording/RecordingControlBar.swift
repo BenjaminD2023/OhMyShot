@@ -13,17 +13,33 @@ public final class RecordingControlBar {
         public var restart: () -> Void
         public var delete: () -> Void
         public var stop: () -> Void
+        /// Toggles live microphone mute when the microphone indicator is clicked.
+        public var toggleMicrophoneMute: (() -> Void)?
+        /// Opens or toggles Draw on Screen mid-recording.
+        public var drawOnScreen: (() -> Void)?
 
-        public init(pause: @escaping () -> Void, resume: @escaping () -> Void, restart: @escaping () -> Void, delete: @escaping () -> Void, stop: @escaping () -> Void) {
+        public init(
+            pause: @escaping () -> Void,
+            resume: @escaping () -> Void,
+            restart: @escaping () -> Void,
+            delete: @escaping () -> Void,
+            stop: @escaping () -> Void,
+            toggleMicrophoneMute: (() -> Void)? = nil,
+            drawOnScreen: (() -> Void)? = nil
+        ) {
             self.pause = pause
             self.resume = resume
             self.restart = restart
             self.delete = delete
             self.stop = stop
+            self.toggleMicrophoneMute = toggleMicrophoneMute
+            self.drawOnScreen = drawOnScreen
         }
     }
 
     private let actions: Actions
+    /// Optional override for Draw on Screen when wired after initialization.
+    public var onDrawOnScreen: (() -> Void)?
     private var panel: ControlBarPanel?
     private var bar: ControlBarView?
     private var lease: ActiveResources.Lease?
@@ -52,7 +68,9 @@ public final class RecordingControlBar {
     /// display. After the time, what `microphone` says.
     public func show(by area: CGRect, displays: [CGRect], clearing: CGFloat = 0, microphone: Microphone = .none) {
         hide()
-        let view = ControlBarView(actions: actions, showsMicrophone: microphone != .none)
+        var resolved = actions
+        if let onDrawOnScreen { resolved.drawOnScreen = onDrawOnScreen }
+        let view = ControlBarView(actions: resolved, showsMicrophone: microphone != .none)
         if microphone == .denied { view.showMicrophoneDenied() }
         let size = view.fittingSize
         let frame = Self.frame(for: size, by: area, inset: max(32, clearing + 12), displays: displays)
@@ -88,6 +106,16 @@ public final class RecordingControlBar {
     /// Whether the microphone has stopped sending sound: the meter gives way to a warning until it sends again.
     public func update(microphoneStalled: Bool) {
         bar?.updateMicrophone(stalled: microphoneStalled)
+    }
+
+    /// Whether the microphone is muted live: shows a slashed microphone icon until unmuted.
+    public func update(microphoneMuted: Bool) {
+        bar?.updateMicrophone(muted: microphoneMuted)
+    }
+
+    /// Whether Draw on Screen is active while recording.
+    public func update(drawing: Bool) {
+        bar?.updateDrawing(drawing)
     }
 
     /// The time so far and whether recording is paused. The bar grows when the time does (an hour in),
@@ -211,17 +239,20 @@ final class ControlBarView: NSView {
     /// In the dot's place while recording is paused.
     private let pauseMark = NSImageView()
     private let time = NSTextField(labelWithString: "0:00")
-    /// The system's microphone-with-meter symbol, its dots lit by how loud the microphone is.
-    private let meter = NSImageView()
+    /// The microphone chip: shows the live meter, a slashed icon when muted, or a warning when stalled/denied.
+    private let meter = MicrophoneChip()
     private let showsMicrophone: Bool
     /// What the meter shows: it rises at once and falls back gently, as meters do.
     private var shownLevel = 0.0
     /// The meter's lit dots, in fifths, so the symbol is drawn again only when they change.
     private var litSteps = -1
+    /// The microphone is muted live by the user.
+    private var muted = false
     /// The microphone stopped sending sound: the meter shows a warning instead of the level.
     private var stalled = false
     /// The microphone was left out, access to it being off: its warning stays for the whole recording.
     private var denied = false
+    private let drawButton: CardButton?
     private let pauseButton = CardButton(style: .barIcon, title: String(localized: "Pause", bundle: .module), symbolName: "pause.fill")
     private let restartButton = CardButton(style: .barIcon, title: String(localized: "Restart", bundle: .module), symbolName: "arrow.counterclockwise")
     private let deleteButton = CardButton(style: .barIcon, title: String(localized: "Delete", bundle: .module), symbolName: "trash")
@@ -239,6 +270,9 @@ final class ControlBarView: NSView {
     init(actions: RecordingControlBar.Actions, showsMicrophone: Bool = false) {
         self.actions = actions
         self.showsMicrophone = showsMicrophone
+        drawButton = actions.drawOnScreen != nil
+            ? CardButton(style: .barIcon, title: String(localized: "Draw on Screen", bundle: .module), symbolName: "pencil.and.scribble")
+            : nil
         super.init(frame: .zero)
         wantsLayer = true
         layer?.masksToBounds = false
@@ -274,17 +308,19 @@ final class ControlBarView: NSView {
         stack.addArrangedSubview(dot)
         stack.addArrangedSubview(time)
         stack.setCustomSpacing(6, after: dot)
-        stack.setCustomSpacing(10, after: time)
+        stack.setCustomSpacing(8, after: time)
         if showsMicrophone {
-            meter.contentTintColor = .labelColor
-            meter.setAccessibilityElement(false)
-            meter.toolTip = String(localized: "Microphone level", bundle: .module)
-            meter.translatesAutoresizingMaskIntoConstraints = false
-            meter.widthAnchor.constraint(equalToConstant: 18).isActive = true
-            meter.heightAnchor.constraint(equalToConstant: 18).isActive = true
+            meter.target = self
+            meter.action = #selector(microphoneClicked)
+            meter.isInteractive = actions.toggleMicrophoneMute != nil
             stack.addArrangedSubview(meter)
-            stack.setCustomSpacing(8, after: meter)
-            updateMicrophone(level: 0)
+            stack.setCustomSpacing(4, after: meter)
+            refreshMicrophoneDisplay()
+        }
+        if let drawButton {
+            drawButton.target = self
+            drawButton.action = #selector(drawClicked)
+            stack.addArrangedSubview(drawButton)
         }
         for (button, action) in [(pauseButton, #selector(pauseClicked)), (restartButton, #selector(restartClicked)), (deleteButton, #selector(deleteClicked)), (stopButton, #selector(stopClicked))] {
             button.target = self
@@ -403,14 +439,21 @@ final class ControlBarView: NSView {
     }
 
     func updateMicrophone(level: Double) {
-        guard showsMicrophone, !stalled else { return }
+        guard showsMicrophone, !stalled, !muted else { return }
         // Up at once, down by a fifth of the scale in about 0.3 s.
         shownLevel = max(min(level, 1), shownLevel - 0.07)
         let steps = Int((shownLevel * 5).rounded())
         guard steps != litSteps else { return }
         litSteps = steps
-        meter.image = NSImage(systemSymbolName: "mic.and.signal.meter.fill", variableValue: Double(steps) / 5, accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        meter.setSymbol("mic.and.signal.meter.fill", variableValue: Double(steps) / 5)
+    }
+
+    /// Toggles live muted presentation on the microphone chip.
+    func updateMicrophone(muted: Bool) {
+        guard showsMicrophone, !denied, muted != self.muted else { return }
+        self.muted = muted
+        if muted { shownLevel = 0 }
+        refreshMicrophoneDisplay()
     }
 
     /// A microphone that stopped sending sound shows `mic.slash` in system orange in the meter's place, and says
@@ -418,18 +461,7 @@ final class ControlBarView: NSView {
     func updateMicrophone(stalled: Bool) {
         guard showsMicrophone, !denied, stalled != self.stalled else { return }
         self.stalled = stalled
-        let warning = String(localized: "The microphone stopped sending sound. It may have been disconnected.", bundle: .module)
-        meter.contentTintColor = stalled ? .systemOrange : .labelColor
-        meter.toolTip = stalled ? warning : String(localized: "Microphone level", bundle: .module)
-        meter.setAccessibilityElement(stalled)
-        meter.setAccessibilityLabel(stalled ? warning : nil)
-        if stalled {
-            meter.image = NSImage(systemSymbolName: "mic.slash", accessibilityDescription: nil)?
-                .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
-        } else {
-            litSteps = -1
-            updateMicrophone(level: shownLevel)
-        }
+        refreshMicrophoneDisplay()
     }
 
     /// The microphone was asked for but access to it is off, so the recording has none: `mic.slash` in system orange
@@ -438,13 +470,60 @@ final class ControlBarView: NSView {
         guard showsMicrophone else { return }
         stalled = true
         denied = true
-        let warning = String(localized: "Microphone access is off, so this recording has no microphone sound. Turn on OhMyShot in System Settings › Privacy & Security › Microphone.", bundle: .module)
-        meter.contentTintColor = .systemOrange
-        meter.toolTip = warning
-        meter.setAccessibilityElement(true)
-        meter.setAccessibilityLabel(warning)
-        meter.image = NSImage(systemSymbolName: "mic.slash", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 13, weight: .medium))
+        meter.isInteractive = false
+        refreshMicrophoneDisplay()
+    }
+
+    func updateDrawing(_ drawing: Bool) {
+        drawButton?.isSelected = drawing
+    }
+
+    private func refreshMicrophoneDisplay() {
+        guard showsMicrophone else { return }
+        if denied {
+            let warning = String(localized: "Microphone access is off, so this recording has no microphone sound. Turn on OhMyShot in System Settings › Privacy & Security › Microphone.", bundle: .module)
+            meter.isSelected = false
+            meter.symbolTint = .systemOrange
+            meter.label = warning
+            meter.setAccessibilityElement(true)
+            meter.setAccessibilityRole(.image)
+            meter.setAccessibilityLabel(warning)
+            meter.setAccessibilityValue(nil)
+            meter.setSymbol("mic.slash")
+        } else if stalled {
+            let warning = String(localized: "The microphone stopped sending sound. It may have been disconnected.", bundle: .module)
+            meter.isSelected = false
+            meter.symbolTint = .systemOrange
+            meter.label = warning
+            meter.setAccessibilityElement(true)
+            meter.setAccessibilityRole(meter.isInteractive ? .button : .image)
+            meter.setAccessibilityLabel(warning)
+            meter.setAccessibilityValue(nil)
+            meter.setSymbol("mic.slash")
+        } else if muted {
+            let title = String(localized: "Unmute Microphone", bundle: .module)
+            meter.isSelected = true
+            meter.symbolTint = .systemRed
+            meter.label = title
+            meter.setAccessibilityElement(true)
+            meter.setAccessibilityRole(meter.isInteractive ? .button : .image)
+            meter.setAccessibilityLabel(title)
+            meter.setAccessibilityValue(String(localized: "Muted", bundle: .module))
+            meter.setSymbol("mic.slash.fill")
+        } else {
+            let title = meter.isInteractive
+                ? String(localized: "Mute Microphone", bundle: .module)
+                : String(localized: "Microphone level", bundle: .module)
+            meter.isSelected = false
+            meter.symbolTint = .labelColor
+            meter.label = title
+            meter.setAccessibilityElement(meter.isInteractive)
+            meter.setAccessibilityRole(meter.isInteractive ? .button : .image)
+            meter.setAccessibilityLabel(title)
+            meter.setAccessibilityValue(meter.isInteractive ? String(localized: "On", bundle: .module) : nil)
+            litSteps = -1
+            updateMicrophone(level: shownLevel)
+        }
     }
 
     func update(elapsed: Duration, paused: Bool) {
@@ -507,7 +586,21 @@ final class ControlBarView: NSView {
     var debugPausedLook: (pulses: Bool, resumeLit: Bool, markShown: Bool) {
         (time.layer?.animation(forKey: Self.pulseKey) != nil, pauseButton.isSelected, !pauseMark.isHidden)
     }
+
+    var debugMicrophoneMuted: Bool { muted }
+    var debugHasDrawButton: Bool { drawButton != nil }
+    func debugClickMicrophone() { microphoneClicked() }
     #endif
+
+    @objc private func microphoneClicked() {
+        guard showsMicrophone, !denied else { return }
+        actions.toggleMicrophoneMute?()
+    }
+
+    @objc private func drawClicked() {
+        disarm()
+        actions.drawOnScreen?()
+    }
 
     @objc private func pauseClicked() {
         disarm()
@@ -567,4 +660,118 @@ final class ControlBarView: NSView {
     /// Presses Delete once, as a click would, for a hidden render of its question.
     func debugPressDelete() { deleteClicked() }
     #endif
+}
+
+/// Interactive microphone indicator chip for the recording control bar: displays live variable-value meter levels,
+/// a muted slashed mic state, or stalled/denied warnings, and toggles mute on click without activating the app.
+private final class MicrophoneChip: NSControl {
+    private var symbolName = "mic.and.signal.meter.fill"
+    private var variableValue: Double? = 0
+    var symbolTint: NSColor = .labelColor {
+        didSet { needsDisplay = true }
+    }
+    var isSelected = false {
+        didSet { needsDisplay = true }
+    }
+    var isInteractive = false
+    var label: String = "" {
+        didSet {
+            if HoverTag.shared.isShowing(for: self) { HoverTag.shared.withdraw(from: self) }
+        }
+    }
+
+    func setSymbol(_ name: String, variableValue: Double? = nil) {
+        symbolName = name
+        self.variableValue = variableValue
+        needsDisplay = true
+    }
+
+    private var hovering = false {
+        didSet { needsDisplay = true }
+    }
+    private var pressed = false {
+        didSet { needsDisplay = true }
+    }
+
+    override var intrinsicContentSize: NSSize {
+        NSSize(width: 28, height: 30)
+    }
+
+    override func acceptsFirstMouse(for event: NSEvent?) -> Bool { isInteractive }
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        trackingAreas.forEach(removeTrackingArea)
+        addTrackingArea(NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self))
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        hovering = true
+        if !label.isEmpty { HoverTag.shared.schedule(label, for: self, edge: .minY, gap: 8) }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        hovering = false
+        HoverTag.shared.withdraw(from: self)
+    }
+
+    override func viewDidHide() {
+        super.viewDidHide()
+        hovering = false
+        pressed = false
+        HoverTag.shared.withdraw(from: self)
+    }
+
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        HoverTag.shared.withdraw(from: self)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        guard isInteractive else { return super.mouseDown(with: event) }
+        HoverTag.shared.withdraw(from: self)
+        NSApp.preventWindowOrdering()
+        pressed = true
+        while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
+            let inside = bounds.contains(convert(next.locationInWindow, from: nil))
+            if next.type == .leftMouseUp {
+                pressed = false
+                if inside { sendAction(action, to: target) }
+                return
+            }
+            pressed = inside
+        }
+        pressed = false
+    }
+
+    override func accessibilityPerformPress() -> Bool {
+        guard isInteractive else { return false }
+        return sendAction(action, to: target)
+    }
+
+    override func draw(_ dirtyRect: NSRect) {
+        let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        let dark = effectiveAppearance.isDark
+        let hoverFill = Theme.ChipFill.hover(dark: dark, contrast: contrast)
+        let selectedFill = Theme.ChipFill.selected(dark: dark, contrast: contrast)
+        let fill: CGFloat
+        if isSelected {
+            fill = selectedFill + (isInteractive && pressed ? hoverFill : 0)
+        } else if isInteractive {
+            fill = hoverFill * (pressed ? 2 : hovering ? 1 : 0)
+        } else {
+            fill = 0
+        }
+        if fill > 0 {
+            NSColor(white: dark ? 1 : 0, alpha: fill).setFill()
+            NSBezierPath(roundedRect: bounds, xRadius: bounds.height / 2, yRadius: bounds.height / 2).fill()
+        }
+        let config = NSImage.SymbolConfiguration(pointSize: 13, weight: .medium).applying(.init(paletteColors: [symbolTint]))
+        let base = variableValue.flatMap {
+            NSImage(systemSymbolName: symbolName, variableValue: $0, accessibilityDescription: nil)
+        } ?? NSImage(systemSymbolName: symbolName, accessibilityDescription: nil)
+        guard let image = base?.withSymbolConfiguration(config) else { return }
+        let size = image.size
+        image.draw(in: CGRect(x: bounds.midX - size.width / 2, y: bounds.midY - size.height / 2, width: size.width, height: size.height))
+    }
 }

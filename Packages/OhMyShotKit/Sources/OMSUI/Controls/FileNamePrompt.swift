@@ -33,7 +33,7 @@ public enum FileNamePrompt {
         field.setAccessibilityLabel(String(localized: "File name", bundle: .module))
         alert.accessoryView = field
         alert.window.initialFirstResponder = field
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         guard alert.runModal() == .alertFirstButtonReturn else { return nil }
         return FilenameTemplate.typedName(field.stringValue, fallback: name)
     }

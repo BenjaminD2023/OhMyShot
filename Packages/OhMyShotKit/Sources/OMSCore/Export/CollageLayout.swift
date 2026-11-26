@@ -7,7 +7,7 @@ import Foundation
 /// After SnowAir's collage presets (Apache-2.0): the same idea of a few arrangements chosen by how many pictures
 /// there are, written again here, without its free-angled dividers.
 public struct CollageLayout: Sendable, Equatable {
-    public enum Arrangement: String, CaseIterable, Sendable, Identifiable {
+    public enum Arrangement: String, CaseIterable, Codable, Sendable, Identifiable {
         /// Side by side, all as tall as each other: nothing is cut and no room is left.
         case row
         /// One under another, all as wide as each other.
@@ -22,7 +22,7 @@ public struct CollageLayout: Sendable, Equatable {
 
     /// How a picture sits in a cell that is not its shape. Rows and columns are made of cells of the pictures' own
     /// shapes, so this matters only in grids and the featured arrangement.
-    public enum Fitting: String, CaseIterable, Sendable, Identifiable {
+    public enum Fitting: String, CaseIterable, Codable, Sendable, Identifiable {
         /// The whole picture, centered, with the background around it.
         case fit
         /// The cell filled, the picture's middle kept and its edges cut.
@@ -40,13 +40,19 @@ public struct CollageLayout: Sendable, Equatable {
         /// Around them all, in points.
         public var margin: CGFloat
         public var fitting: Fitting
+        /// Explicit column count for `.grid`; nil chooses automatically nearest 4:3.
+        public var columns: Int?
 
-        public init(arrangement: Arrangement, width: CGFloat, spacing: CGFloat = 16, margin: CGFloat = 24, fitting: Fitting = .fit) {
+        public init(
+            arrangement: Arrangement, width: CGFloat, spacing: CGFloat = 16, margin: CGFloat = 24,
+            fitting: Fitting = .fit, columns: Int? = nil
+        ) {
             self.arrangement = arrangement
             self.width = width
             self.spacing = spacing
             self.margin = margin
             self.fitting = fitting
+            self.columns = columns
         }
     }
 
@@ -73,14 +79,15 @@ public struct CollageLayout: Sendable, Equatable {
     }
 
     /// A width to start from: the pictures at about their own size, side by side for a row, within reason.
-    public static func suggestedWidth(for sizes: [CGSize], arrangement: Arrangement) -> CGFloat {
+    public static func suggestedWidth(for sizes: [CGSize], arrangement: Arrangement, columns explicitColumns: Int? = nil) -> CGFloat {
         let widths = sizes.map(\.width).filter { $0 > 0 }
         guard !widths.isEmpty else { return 1200 }
         let typical = widths.sorted()[widths.count / 2]
         let natural: CGFloat = switch arrangement {
         case .row: sizes.map { $0.width * (median(sizes.map(\.height)) / max($0.height, 1)) }.reduce(0, +)
         case .column: typical
-        case .grid: typical * CGFloat(columns(for: sizes))
+        case .grid:
+            typical * CGFloat(explicitColumns.map { min(max($0, 1), max(sizes.count, 1)) } ?? columns(for: sizes))
         case .featured: typical * 1.6
         }
         return min(max(natural.rounded(), leastWidth), 3200)
@@ -113,7 +120,7 @@ public struct CollageLayout: Sendable, Equatable {
             }
             return CollageLayout(size: CGSize(width: width, height: (y - spacing + margin).rounded(.up)), cells: cells)
         case .grid:
-            let columns = columns(for: sizes)
+            let columns = options.columns.map { min(max($0, 1), count) } ?? columns(for: sizes)
             let rows = (count + columns - 1) / columns
             let cellWidth = max(inner - spacing * CGFloat(columns - 1), 1) / CGFloat(columns)
             // Cells of the pictures' usual shape, so fitting leaves little room and filling cuts little.
@@ -160,7 +167,7 @@ public struct CollageLayout: Sendable, Equatable {
     }
 
     /// The grid's columns: the count whose collage comes out nearest 4:3.
-    static func columns(for sizes: [CGSize]) -> Int {
+    public static func columns(for sizes: [CGSize]) -> Int {
         let count = sizes.count
         guard count > 1 else { return 1 }
         let aspect = median(sizes.map { $0.width > 0 && $0.height > 0 ? $0.width / $0.height : 1 })
@@ -185,6 +192,43 @@ public struct CollageLayout: Sendable, Equatable {
     }
 }
 
+/// A serializable sRGB or Display P3 color for a collage's background.
+public struct CollageColor: Sendable, Equatable, Codable, Hashable {
+    public var red: Double
+    public var green: Double
+    public var blue: Double
+    public var alpha: Double
+    public var isDisplayP3: Bool
+
+    public init(red: Double, green: Double, blue: Double, alpha: Double = 1, isDisplayP3: Bool = false) {
+        self.red = min(max(red, 0), 1)
+        self.green = min(max(green, 0), 1)
+        self.blue = min(max(blue, 0), 1)
+        self.alpha = min(max(alpha, 0), 1)
+        self.isDisplayP3 = isDisplayP3
+    }
+
+    /// Captures a `CGColor` in Display P3 when wide-gamut, otherwise in sRGB.
+    public init?(cgColor: CGColor) {
+        let wide = cgColor.colorSpace?.isWideGamutRGB == true
+        let target = wide
+            ? (CGColorSpace(name: CGColorSpace.displayP3) ?? CGColorSpace(name: CGColorSpace.sRGB)!)
+            : CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let converted = cgColor.converted(to: target, intent: .defaultIntent, options: nil),
+              let components = converted.components, components.count >= 3 else { return nil }
+        let alpha = components.count >= 4 ? Double(components[3]) : Double(converted.alpha)
+        self.init(red: Double(components[0]), green: Double(components[1]), blue: Double(components[2]), alpha: alpha, isDisplayP3: wide)
+    }
+
+    public var cgColor: CGColor {
+        if isDisplayP3, let p3 = CGColorSpace(name: CGColorSpace.displayP3),
+           let color = CGColor(colorSpace: p3, components: [CGFloat(red), CGFloat(green), CGFloat(blue), CGFloat(alpha)]) {
+            return color
+        }
+        return CGColor(srgbRed: CGFloat(red), green: CGFloat(green), blue: CGFloat(blue), alpha: CGFloat(alpha))
+    }
+}
+
 /// Draws a collage: the background, then each picture in its cell, rounded.
 public enum CollageRenderer {
     public struct Picture: @unchecked Sendable {
@@ -198,14 +242,38 @@ public enum CollageRenderer {
         }
     }
 
+    /// Preserves Display P3 when any input picture or the background color uses a wide-gamut color space; falls back to sRGB otherwise.
+    public static func outputColorSpace(for pictures: [Picture], background: CGColor? = nil) -> CGColorSpace {
+        let usesWideGamut = pictures.contains { isWideGamut($0.image.colorSpace) }
+            || isWideGamut(background?.colorSpace)
+        if usesWideGamut, let p3 = CGColorSpace(name: CGColorSpace.displayP3) {
+            return p3
+        }
+        return CGColorSpace(name: CGColorSpace.sRGB) ?? CGColorSpaceCreateDeviceRGB()
+    }
+
+    private static func isWideGamut(_ space: CGColorSpace?) -> Bool {
+        guard let space else { return false }
+        if space.isWideGamutRGB { return true }
+        guard let name = space.name else { return false }
+        return name == CGColorSpace.displayP3
+            || name == CGColorSpace.extendedDisplayP3
+            || name == CGColorSpace.extendedLinearDisplayP3
+            || name == CGColorSpace.extendedSRGB
+            || name == CGColorSpace.extendedLinearSRGB
+            || name == CGColorSpace.itur_2020
+            || name == CGColorSpace.itur_2100_PQ
+            || name == CGColorSpace.itur_2100_HLG
+    }
+
     /// The collage at `scale` pixels per point, on `background` (clear when nil), each picture rounded by
     /// `cornerRadius` points. Nil when the picture would be empty or too large to make.
     public static func render(
         _ pictures: [Picture], layout: CollageLayout, fitting: CollageLayout.Fitting, cornerRadius: CGFloat, background: CGColor?, scale: CGFloat
     ) -> CGImage? {
         let width = Int((layout.size.width * scale).rounded()), height = Int((layout.size.height * scale).rounded())
+        let space = outputColorSpace(for: pictures, background: background)
         guard width > 0, height > 0, width * height <= 400_000_000,
-              let space = CGColorSpace(name: CGColorSpace.sRGB),
               let context = CGContext(
                   data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0, space: space,
                   bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue

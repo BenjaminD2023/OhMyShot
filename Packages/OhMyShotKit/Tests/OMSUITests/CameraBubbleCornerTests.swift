@@ -20,4 +20,49 @@ struct CameraBubbleCornerTests {
         // Less room than 24 points each side: what room there is is split.
         #expect(CameraBubble.corner(.topRight, of: small, side: 180) == CGRect(x: 10, y: 10, width: 180, height: 180))
     }
+
+    @Test func togglingFillRestoresChosenCornerInsteadOfBottomLeft() {
+        for corner in CameraBubbleCommand.Corner.allCases {
+            var placement = CameraBubble.Placement()
+            placement.update(area: area, side: 180)
+            placement.move(to: corner, side: 180)
+            let expected = CameraBubble.corner(corner, of: area, side: 180)
+            #expect(placement.bubble == expected)
+
+            let enteredFill = placement.toggleFill(side: 180)
+            #expect(enteredFill)
+            #expect(placement.fills)
+            let exitedFill = placement.toggleFill(side: 180)
+            #expect(!exitedFill)
+            #expect(!placement.fills)
+            #expect(placement.bubble == expected)
+            #expect(placement.wasMoved)
+        }
+    }
+
+    @Test func togglingFillRestoresCustomDraggedFrame() {
+        var placement = CameraBubble.Placement()
+        placement.update(area: area, side: 180)
+        let dragged = placement.drag(by: CGVector(dx: 240, dy: 160), in: area)
+        #expect(dragged == CGRect(x: 364, y: 234, width: 180, height: 180))
+
+        let enteredFill = placement.toggleFill(side: 180)
+        #expect(enteredFill)
+        let exitedFill = placement.toggleFill(side: 180)
+        #expect(!exitedFill)
+        #expect(placement.bubble == dragged)
+        #expect(placement.wasMoved)
+    }
+
+    @Test func movingToCornerWhileFillingExitsFillAndSnaps() {
+        var placement = CameraBubble.Placement()
+        placement.update(area: area, side: 180)
+        placement.toggleFill(side: 180)
+        #expect(placement.fills)
+
+        let exitedFill = placement.move(to: .bottomRight, side: 180)
+        #expect(exitedFill)
+        #expect(!placement.fills)
+        #expect(placement.bubble == CameraBubble.corner(.bottomRight, of: area, side: 180))
+    }
 }

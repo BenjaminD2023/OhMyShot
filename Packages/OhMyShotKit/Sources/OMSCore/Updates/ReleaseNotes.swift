@@ -25,9 +25,10 @@ public enum ReleaseNotes {
         return (try? AttributedString(markdown: text + "\n\n" + definitions)) ?? AttributedString(text)
     }
 
-    public static func shouldShow(previousBuild: String?, currentBuild: String) -> Bool {
-        // A first launch has no baseline; the first release with this feature welcomes existing users too.
-        guard let previousBuild else { return true }
+    public static func shouldShow(previousBuild: String?, currentBuild: String, onboardingPending: Bool = false) -> Bool {
+        // Fresh installs show Getting Started instead of stacking What's New on top; existing users upgrading from a
+        // release before `seenBuild` existed (where onboarding isn't pending) still see What's New once.
+        guard let previousBuild else { return !onboardingPending }
         return currentBuild.compare(previousBuild, options: .numeric) == .orderedDescending
     }
 }

@@ -220,7 +220,7 @@ final class AllInOneBar: NSView {
     /// whenever `takesW`: All-In-One's Text and Scrolling point at a window with it as with Space.
     func usesWindowPreview(_ usesPreview: Bool, takesW: Bool) {
         let help = if usesPreview {
-            String(localized: "Choose an app and preview its window (W)", bundle: .module)
+            String(localized: "All Windows (W) · Space selects on screen", bundle: .module)
         } else if takesW {
             String(localized: "Click a window to capture it (W or Space)", bundle: .module)
         } else {
@@ -314,7 +314,7 @@ final class AllInOneBar: NSView {
         case .area:
             ("rectangle.dashed", String(localized: "Area", bundle: .module), String(localized: "Drag to capture an area", bundle: .module))
         case .window:
-            ("macwindow", String(localized: "Window", bundle: .module), String(localized: "Choose an app and preview its window (W)", bundle: .module))
+            ("macwindow", String(localized: "Window", bundle: .module), String(localized: "All Windows (W) · Space selects on screen", bundle: .module))
         case .fullscreen:
             ("display", String(localized: "Screen", bundle: .module), String(localized: "Capture this whole screen", bundle: .module))
         case .text:

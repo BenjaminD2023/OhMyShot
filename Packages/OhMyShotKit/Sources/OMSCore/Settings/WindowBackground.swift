@@ -10,15 +10,15 @@ public enum WindowBackground: String, CaseIterable, Codable, Sendable {
     /// The desktop picture around the window, as it is on screen.
     case desktopWallpaper
 
-    /// What one window screenshot gets: this choice, or with Shift held as the window was clicked the other way
+    /// What one window screenshot gets: this choice, or with Option held as the window was clicked the other way
     /// round: no background where there would be one, the desktop picture where there would be none.
-    public func resolved(automaticPreset: Bool, shiftHeld: Bool) -> Resolved {
+    public func resolved(automaticPreset: Bool, optionHeld: Bool) -> Resolved {
         let chosen: Resolved = switch self {
         case .asScreenshots: automaticPreset ? .preset : .none
         case .transparent: .none
         case .desktopWallpaper: .wallpaper
         }
-        guard shiftHeld else { return chosen }
+        guard optionHeld else { return chosen }
         return chosen == .none ? .wallpaper : .none
     }
 

@@ -69,9 +69,25 @@ public final class AnnotationSession {
     public var growsCanvas: Bool { !locksCanvas && !keepsCanvasFixed }
     /// The shape the crop frame keeps while the crop tool is in hand.
     public private(set) var cropRatio: CropRatio = .free
+    /// Whether a single-shot tool (`AnnotationTool.isPutDownAfterMark`) is locked in hand, so `putToolDown()`
+    /// keeps it active across consecutive marks. Switching to another tool clears it.
+    public var isToolLocked = false {
+        didSet {
+            guard isToolLocked != oldValue else { return }
+            if isToolLocked, !tool.isPutDownAfterMark {
+                isToolLocked = false
+                return
+            }
+            if !isChangingTool { notify(.tool) }
+        }
+    }
+    @ObservationIgnored private var isChangingTool = false
     public var tool: AnnotationTool {
         didSet {
             guard tool != oldValue else { return }
+            isChangingTool = true
+            isToolLocked = false
+            isChangingTool = false
             // Cropping and the background are passing modes; the next capture opens with a drawing tool.
             if !tool.isPictureMode, remembersTool, !isPuttingToolDown { defaults.set(tool.rawValue, forKey: Self.toolKey) }
             if tool.isPictureMode, !oldValue.isPictureMode { toolBeforeMode = oldValue }
@@ -116,9 +132,11 @@ public final class AnnotationSession {
     @ObservationIgnored var textReader: (@Sendable (CGImage) -> CaptureReading)?
 
     @ObservationIgnored public let undoManager = UndoManager()
+    @ObservationIgnored private let originalScale: CGFloat
+    @ObservationIgnored private var nextCounterOverrides: [Counter.Numbering: Int] = [:]
     @ObservationIgnored private var settings: [AnnotationTool: ToolSettings]
     @ObservationIgnored private var listeners: [(Event) -> Void] = []
-    @ObservationIgnored private var liveChangeStart: (document: AnnotationDocument, selection: [Annotation.ID])?
+    @ObservationIgnored private var liveChangeStart: (document: AnnotationDocument, selection: [Annotation.ID], hadUnkeptChanges: Bool)?
     /// The background last set, which the next one starts from.
     @ObservationIgnored public private(set) var lastBackdrop: Backdrop
     @ObservationIgnored private let defaults: UserDefaults
@@ -149,8 +167,16 @@ public final class AnnotationSession {
         let size = CGSize(width: image.width, height: image.height)
         if let document, document.pixelSize == size {
             self.document = document
+            if let drawn = document.transform?.size, size.width > 0, size.height > 0 {
+                let factor = sqrt((drawn.width / size.width) * (drawn.height / size.height))
+                originalScale = factor > 0 ? document.scale / factor : document.scale
+            } else {
+                originalScale = document.scale
+            }
         } else {
-            self.document = AnnotationDocument(pixelSize: size, scale: scale)
+            let safeScale = scale > 0 ? scale : 1
+            self.document = AnnotationDocument(pixelSize: size, scale: safeScale)
+            originalScale = safeScale
         }
         remembersTool = startingTool == nil
         let stored = defaults.string(forKey: Self.toolKey).flatMap(AnnotationTool.init(rawValue:))
@@ -171,11 +197,57 @@ public final class AnnotationSession {
 
     // MARK: Settings
 
-    /// The settings the controls show: the selected mark's when one is selected, else the tool's.
+    /// The distinct tool kinds present in the current selection (empty when nothing is selected).
+    public var selectedKinds: Set<AnnotationTool> {
+        Set(selectedItems.map(Self.tool(for:)))
+    }
+
+    /// Whether the current selection mixes more than one kind of mark.
+    public var hasMixedSelection: Bool {
+        selectedKinds.count > 1
+    }
+
+    /// Whether any selected mark accepts a color (or, with nothing selected, the tool in hand does).
+    public var selectionSupportsColor: Bool {
+        let items = selectedItems
+        guard !items.isEmpty else {
+            return switch tool {
+            case .spotlight, .magnifier, .crop, .select: false
+            case .redact: settings(for: .redact).redaction == .solid
+            case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .highlightBox, .text, .counter, .background: true
+            }
+        }
+        return items.contains(where: \.supportsColor)
+    }
+
+    /// Whether any selected mark accepts a stroke width / counter size.
+    public var selectionSupportsLineWidth: Bool {
+        selectedItems.contains(where: \.supportsLineWidth)
+    }
+
+    /// Whether any selected mark supports a drop shadow.
+    public var selectionSupportsShadow: Bool {
+        selectedItems.contains(where: \.castsShadow)
+    }
+
+    /// The settings the controls show: the selected mark's when one is selected (or, in a mixed
+    /// selection, representative values from the marks that support each property), else the tool's.
     public var currentSettings: ToolSettings {
-        if let id = selection.first, let item = document.item(id) {
-            var shown = settings(for: Self.tool(for: item))
-            shown.adopt(item)
+        let items = selectedItems
+        if let first = items.first {
+            var shown = settings(for: Self.tool(for: first))
+            shown.adopt(first)
+            if items.count > 1 {
+                if !first.supportsColor, let colored = items.first(where: \.supportsColor) {
+                    shown.color = colored.style.color
+                }
+                if !first.supportsLineWidth, let lined = items.first(where: \.supportsLineWidth) {
+                    shown.lineWidth = lined.style.lineWidth
+                }
+                if !first.castsShadow, let shadowed = items.first(where: \.castsShadow) {
+                    shown.shadow = shadowed.style.shadow
+                }
+            }
             return shown
         }
         return settings(for: tool)
@@ -191,26 +263,116 @@ public final class AnnotationSession {
         settings[tool] ?? .defaults(for: tool)
     }
 
+    /// The value the next placed counter in `numbering` will receive.
+    public func nextCounterValue(for numbering: Counter.Numbering) -> Int {
+        nextCounterOverrides[numbering] ?? document.nextCounterValue(for: numbering)
+    }
+
+    /// Adjusts the next badge number to place for `numbering` (clamped to `>= 1`).
+    public func setNextCounterValue(_ value: Int, for numbering: Counter.Numbering) {
+        let clamped = max(1, value)
+        guard nextCounterOverrides[numbering] != clamped else { return }
+        nextCounterOverrides[numbering] = clamped
+        notify(.settings)
+    }
+
+    /// Advances an active counter-number override after placing a badge with `value`.
+    public func didPlaceCounter(value: Int, numbering: Counter.Numbering) {
+        if nextCounterOverrides[numbering] != nil {
+            nextCounterOverrides[numbering] = value + 1
+            notify(.settings)
+        }
+    }
+
     /// Changes a setting: on the selected marks (undoably) when there are any, and in every case for
-    /// the next marks of their kind.
+    /// the next marks of their kind. In a mixed selection, each property applies only to the marks that
+    /// support it without mangling unrelated properties.
     public func changeSettings(_ actionName: String, _ change: (inout ToolSettings) -> Void) {
         if selection.isEmpty {
             var updated = settings(for: tool)
+            let previousDimming = updated.spotlightDimming
             change(&updated)
             settings[tool] = updated
+            if tool == .spotlight, updated.spotlightDimming != previousDimming, !document.spots.isEmpty {
+                // All spots share one dimming: updating dimming updates existing spots cleanly.
+                var document = self.document
+                for index in document.items.indices {
+                    if case .spotlight(var spot) = document.items[index].shape {
+                        spot.dimming = updated.spotlightDimming
+                        document.items[index].shape = .spotlight(spot)
+                    }
+                }
+                if isInLiveChange {
+                    updateLive(document)
+                } else {
+                    commit(document, actionName: actionName)
+                }
+            }
         } else {
             var document = self.document
+            var syncedSpotlightDimming: Double?
+            let mixed = hasMixedSelection
             for id in selection {
                 guard let index = document.index(of: id) else { continue }
                 let item = document.items[index]
                 let kind = Self.tool(for: item)
-                var updated = settings(for: kind)
-                updated.adopt(item)
-                change(&updated)
-                document.items[index] = updated.applied(to: item)
-                // The next mark of this kind matches, but keeps its own size where sizes differ by
-                // kind (a text's type size never becomes an arrow's).
-                settings[kind] = updated
+                var before = settings(for: kind)
+                before.adopt(item)
+                var after = before
+                change(&after)
+                if !mixed {
+                    let applied = after.applied(to: item)
+                    document.items[index] = applied
+                    // The next mark of this kind matches, but keeps its own size where sizes differ by
+                    // kind (a text's type size never becomes an arrow's).
+                    settings[kind] = after
+                    if case .spotlight = item.shape, after.spotlightDimming != before.spotlightDimming {
+                        syncedSpotlightDimming = after.spotlightDimming
+                    }
+                } else {
+                    // Mixed selection: apply only supported properties that actually changed.
+                    var updatedItem = item
+                    var updatedSettings = before
+                    var itemChanged = false
+                    if after.color != before.color, item.supportsColor {
+                        updatedItem.style.color = after.color
+                        updatedSettings.color = after.color
+                        itemChanged = true
+                    }
+                    if after.lineWidth != before.lineWidth, item.supportsLineWidth {
+                        updatedItem.style.lineWidth = after.lineWidth
+                        updatedSettings.lineWidth = after.lineWidth
+                        itemChanged = true
+                    }
+                    if after.shadow != before.shadow, item.castsShadow {
+                        updatedItem.style.shadow = after.shadow
+                        updatedSettings.shadow = after.shadow
+                        itemChanged = true
+                    }
+                    // Preserve any shape-specific changes if applicable.
+                    var shapeApplied = after.applied(to: updatedItem)
+                    shapeApplied.style = updatedItem.style
+                    if shapeApplied.shape != updatedItem.shape {
+                        updatedItem.shape = shapeApplied.shape
+                        updatedSettings.adopt(updatedItem)
+                        itemChanged = true
+                        if case .spotlight(let spot) = updatedItem.shape, after.spotlightDimming != before.spotlightDimming {
+                            syncedSpotlightDimming = spot.dimming
+                        }
+                    }
+                    if itemChanged {
+                        document.items[index] = updatedItem
+                        settings[kind] = updatedSettings
+                    }
+                }
+            }
+            if let dimming = syncedSpotlightDimming {
+                for index in document.items.indices {
+                    if case .spotlight(var spot) = document.items[index].shape {
+                        spot.dimming = dimming
+                        document.items[index].shape = .spotlight(spot)
+                    }
+                }
             }
             if isInLiveChange {
                 // Restyling text while it is typed is part of that edit's one undo step.
@@ -264,11 +426,21 @@ public final class AnnotationSession {
         if tool.isPictureMode { tool = toolBeforeMode }
     }
 
+    /// Selects `candidate` and locks it in hand when it would otherwise be put down after one mark.
+    public func lockTool(_ candidate: AnnotationTool) {
+        guard candidate.isPutDownAfterMark else {
+            tool = candidate
+            return
+        }
+        if tool != candidate { tool = candidate }
+        isToolLocked = true
+    }
+
     /// Puts down a tool that has made its mark (`AnnotationTool.isPutDownAfterMark`): Select takes over, so
-    /// the next press adjusts the marks rather than adding another. The tool stays the one the next editor
-    /// opens with.
+    /// the next press adjusts the marks rather than adding another. A tool locked in hand stays active.
+    /// The tool stays the one the next editor opens with.
     public func putToolDown() {
-        guard tool.isPutDownAfterMark else { return }
+        guard tool.isPutDownAfterMark, !isToolLocked else { return }
         isPuttingToolDown = true
         tool = .select
         isPuttingToolDown = false
@@ -660,7 +832,7 @@ public final class AnnotationSession {
     /// Starts a change made over several events, such as a drag: updates until `endLiveChange` become
     /// one undo step.
     public func beginLiveChange() {
-        liveChangeStart = (document, selection)
+        liveChangeStart = (document, selection, hasUnkeptChanges)
     }
 
     /// Shows the document mid-change, without an undo step.
@@ -682,13 +854,19 @@ public final class AnnotationSession {
         guard let start = liveChangeStart else { return }
         liveChangeStart = nil
         set(start.document, selection: start.selection)
+        if !start.hadUnkeptChanges, hasUnkeptChanges {
+            hasUnkeptChanges = false
+            notify(.history)
+        }
     }
 
     public var isInLiveChange: Bool { liveChangeStart != nil }
 
     /// Marks the current document as kept: the capture file now shows it.
     public func markKept() {
+        guard hasUnkeptChanges else { return }
         hasUnkeptChanges = false
+        notify(.history)
     }
 
     private func set(_ newDocument: AnnotationDocument, selection newSelection: [Annotation.ID]) {
@@ -739,6 +917,41 @@ public final class AnnotationSession {
         commit(fitted(document, holding: []), selecting: [], actionName: String(localized: "Delete", bundle: .module))
     }
 
+    /// Removes the selected marks as one undoable Cut step (caller writes them to the pasteboard first).
+    public func cutSelection() {
+        guard !selection.isEmpty else { return }
+        var document = self.document
+        document.items.removeAll { selection.contains($0.id) }
+        commit(fitted(document, holding: []), selecting: [], actionName: String(localized: "Cut", bundle: .module))
+    }
+
+    /// Inserts pasted marks with fresh IDs and canvas-clamped offsets, selecting the newly pasted marks.
+    @discardableResult
+    public func pasteAnnotations(
+        _ marks: [Annotation],
+        offset: CGSize = CGSize(width: AnnotationPasteboard.pasteOffset, height: AnnotationPasteboard.pasteOffset)
+    ) -> [Annotation.ID] {
+        let prepared = AnnotationPasteboard.preparedForPaste(marks, into: document, offset: offset)
+        guard !prepared.isEmpty else { return [] }
+        var updated = document
+        updated.items.append(contentsOf: prepared)
+        let ids = prepared.map(\.id)
+        commit(fitted(updated, holding: ids), selecting: ids, actionName: String(localized: "Paste", bundle: .module))
+        return ids
+    }
+
+    /// Whether the document differs from the original unmodified capture.
+    public var canRevertToOriginal: Bool { !document.isEmpty }
+
+    /// Undoably clears every mark, crop, background, transform, and watermark back to the original capture.
+    public func revertToOriginal() {
+        let original = AnnotationDocument(pixelSize: document.pixelSize, scale: originalScale)
+        guard document != original else { return }
+        nextCounterOverrides.removeAll()
+        keepPicture(base, for: nil)
+        commit(original, selecting: [], actionName: String(localized: "Revert to Original", bundle: .module))
+    }
+
     /// Copies the selected marks a little down and to the right, and selects the copies.
     public func duplicateSelection() {
         let originals = selectedItems
@@ -787,6 +1000,38 @@ public final class AnnotationSession {
         document.items.removeAll { selection.contains($0.id) }
         document.items.insert(contentsOf: moving, at: 0)
         commit(document, actionName: String(localized: "Send to Back", bundle: .module))
+    }
+
+    /// Moves the selected marks one step toward the front while preserving their relative order.
+    public func bringForward() {
+        guard !selection.isEmpty, document.items.count > 1 else { return }
+        let selected = Set(selection)
+        var document = self.document
+        var moved = false
+        for index in stride(from: document.items.count - 2, through: 0, by: -1) {
+            if selected.contains(document.items[index].id), !selected.contains(document.items[index + 1].id) {
+                document.items.swapAt(index, index + 1)
+                moved = true
+            }
+        }
+        guard moved else { return }
+        commit(document, actionName: String(localized: "Bring Forward", bundle: .module))
+    }
+
+    /// Moves the selected marks one step toward the back while preserving their relative order.
+    public func sendBackward() {
+        guard !selection.isEmpty, document.items.count > 1 else { return }
+        let selected = Set(selection)
+        var document = self.document
+        var moved = false
+        for index in 1..<document.items.count {
+            if selected.contains(document.items[index].id), !selected.contains(document.items[index - 1].id) {
+                document.items.swapAt(index, index - 1)
+                moved = true
+            }
+        }
+        guard moved else { return }
+        commit(document, actionName: String(localized: "Send Backward", bundle: .module))
     }
 
     /// Crops to `rect` (pixels; reaching past the capture adds canvas there). The crop is the canvas as

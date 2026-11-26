@@ -124,8 +124,10 @@ final class CardUploadBadge: NSView {
             context.duration = duration
             animator().alphaValue = 0
         } completionHandler: { [weak self] in
-            guard let self, display == nil else { return }
-            isHidden = true
+            MainActor.assumeIsolated {
+                guard let self, self.display == nil else { return }
+                self.isHidden = true
+            }
         }
     }
 

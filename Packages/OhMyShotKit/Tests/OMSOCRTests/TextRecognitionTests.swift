@@ -1,5 +1,6 @@
 import AppKit
 import CoreGraphics
+import Foundation
 import Testing
 @testable import OMSOCR
 
@@ -158,5 +159,12 @@ extension TextRecognitionTests {
         let unread = TextRecognition(image) { _ in throw CocoaError(.fileReadUnknown) }
         await #expect(throws: CocoaError.self) { try await SensitiveTextScanner().scan(unread) }
         await #expect(throws: CocoaError.self) { try await TextLineReader().read(unread) }
+    }
+
+    @Test func configuredLanguagesResolveOnlyForNonLatinModel() {
+        let parsed = TextRecognition.parsedLanguages(["ar-SA", "en-US", "ar-SA", "  ", ""])
+        #expect(TextRecognition.resolvedLanguages(for: .chinese, configured: parsed).map { $0.languageCode?.identifier } == ["ar", "en"])
+        #expect(TextRecognition.resolvedLanguages(for: .latin, configured: parsed).map { $0.languageCode?.identifier } == ["en"])
+        #expect(TextRecognition.resolvedLanguages(for: .chinese, configured: []).map { $0.languageCode?.identifier } == ["zh", "en"])
     }
 }

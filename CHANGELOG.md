@@ -8,9 +8,67 @@ Each entry links its implementation commits or merged pull request and credits v
 
 ## [Unreleased]
 
+### Smarter capture, screen recording, and Studio editing
+
+- **Four-direction scrolling and flexible self-timer.** Scroll down, up, left, or right with adjustable speed in Scrolling Capture; change the self-timer delay right on screen (`D` or `1`–`5`) and cancel a running countdown with `Esc` or a click.
+- **Better pre-recording and live controls.** Check live microphone input levels before recording, mute or unmute the mic live during a recording, pause or toggle Draw on Screen directly from the menu bar, and choose exact GIF frame rate and size presets from the Make GIF popover.
+- **Studio waveform, master audio, crop, and portable packages.** See audio waveforms right on the timeline, shape overall volume with master mute/fade-in/fade-out and automatic cut micro-fades, crop recordings non-destructively, drag or resize speed stretches and cuts directly on the timeline, shuttle with `J`/`K`/`L`, pinch to zoom the timeline, and export or import standalone `.omsstudio` project packages.
+
+### Richer annotation, OCR, and translation
+
+- **Faster markup and copy workflows.** Double-click any tool to lock it, keep Redact in hand across repeated redactions, copy and paste annotations across editors, pick colors from the composited canvas, choose `Copy & Close` or `Copy Without Closing (⌘C)`, cancel Crop cleanly, adjust box corner radius and redaction strength, and run Recognize Text or Print directly from the editor.
+- **Zoomable OCR panel, inline table editing, and instant lens language switching.** Zoom and pan images inside the OCR panel, edit recognized table cells inline and export RFC-4180 CSV or TSV, wrap captured formulas with configurable LaTeX delimiters (`$...$`, `$$...$$`, `\(...\)`, `\[...\]`), switch Translation Lens target languages right inside the lens, and copy, save, or pin translated overlays.
+- **Configurable OCR languages and custom model mirrors.** Choose preferred Vision recognition languages, toggle installed model packs individually, and configure custom model-pack download mirrors in Settings.
+
+### Capture History, Pins, Quick Access, and Automation
+
+- **Power tools for History, Pins, and Quick Access.** Multi-select in History with `⇧+Arrow`, filter by date or app, see disk usage, undo Trash within 5 seconds, build reordered multi-column collages, place Quick Access cards in all four screen corners, auto-close cards after actions, and restore up to 5 recently closed pins with preserved flip/rotate transforms and visual overrides.
+- **Expanded Shortcuts, URL scheme, Raycast, and Share extension.** Trigger `annotate-area`, `translate-area`, `pick-color`, `measure`, `draw-on-screen`, `save-replay`, and `Upload Image` from Shortcuts, URLs, or Raycast; recognize text directly from macOS Share; manage blocked automation callers and four new global shortcuts in Settings.
+
+### Added
+
+- **Studio advanced editing & packages.** Timeline audio waveform track, master volume/mute with fade-in/fade-out and 15 ms cut micro-fades, non-destructive video crop with aspect presets and centered/aimed zoom support, output resolution and frame-rate export presets, draggable/resizable speed stretches and cut edges with dual-edge snapping, `Keep Only` selection range action, `J`/`K`/`L` shuttle and `,`/`.` frame stepping, pinch / `⌘+` / `⌘-` / `⌘0` timeline zoom, click/key telemetry ticks, and standalone `.omsstudio` package export/import (`Config/Info.plist` document type).
+- **Recording & Replay upgrades.** Immediate microphone permission request and live pre-recording microphone level meter in the recording bar, live microphone mute toggle (`RecordingWriter` + recording bar + global shortcut), menu bar pause/draw/stop/delete actions while recording, single-window Studio camera support, Draw on Screen capture during non-window Studio recordings, export progress percentage and cancellation, `Make GIF` popover with frame-rate and max-side presets, and explicit Replay HUD feedback with microphone-aware permission handling.
+- **Capture & Self-Timer upgrades.** 4-direction Scrolling Capture with persisted speed control, interactive Self-Timer delay bar (`D`, `1`–`5`) and cancellable countdown (`Esc` / click), All-In-One multi-window recording and return-to-selection switching, temporary desktop icon hiding during capture/recording, `Tab` notation cycling in Pick Color, `L` recall fallback, and `Esc` / right-click revert in Area and Measure overlays.
+- **Annotation & Draw on Screen upgrades.** Double-click tool locking, Redact staying active after manual strokes, `Copy & Close` vs `Copy Without Closing (⌘C)`, cross-editor annotation copy/paste (`AnnotationPasteboard`), box corner radius and redaction strength controls, spotlight medium dimming preset, `Revert to Original`, `⌘]` / `⌘[` mark ordering, live `W × H px` dimensions, composite/backdrop eyedropper, toolbar `Print…` and `Recognize Text`, cascading editor windows, continuous `NSColorPanel` undo coalescing, live `ImageSizeSheet` feedback, and seven Draw on Screen upgrades (including screen capture with sketches).
+- **OCR, Translation, and Model Pack upgrades.** Configurable Vision OCR recognition languages (`Settings › Text`), configurable LaTeX formula delimiters, inline editable table cells with RFC-4180 CSV/TSV export, zoom/pan image inspection and drag/paste/rotate/subregion re-OCR in the OCR panel, asynchronous second-reading refinement, QR/barcode fallback in Capture Text, quick target-language switcher and copy/save/pin image actions in Translation Lens, custom model-pack download mirror URL, per-pack enable/disable toggles, and automatic VLM preparation on install.
+- **History, Pins, Quick Access, and Export upgrades.** All 4 screen corners for Quick Access, optional auto-close after action, `Esc` keyboard release, multi-card Collage and PDF export, structured QR/barcode menus, History date/app filters, `windowTitle`/`fileName` search, batch action bar with `⇧+Arrow` range selection, 5-second Undo Trash, disk-usage footer, `Save As…` and `Translate…` on cards/History/Pins, reordered multi-column Collage builder with wide-gamut background color, 5-pin closed-pin restoration stack, persisted per-pin transforms and overrides, wide-gamut `PinColor` with HSL/OKLCH/Display P3 formats, and `Open in External App` copy isolation.
+- **Ecosystem, Settings & Updates upgrades.** Six new automation URL/Shortcuts commands (`annotate-area`, `translate-area`, `pick-color`, `measure`, `draw-on-screen`, `save-replay`), `Upload Image` Shortcut returning the uploaded URL, localized `AppShortcuts.xcstrings` in 6 languages, 6 matching Raycast commands, Share extension `Recognize Text` action, `AutomationDeniedStore` management in Settings, four new global shortcuts (`Toggle Desktop Icons`, `Recognize Text from Clipboard`, `Pause/Resume Recording`, `Mute/Unmute Microphone`) plus `Reset to Defaults`, upload failure retry HUD, ShareX upload validation and destination reordering, watermark tone/opacity/size controls, file counter reset, and `Skip This Version` in Sparkle updates.
+
 ### Changed
 
 - **Usage Data says more about how OhMyShot is used, and still nothing about you.** Each day's report now counts the features you use and whether you started them from a shortcut, the menu bar, or automation, and what came of them: uploads finished or failed, saves and copies that failed, and captures stopped for want of Screen Recording permission. It also gives the macOS minor version, chip, number of displays, app language, a few capture settings, roughly how long OhMyShot has been installed, and on how many of the past 28 days it was used. It still goes under a random ID that changes every UTC day and leaves out captures, recognized text, and file names; Settings › General › Usage Data turns it off.
+- Window background shortcut now uses `Option` when clicking a window so `Shift` remains dedicated to multi-window selection in All-In-One.
+- PNG exports now embed Retina `72 × scale` DPI metadata so screenshots appear at logical point size in Mail, Notes, Preview, and Keynote.
+- Recording clipboard hold is now fully event-driven with zero idle polling timers.
+- Fresh installs coordinate Onboarding and Release Notes so launch windows never stack on top of one another, and update reminders no longer steal focus immediately after a capture.
+
+### Fixed
+
+- Text copied from a picture of code leaves out the editor's line numbers beside a narrow gutter too, as Xcode, Vim with `number`, and compact themes draw it, where a number and its line were read as one ("12 let x = 1") and the whole listing kept its numbers and lost its indentation. A snippet of two lines loses its numbers as well, and code with Chinese or Japanese comments no longer reads them back in.
+- A Chinese comment in a picture of code keeps its `//`. It was taken for an icon before the comment and left out.
+- Trashing a recording in Capture History now also removes its sibling `.studio` project bundle, and orphaned recording draft sidecars are cleaned up automatically.
+- Crash recovery for interrupted recordings no longer overwrites the clipboard or announces a normal stop, and displays a clear recovery notice instead.
+- External `.ohmyshot` project files prompt to save before closing when modified, and cancelling live style changes properly restores clean/dirty state.
+- Fixed pin lock badge inversion, stale Quick Access `savedURL` links, History multi-save batch coalescing, Crop cancel behavior, and duplicate offline update alerts.
+
+### More ways to edit in Studio
+
+- **Control speed, sound, and zoom.** Speed up or slow down a selected stretch from 0.5× to 4×, adjust system sound and microphone separately, and aim a zoom at a fixed spot instead of following the pointer.
+- **Change what’s behind you.** Blur or remove the camera background, and put the recording on an image or a blurred copy of itself. What you see in the preview is what you export.
+- **Work with more formats.** Export an edited Studio project as a GIF, or open an MP4 or MOV in OhMyShot’s recording window to trim it or make a GIF.
+
+### Faster capture, annotation, and sharing
+
+- **Magnifier and Erase.** Enlarge a detail up to 4× or cover it with colors from around it. Projects using these marks need OhMyShot 0.4.0 or later.
+- **Pin and share without leaving your work.** Pin or upload from Annotate Area, and pin, share, or upload from the editor. Pins can come back after relaunch.
+- **Do more from Capture History.** Keep favorites past the usual retention period, drag or share multiple captures at once, and copy text from History or Quick Access without opening the OCR panel.
+- **Find the right shortcut.** Press ? while choosing an area or window to see its keys. Press B on a frozen screen to fit the frame to what’s inside it.
+
+### Safer redactions and saves
+
+- **Redactions stay on top.** Blur and Pixelate use the redactions already drawn beneath them, and blurred screenshot backgrounds use the redacted picture. The editor, exports, and shares follow the same order.
+- **Keep your work if a save fails.** In-place annotations can still open in the editor if History can’t save them, and replay clips are kept even if History can’t add them.
 
 ### Added
 

@@ -48,22 +48,26 @@ public final class ModelPackDownloader: Sendable {
     let resources: ActiveResources
     let makeConfiguration: @Sendable () -> URLSessionConfiguration
     let availableSpace: @Sendable (URL) -> Int64?
+    let customMirror: @Sendable () -> String?
     /// Room left free on the disk beyond the download.
     static let spareSpace: Int64 = 200 * 1024 * 1024
 
     /// - Parameters:
     ///   - sessionConfiguration: Builds each download's session configuration; tests install a `URLProtocol` here.
     ///   - availableSpace: The free space for important use on the volume holding a folder; tests give their own.
+    ///   - customMirror: Optional custom mirror origin (e.g. `https://hf-mirror.com`) tried before `huggingface.co`.
     public init(
         store: ModelPackStore,
         resources: ActiveResources = .shared,
         sessionConfiguration: @escaping @Sendable () -> URLSessionConfiguration = ModelPackDownloader.defaultConfiguration,
-        availableSpace: @escaping @Sendable (URL) -> Int64? = ModelPackDownloader.availableSpace(at:)
+        availableSpace: @escaping @Sendable (URL) -> Int64? = ModelPackDownloader.availableSpace(at:),
+        customMirror: @escaping @Sendable () -> String? = { nil }
     ) {
         self.store = store
         self.resources = resources
         self.makeConfiguration = sessionConfiguration
         self.availableSpace = availableSpace
+        self.customMirror = customMirror
     }
 
     /// No cookies, no cache, no background session: a download is a few requests and leaves nothing behind.
@@ -85,11 +89,13 @@ public final class ModelPackDownloader: Sendable {
 
     /// Downloads what is left of the pack's files and installs the pack.
     ///
-    /// - Parameter progress: Called with the bytes on disk so far (counting what an earlier download left), at most
-    ///   about a hundred times over the pack. It is called on a background queue.
+    /// - Parameters:
+    ///   - customMirror: Optional per-call mirror override; defaults to the downloader's `customMirror` provider.
+    ///   - progress: Called with the bytes on disk so far (counting what an earlier download left), at most
+    ///     about a hundred times over the pack. It is called on a background queue.
     /// - Throws: `ModelPackError`, or `CancellationError` when the calling task is cancelled; what came is kept.
     @concurrent
-    public func download(_ pack: ModelPack, progress: (@Sendable (Int64) -> Void)? = nil) async throws -> ModelPackStore.Receipt {
+    public func download(_ pack: ModelPack, customMirror overrideMirror: String? = nil, progress: (@Sendable (Int64) -> Void)? = nil) async throws -> ModelPackStore.Receipt {
         if let problem = pack.problem { throw ModelPackError.invalid(problem) }
         let lease = resources.acquire(.download)
         defer { lease.end() }
@@ -108,11 +114,12 @@ public final class ModelPackDownloader: Sendable {
         let session = URLSession(configuration: makeConfiguration())
         defer { session.invalidateAndCancel() }
         let meter = Meter(total: pack.size, done: already, report: progress)
+        let mirrors = pack.resolvedMirrors(customMirror: overrideMirror ?? customMirror())
         Log.modelPacks.notice("Downloading model pack \(pack.id, privacy: .public) \(pack.version, privacy: .public): \(pack.size - already, privacy: .public) of \(pack.size, privacy: .public) bytes left")
         do {
             for file in pack.files {
                 try Task.checkCancellation()
-                try await fetch(file, of: pack, into: staging, session: session, meter: meter)
+                try await fetch(file, of: pack, from: mirrors, into: staging, session: session, meter: meter)
             }
             let receipt: ModelPackStore.Receipt
             do {
@@ -137,7 +144,7 @@ public final class ModelPackDownloader: Sendable {
     ///
     /// - Throws: `ModelPackError`, or `CancellationError` when the calling task is cancelled.
     @concurrent
-    public func license(of pack: ModelPack) async throws -> String {
+    public func license(of pack: ModelPack, customMirror overrideMirror: String? = nil) async throws -> String {
         if let problem = pack.problem { throw ModelPackError.invalid(problem) }
         guard let file = pack.files.first(where: { $0.path == pack.license.file }) else { throw ModelPackError.invalid("no license file") }
         let lease = resources.acquire(.download)
@@ -150,7 +157,8 @@ public final class ModelPackDownloader: Sendable {
         }
         let session = URLSession(configuration: makeConfiguration())
         defer { session.invalidateAndCancel() }
-        try await fetch(file, of: pack, into: staging, session: session, meter: Meter(total: file.size, done: 0, report: nil))
+        let mirrors = pack.resolvedMirrors(customMirror: overrideMirror ?? customMirror())
+        try await fetch(file, of: pack, from: mirrors, into: staging, session: session, meter: Meter(total: file.size, done: 0, report: nil))
         let data: Data
         do {
             data = try Data(contentsOf: ModelPackStore.place(file.path, under: staging))
@@ -162,7 +170,7 @@ public final class ModelPackDownloader: Sendable {
 
     // MARK: A file
 
-    private func fetch(_ file: ModelPack.File, of pack: ModelPack, into staging: URL, session: URLSession, meter: Meter) async throws {
+    private func fetch(_ file: ModelPack.File, of pack: ModelPack, from mirrors: [URL], into staging: URL, session: URLSession, meter: Meter) async throws {
         let target = ModelPackStore.place(file.path, under: staging)
         guard ModelPackStore.contains(staging, target) else { throw ModelPackError.invalid("file path \(file.path) leaves the pack") }
         // Checked before it got its name.
@@ -172,11 +180,11 @@ public final class ModelPackDownloader: Sendable {
         var mirror = 0
         var attempts = 0
         var damaged = 0
-        var lastReason = "", lastHost = pack.mirrors[0].host() ?? pack.host
+        var lastReason = "", lastHost = mirrors[0].host() ?? pack.host
         // Each mirror once; a damaged file once more, from the start, from the next mirror.
-        while attempts < pack.mirrors.count + damaged {
+        while attempts < mirrors.count + damaged {
             try Task.checkCancellation()
-            let url = pack.url(of: file, at: pack.mirrors[mirror % pack.mirrors.count])
+            let url = pack.url(of: file, at: mirrors[mirror % mirrors.count])
             attempts += 1
             do {
                 let transfer = try Transfer(partial: partial, file: file, meter: meter)

@@ -148,22 +148,36 @@ public enum TextReaderTool {
     /// `tablesLeft` says how many tables and charts were left to Vision (`pressure` stands in for the system's, to check
     /// that). `found` is told how many there are to read, before they are.
     ///
-    /// Unless overridden, the process deadline is `seconds` plus two seconds for startup, returning the
-    /// completed elements and exiting (120 seconds with no reading budget). Killing it at the VLM's own
-    /// deadline would discard the formulas and tables it finished before that deadline.
+    /// Unless overridden, the process deadline accounts for the formula reading budget (30 seconds when `formulas` is
+    /// requested) plus the VLM's `seconds` and a short allowance for startup, returning the completed elements and
+    /// exiting (120 seconds when no VLM reading budget is given). Killing it at the VLM's own deadline alone would
+    /// discard completed elements or terminate multi-formula runs prematurely.
     @concurrent
     public static func elements(
         ofPictureAt url: URL, formulas: URL? = nil, vlm: URL? = nil, seconds: Double? = nil, pressure: MemoryPressure? = nil, helper: URL,
         found: (@Sendable (Found) -> Void)? = nil, priority: QualityOfService = .userInitiated, resources: ActiveResources = .shared, timeout: Duration? = nil
     ) async throws -> (formulas: [FoundFormula], tables: [FoundTable], tablesLeft: Int) {
-        let timeout = timeout ?? seconds.map { .seconds($0) + .seconds(2) } ?? .seconds(120)
+        let vlmSeconds = vlm != nil ? seconds : nil
+        let timeout = elementsTimeout(formulas: formulas, vlm: vlm, seconds: vlmSeconds, override: timeout)
         let job = Job(
             id: UUID().uuidString, path: url.path(percentEncoded: false), formulas: formulas?.path(percentEncoded: false),
-            vlm: vlm?.path(percentEncoded: false), seconds: seconds, pressure: pressure
+            vlm: vlm?.path(percentEncoded: false), seconds: vlmSeconds, pressure: pressure
         )
         let answer = try await run(job, helper: helper, priority: priority, resources: resources, timeout: timeout, progress: found)
         if let formulas = answer.formulas { return (formulas, answer.tables ?? [], answer.tablesLeft ?? 0) }
         throw Failure.unreadable(answer.error ?? "")
+    }
+
+    /// Complete-run process deadline for `elements(...)`.
+    static func elementsTimeout(formulas: URL?, vlm: URL?, seconds: Double?, override: Duration?) -> Duration {
+        if let override { return override }
+        guard vlm != nil, let seconds else { return .seconds(120) }
+        if formulas != nil {
+            // FormulaReader has a 30 s budget before the VLM runs; include it so Capture Text's short VLM wait
+            // never hard-kills a multi-formula reading.
+            return .seconds(30) + .seconds(seconds) + .seconds(5)
+        }
+        return .seconds(seconds) + .seconds(2)
     }
 
     /// The lines the pack in `pack` reads in the picture at `url`, alone, for the app to put beside its own reading.

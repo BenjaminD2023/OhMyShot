@@ -6,6 +6,7 @@ import Testing
 @testable import OMSRecording
 
 /// The volume and the quality the recording window chooses, made when the recording is kept.
+@Suite(.serialized)
 struct RecordingVolumeQualityTests {
     private let whole = CMTimeRange(start: .zero, duration: CMTime(seconds: 4, preferredTimescale: 600))
 

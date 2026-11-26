@@ -215,14 +215,14 @@ public final class ScreenRecorder {
         Task { await writer.resume(at: time) }
     }
 
-    /// Stops and closes the movie. Throws `RecordingWriter.WriterError.noFrames` when nothing was recorded.
-    @discardableResult
     /// Changes what the stream takes in while it records, as when a window it must show (Draw on Screen's canvas)
     /// opens after it began: the frames that follow show what `filter` says.
     public func updateFilter(_ filter: SCContentFilter) async throws {
         try await stream?.updateContentFilter(filter)
     }
 
+    /// Stops and closes the movie. Throws `RecordingWriter.WriterError.noFrames` when nothing was recorded.
+    @discardableResult
     public func stop() async throws -> RecordingWriter.Statistics {
         guard state == .recording || state == .paused else { return await writer.currentStatistics }
         state = .finishing
@@ -298,7 +298,20 @@ public final class ScreenRecorder {
     /// the microphone isn't recorded.
     public func takeMicrophoneLevel() -> Double? {
         guard target.audio.microphone != nil else { return nil }
+        guard !isMicrophoneMuted else {
+            _ = output.takeMicrophoneLevel()
+            return 0
+        }
         return AudioLevel.meterValue(rms: output.takeMicrophoneLevel())
+    }
+
+    /// Whether the microphone is muted live without stopping the recording stream.
+    public var isMicrophoneMuted: Bool {
+        get { writer.isMicrophoneMuted }
+        set {
+            writer.isMicrophoneMuted = newValue
+            output.setMicrophoneMuted(newValue)
+        }
     }
 
     /// Whether the microphone has stopped sending sound, as when a headset is switched off: nothing has come
@@ -329,12 +342,21 @@ private final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @u
     private var idle = 0
     /// The loudest microphone buffer since the meter last read it.
     private var microphoneLevel: Float = 0
+    /// Whether the microphone is currently muted live.
+    private var microphoneMuted = false
     /// Whether each audio track still sends buffers; nil for one that isn't recorded.
     private var microphoneWatch: AudioWatch?
     private var systemAudioWatch: AudioWatch?
 
     init(writer: RecordingWriter) {
         self.writer = writer
+    }
+
+    func setMicrophoneMuted(_ muted: Bool) {
+        lock.withLock {
+            microphoneMuted = muted
+            if muted { microphoneLevel = 0 }
+        }
     }
 
     var counts: (complete: Int, idle: Int) {
@@ -401,10 +423,18 @@ private final class StreamOutput: NSObject, SCStreamOutput, SCStreamDelegate, @u
             writer.assumeIsolated { $0.appendAudio(sample, to: .systemAudio) }
         case .microphone:
             let arrival = ScreenRecorder.hostTime().seconds
-            let level = AudioLevel.rms(of: sample)
-            lock.withLock {
+            let muted = lock.withLock { () -> Bool in
                 microphoneWatch?.bufferArrived(at: arrival)
-                if let level { microphoneLevel = max(microphoneLevel, level) }
+                if microphoneMuted {
+                    microphoneLevel = 0
+                    return true
+                }
+                return false
+            }
+            if !muted, let level = AudioLevel.rms(of: sample) {
+                lock.withLock {
+                    if !microphoneMuted { microphoneLevel = max(microphoneLevel, level) }
+                }
             }
             writer.assumeIsolated { $0.appendAudio(sample, to: .microphone) }
         @unknown default:

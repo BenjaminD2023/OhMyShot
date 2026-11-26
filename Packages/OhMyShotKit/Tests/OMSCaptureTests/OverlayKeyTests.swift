@@ -20,6 +20,8 @@ struct OverlayKeyTests {
         var dragModifiers: NSEvent.ModifierFlags?
         /// What F last handed on.
         var captured: (measurement: RulerMeasurement, frame: CapturedFrame)?
+        /// The modifiers forwarded with the last window or multi-window selection.
+        var lastWindowModifiers: NSEvent.ModifierFlags?
 
         func overlayView(_ view: OverlayView, didPressAt point: CGPoint) { heard.append("press") }
         func overlayView(_ view: OverlayView, didDragTo point: CGPoint, modifiers: NSEvent.ModifierFlags) {
@@ -35,10 +37,16 @@ struct OverlayKeyTests {
         func overlayView(_ view: OverlayView, didPressSpace isRepeat: Bool) { heard.append("space") }
         func overlayViewDidReleaseSpace(_ view: OverlayView) { heard.append("space up") }
         func overlayView(_ view: OverlayView, didSelect rect: CGRect, modifiers: NSEvent.ModifierFlags) { heard.append("select") }
-        func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) { heard.append("window") }
+        func overlayView(_ view: OverlayView, didSelectElement rect: CGRect, modifiers: NSEvent.ModifierFlags) { heard.append("element") }
+        func overlayView(_ view: OverlayView, didSelectWindow target: WindowTarget, modifiers: NSEvent.ModifierFlags) {
+            heard.append("window")
+            lastWindowModifiers = modifiers
+        }
         func overlayView(_ view: OverlayView, didSelectWindows targets: [WindowTarget], modifiers: NSEvent.ModifierFlags) {
             heard.append("windows \(targets.map(\.id))")
+            lastWindowModifiers = modifiers
         }
+        func overlayView(_ view: OverlayView, didChangeSelectedWindows targets: [WindowTarget]) {}
         func overlayView(_ view: OverlayView, didSwitchTo mode: OverlayView.Mode) { heard.append("switch") }
         func overlayViewDidRequestWindowPicker(_ view: OverlayView) { heard.append("windowPicker") }
         func overlayViewDidCancel(_ view: OverlayView) { heard.append("cancel") }
@@ -53,6 +61,8 @@ struct OverlayKeyTests {
             copiedColor = view.color(at: point)
             return true
         }
+        func overlayView(_ view: OverlayView, didChangeColorFormat format: ColorFormat) { heard.append("colorFormat \(format.rawValue)") }
+
         func overlayView(_ view: OverlayView, didNudge pixels: CGVector) {
             heard.append("nudge")
             nudge = pixels
@@ -152,16 +162,20 @@ struct OverlayKeyTests {
     }
 
     /// Tab frames the area for a size typed, in Capture Area and Annotate Area; elsewhere it is passed on (All-In-One's
-    /// area is framed after its drag; Measure's Tab is its unit).
+    /// area is framed after its drag; Measure's Tab is its unit; Pick Color's Tab cycles color format).
     @Test func tabOpensTheSizeControlWhereAnAreaIsChosen() throws {
         for purpose in [OverlayController.Purpose.screenshot, .annotate] {
             let result = try press(48, characters: "\t", in: purpose)
             #expect(result.heard == ["size"] && !result.passedOn, "\(purpose): \(result.heard)")
         }
-        for purpose in [OverlayController.Purpose.text, .record, .scroll, .color] {
+        for purpose in [OverlayController.Purpose.text, .record, .scroll] {
             let result = try press(48, characters: "\t", in: purpose)
             #expect(result.heard.isEmpty && result.passedOn, "\(purpose): \(result.heard)")
         }
+        let colorForward = try press(48, characters: "\t", in: .color)
+        #expect(colorForward.heard == ["colorFormat rgb"] && !colorForward.passedOn)
+        let colorBackward = try press(48, characters: "\t", modifiers: .shift, in: .color)
+        #expect(colorBackward.heard == ["colorFormat displayP3"] && !colorBackward.passedOn)
         let allInOne = try press(48, characters: "\t", in: .screenshot, allInOne: true)
         #expect(allInOne.heard.isEmpty && allInOne.passedOn)
         let window = try press(48, characters: "\t", in: .screenshot, mode: .window)
@@ -513,30 +527,48 @@ struct OverlayKeyTests {
         #expect(recorder.heard == ["windows [20, 10]"])
     }
 
-    @Test func unshiftedWindowClickFinishesTheSelectedWindows() throws {
+    @Test func unshiftedWindowClickConfirmsLockedWindowsWithoutAppendingUnshiftedHover() throws {
         let front = WindowTarget(id: 10, frame: CGRect(x: 100, y: 100, width: 400, height: 300), ownerName: "AppA", title: "Front")
         let back = WindowTarget(id: 20, frame: CGRect(x: 150, y: 120, width: 400, height: 300), ownerName: "AppB", title: "Back")
+        let third = WindowTarget(id: 30, frame: CGRect(x: 120, y: 110, width: 400, height: 300), ownerName: "AppC", title: "Third")
         let view = OverlayView(display: Self.display)
         let recorder = Recorder()
         view.delegate = recorder
-        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .window, windows: [front, back], showsToolbar: false, purpose: .screenshot)
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .window, windows: [front, back, third], showsToolbar: false, purpose: .screenshot)
         let tab = try #require(NSEvent.keyEvent(
             with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: 0, context: nil,
             characters: "\t", charactersIgnoringModifiers: "\t", isARepeat: false, keyCode: 48
         ))
         view.keyDown(with: tab)
+        #expect(view.hoveredWindow == back)
         let shiftUp = try #require(NSEvent.mouseEvent(
             with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
         ))
         view.mouseUp(with: shiftUp)
+        #expect(view.selectedWindows == [back] && recorder.heard.isEmpty)
+
+        // Tab to `third` and Shift-click to add a second locked window; then Tab to `front` (unlocked hover).
         view.keyDown(with: tab)
+        #expect(view.hoveredWindow == third)
+        view.mouseUp(with: shiftUp)
+        #expect(view.selectedWindows == [back, third] && recorder.heard.isEmpty)
+
+        view.keyDown(with: tab)
+        #expect(view.hoveredWindow == front)
+        #if DEBUG
+        #expect(view.debugHasLockedWindowPaths)
+        #expect(view.debugSelectedWindowBadges == ["1", "2"])
+        #expect(view.debugHasHoveredWindowPath && view.debugHoveredBorderDashed)
+        #endif
+
+        // An unshifted click confirms ONLY `selectedWindows`, never silently appending the unshifted hovered 3rd window.
         let clickUp = try #require(NSEvent.mouseEvent(
             with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: [], timestamp: 0,
             windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
         ))
         view.mouseUp(with: clickUp)
-        #expect(recorder.heard == ["windows [20, 10]"])
+        #expect(recorder.heard == ["windows [20, 30]"])
     }
 
     @Test func allInOneWindowModeUsesTheSameShiftMultiSelection() throws {
@@ -602,9 +634,13 @@ struct OverlayKeyTests {
     }
 
     @Test func recallLastAreaAndMidDragReset() throws {
-        // L in area mode for screenshot/annotate requests recalling the last captured area.
-        #expect(try press(37, characters: "l", in: .screenshot).heard == ["lastArea"])
-        #expect(try press(37, characters: "l", in: .annotate).heard == ["lastArea"])
+        // L in area mode recalls the last captured area for screenshot, annotate, record, and scroll.
+        for purpose in [OverlayController.Purpose.screenshot, .annotate, .record, .scroll] {
+            #expect(try press(37, characters: "l", in: purpose).heard == ["lastArea"], "\(purpose)")
+        }
+        for purpose in [OverlayController.Purpose.text, .color, .measure] {
+            #expect(try press(37, characters: "l", in: purpose).heard.isEmpty, "\(purpose)")
+        }
 
         // During a selection drag, Backspace or right-click resets the drag instead of cancelling the overlay.
         let view = OverlayView(display: Self.display)
@@ -752,5 +788,116 @@ struct OverlayKeyTests {
         view.show(selection: SelectionModel(bounds: Self.display.frame, pixelsPerPoint: Self.display.pixelsPerPoint), showsReading: false, isDragging: false)
         view.keyDown(with: try key(36, "\r"))
         #expect(recorder.heard == ["windows [10, 20]"])
+    }
+
+    @Test func rightClickAndEscapeInMeasureModeCancelActiveBoxDragWithoutCancellingOverlay() throws {
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .area, windows: [], showsToolbar: false, purpose: .measure)
+
+        let mouseDown = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: CGPoint(x: 100, y: 100), modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let mouseDrag = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDragged, location: CGPoint(x: 260, y: 220), modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        let rightClick = try #require(NSEvent.mouseEvent(
+            with: .rightMouseDown, location: CGPoint(x: 260, y: 220), modifierFlags: [], timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseDown(with: mouseDown)
+        view.mouseDragged(with: mouseDrag)
+        #expect(view.isDraggingMeasureBox)
+        recorder.heard.removeAll()
+
+        // Right-click during a box drag cancels only the box, keeping the Measure overlay active.
+        view.rightMouseDown(with: rightClick)
+        #expect(!view.isDraggingMeasureBox)
+        #expect(recorder.heard.isEmpty)
+
+        // Escape during a box drag also cancels only the box, keeping the Measure overlay active.
+        view.mouseDown(with: mouseDown)
+        view.mouseDragged(with: mouseDrag)
+        #expect(view.isDraggingMeasureBox)
+        recorder.heard.removeAll()
+        view.keyDown(with: try key(53, "\u{1b}"))
+        #expect(!view.isDraggingMeasureBox)
+        #expect(recorder.heard.isEmpty)
+
+        // Right-click when no box drag is active cancels the overlay.
+        view.rightMouseDown(with: rightClick)
+        #expect(recorder.heard == ["cancel"])
+    }
+
+    #if DEBUG
+    @Test func shortcutHintCapsuleShowsForColorAndWindowAndStaysClampedClearOfToolbar() throws {
+        let view = OverlayView(display: Self.display)
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: false, purpose: .color)
+        #expect(view.debugHintText == "⌥ Click for details · Tab Format")
+        let colorHint = try #require(view.debugHintFrame)
+        #expect(view.bounds.insetBy(dx: 5, dy: 5).contains(colorHint))
+
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .window, windows: [], showsToolbar: true, purpose: .screenshot)
+        view.layoutSubtreeIfNeeded()
+        #expect(view.debugHintText == "Scroll Element · Tab Cycle · ⇧ Click Multi-select")
+        let windowHint = try #require(view.debugHintFrame)
+        #expect(view.bounds.insetBy(dx: 5, dy: 5).contains(windowHint))
+        #expect(!windowHint.intersects(view.debugToolbarFrame))
+
+        // Area screenshot mode shows no bottom hint capsule.
+        view.reset(pointer: CGPoint(x: 400, y: 300), mode: .area, windows: [], showsToolbar: true, purpose: .screenshot)
+        #expect(view.debugHintText == nil)
+    }
+    #endif
+
+    @Test func optionClickAndOptionReturnForwardOptionWithoutConflictingWithShiftMultiSelect() throws {
+        let front = WindowTarget(id: 10, frame: CGRect(x: 100, y: 100, width: 400, height: 300), ownerName: "AppA", title: "Front")
+        let back = WindowTarget(id: 20, frame: CGRect(x: 150, y: 120, width: 400, height: 300), ownerName: "AppB", title: "Back")
+        let view = OverlayView(display: Self.display)
+        let recorder = Recorder()
+        view.delegate = recorder
+        view.reset(pointer: CGPoint(x: 200, y: 200), mode: .window, windows: [front, back], showsToolbar: false, purpose: .screenshot)
+
+        // Option-click on a hovered window selects it immediately and forwards .option.
+        let optionClick = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .option, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: optionClick)
+        #expect(recorder.heard == ["window"])
+        #expect(recorder.lastWindowModifiers?.contains(.option) == true)
+
+        // Option-Return on a single hovered window also preserves .option.
+        recorder.heard = []
+        recorder.lastWindowModifiers = nil
+        let optionReturn = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .option, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
+        ))
+        view.keyDown(with: optionReturn)
+        #expect(recorder.heard == ["window"])
+        #expect(recorder.lastWindowModifiers?.contains(.option) == true)
+
+        // Shift-click still toggles multi-window selection, and Option-Return preserves .option for the combined capture.
+        recorder.heard = []
+        recorder.lastWindowModifiers = nil
+        let shiftClick = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: CGPoint(x: 200, y: 200), modifierFlags: .shift, timestamp: 0,
+            windowNumber: 0, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        view.mouseUp(with: shiftClick)
+        #expect(view.selectedWindows == [front] && recorder.heard.isEmpty)
+
+        view.cycleWindow()
+        #expect(view.hoveredWindow == back)
+        view.mouseUp(with: shiftClick)
+        #expect(view.selectedWindows == [front, back] && recorder.heard.isEmpty)
+
+        view.keyDown(with: optionReturn)
+        #expect(recorder.heard == ["windows [10, 20]"])
+        #expect(recorder.lastWindowModifiers?.contains(.option) == true)
     }
 }

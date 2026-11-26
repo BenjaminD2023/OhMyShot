@@ -58,7 +58,7 @@ public final class PinController {
         /// A picture pin's own picture as a file to drag out: the file it was opened from while that is there, else a
         /// PNG of it in the temporary folder. Nil for a text or color pin, or when the PNG cannot be written.
         public func ownFile() -> URL? {
-            guard case .image(let image, _) = content else { return nil }
+            guard case .image(let image, let scale) = content else { return nil }
             if case .file(let url) = origin, FileManager.default.fileExists(atPath: url.path(percentEncoded: false)) {
                 return url
             }
@@ -67,7 +67,7 @@ public final class PinController {
                 return tempURL
             }
             do {
-                try ImageExporter.write(ImageExporter.encoded(image, as: .png), to: tempURL)
+                try ImageExporter.write(ImageExporter.encoded(image, as: .png, pixelsPerPoint: Double(scale)), to: tempURL)
                 return tempURL
             } catch {
                 return nil
@@ -97,6 +97,7 @@ public final class PinController {
         public var saveAs: (Pin) -> Void
         public var annotate: (Pin) -> Void
         public var recognizeText: (Pin) -> Void
+        public var translate: ((Pin) -> Void)?
         /// The file a picture pin hands over when Option-dragged into another app; nil when it could not be made, which
         /// the app says, and then nothing goes. Left out, the pin's own picture goes (`Pin.ownFile()`).
         public var fileForDrag: ((Pin) -> URL?)?
@@ -107,6 +108,7 @@ public final class PinController {
             saveAs: @escaping (Pin) -> Void,
             annotate: @escaping (Pin) -> Void,
             recognizeText: @escaping (Pin) -> Void,
+            translate: ((Pin) -> Void)? = nil,
             fileForDrag: ((Pin) -> URL?)? = nil
         ) {
             self.copy = copy
@@ -114,18 +116,42 @@ public final class PinController {
             self.saveAs = saveAs
             self.annotate = annotate
             self.recognizeText = recognizeText
+            self.translate = translate
             self.fileForDrag = fileForDrag
         }
     }
 
+    /// Snapshot of a recently closed pin for bounded undo restoration.
+    struct ClosedSnapshot {
+        let content: Content
+        let origin: Origin
+        let pinnedAt: Date
+        let onBackground: Data?
+        let requiresBackground: Bool
+        let frame: CGRect
+        let zoom: CGFloat
+        let opacity: CGFloat
+        let shadowOverride: Bool?
+        let borderOverride: Bool?
+        let rotationSteps: Int
+        let flippedHorizontal: Bool
+        let flippedVertical: Bool
+        let isTransformed: Bool
+    }
+
+    static let maxClosedPins = 5
+
     /// Pins opened, closed, hidden, shown, locked, or unlocked: what captures include and the menu bar's
     /// entries follow.
     public var onChange: (() -> Void)?
+    /// Optional direct image translation hook for picture pins (fallback when `Actions.translate` is nil).
+    public var onTranslate: ((CGImage) -> Void)?
 
     private let settings: SettingsStore
     private let actions: Actions
     /// Back to front, as they are stacked: a pin opened or clicked goes last.
     private var windows: [PinWindow] = []
+    private var closedPins: [ClosedSnapshot] = []
     private let textReader = PinTextReader()
     private var windowLease: ActiveResources.Lease?
     public private(set) var areHidden = false
@@ -144,6 +170,7 @@ public final class PinController {
     public var isEmpty: Bool { windows.isEmpty }
     public var count: Int { windows.count }
     public var hasLockedPins: Bool { windows.contains { $0.isLocked } }
+    public var canRestoreClosedPin: Bool { !closedPins.isEmpty }
 
     /// The pins' windows, for captures to include as they are on screen: none while they are hidden or
     /// when Settings leaves pins out of captures.
@@ -183,11 +210,9 @@ public final class PinController {
         let screen = NSScreen.screens.first { $0.frame.contains(NSEvent.mouseLocation) } ?? NSScreen.main
         let visible = screen?.visibleFrame ?? CGRect(x: 0, y: 0, width: 1440, height: 900)
         var placed = PinGeometry.initialFrame(size: size, requested: area, visible: visible)
-        // Pins from elsewhere step aside from one already in their place.
+        // Pins from elsewhere step aside from one already in their place, staying inside the screen.
         if area == nil {
-            while windows.contains(where: { abs($0.frame.minX - placed.frame.minX) < 1 && abs($0.frame.maxY - placed.frame.maxY) < 1 }) {
-                placed.frame = placed.frame.offsetBy(dx: 24, dy: -24)
-            }
+            placed.frame = PinGeometry.cascaded(placed.frame, avoiding: windows.map(\.frame), in: visible)
         }
         let pin = Pin(id: UUID(), content: content, origin: origin, onBackground: onBackground)
         let window = add(pin, frame: placed.frame, zoom: placed.zoom)
@@ -205,10 +230,41 @@ public final class PinController {
         window.onCloseAll = { [weak self] in self?.closeAll() }
         window.onChange = { [weak self] in self?.changed() }
         window.onAdjust = { [weak self] in self?.scheduleSave() }
+        window.onImageUpdated = { [weak self] updated in
+            guard let self else { return }
+            if self.isKeeping, case .image(let image, _) = updated.pin.content {
+                self.archive.keepPicture(image, onBackground: updated.pin.onBackground, id: updated.pin.id)
+                self.scheduleSave()
+            }
+        }
         window.onRaise = { [weak self] in self?.raise($0) }
+        window.onTranslateImage = { [weak self] image in self?.onTranslate?(image) }
+        window.hasTranslateImageHandler = { [weak self] in self?.onTranslate != nil }
         windows.append(window)
         windowLease = windowLease ?? ActiveResources.shared.acquire(.window)
         return window
+    }
+
+    /// Restores the most recently closed pin (LIFO, up to the last 5 closed pins) with its previous
+    /// frame, opacity, rotation/flip state, and per-pin shadow/border overrides.
+    @discardableResult
+    public func restoreLastClosedPin() -> Bool {
+        guard let snapshot = closedPins.popLast() else { return false }
+        if areHidden { setHidden(false) }
+        let restoredFrame = PinGeometry.recovered(snapshot.frame, on: Self.screens) ?? snapshot.frame
+        let pin = Pin(
+            id: UUID(), content: snapshot.content, origin: snapshot.origin, pinnedAt: snapshot.pinnedAt,
+            onBackground: snapshot.onBackground, requiresBackground: snapshot.requiresBackground
+        )
+        let window = add(pin, frame: restoredFrame, zoom: snapshot.zoom, opacity: snapshot.opacity)
+        window.restoreState(from: snapshot)
+        window.show()
+        if isKeeping, case .image(let image, _) = snapshot.content {
+            archive.keepPicture(image, onBackground: snapshot.onBackground, id: pin.id)
+        }
+        VoiceOver.announce(String(localized: "Restored closed pin.", bundle: .module), from: window, priority: .medium)
+        changed()
+        return true
     }
 
     /// Opens the pins that were open when the app last quit, where they were (on the nearest display when theirs is
@@ -230,6 +286,9 @@ public final class PinController {
             let kept = CGRect(x: record.frame.minX, y: record.frame.maxY - base.height * zoom, width: base.width * zoom, height: base.height * zoom)
             let frame = PinGeometry.recovered(kept, on: screens) ?? kept
             let window = add(pin, frame: frame, zoom: zoom, opacity: record.opacity)
+            if record.shadowOverride != nil || record.borderOverride != nil || record.isTransformed != nil {
+                window.restoreArchiveOverrides(shadow: record.shadowOverride, border: record.borderOverride, isTransformed: record.isTransformed)
+            }
             if record.locked { window.setLocked(true) }
             if !hidden { window.show() }
         }
@@ -277,7 +336,7 @@ public final class PinController {
         guard hidden != areHidden, !windows.isEmpty || !hidden else { return }
         areHidden = hidden
         for window in windows {
-            if hidden { window.orderOut(nil) } else { window.show() }
+            window.setWindowHidden(hidden)
         }
         changed()
     }
@@ -288,9 +347,26 @@ public final class PinController {
 
     public func closeAll() {
         guard !windows.isEmpty else { return }
-        for window in windows { window.orderOut(nil) }
+        for window in windows {
+            recordClosed(window)
+            window.tearDown()
+            if isKeeping { archive.forget(window.pin.id) }
+        }
         windows.removeAll()
         finishClosing()
+    }
+
+    /// Whether an open picture pin is backed by `captureID`.
+    public func contains(captureID: UUID) -> Bool {
+        windows.contains { $0.pin.origin == .capture(captureID) && $0.isPicture }
+    }
+
+    /// Refreshes any open picture pin backed by `captureID` when the underlying capture is edited.
+    public func update(captureID: UUID, image: CGImage, scale: CGFloat) {
+        let safeScale = scale.isFinite && scale > 0 ? scale : 1
+        for window in windows where window.pin.origin == .capture(captureID) && window.isPicture {
+            window.updateImage(image, scale: safeScale)
+        }
     }
 
     /// Settings changed how pins look.
@@ -298,6 +374,29 @@ public final class PinController {
         let appearance = appearance
         for window in windows { window.apply(appearance) }
     }
+
+    private func recordClosed(_ window: PinWindow) {
+        closedPins.append(window.closedSnapshot())
+        if closedPins.count > Self.maxClosedPins {
+            closedPins.removeFirst(closedPins.count - Self.maxClosedPins)
+        }
+    }
+
+    /// Closes a specific open pin by id (used by tests and programmatic callers).
+    @discardableResult
+    func close(id: UUID) -> Bool {
+        guard let window = windows.first(where: { $0.pin.id == id }) else { return false }
+        close(window)
+        return true
+    }
+
+    /// The open pin window for `id`, for internal unit test verification.
+    func window(for id: UUID) -> PinWindow? {
+        windows.first { $0.pin.id == id }
+    }
+
+    /// The most recently added pin window, for internal unit test verification.
+    var newestWindow: PinWindow? { windows.last }
 
     /// A pin clicked is in front of the others, and is kept so.
     private func raise(_ window: PinWindow) {
@@ -307,7 +406,8 @@ public final class PinController {
     }
 
     private func close(_ window: PinWindow) {
-        window.orderOut(nil)
+        recordClosed(window)
+        window.tearDown()
         windows.removeAll { $0 === window }
         if isKeeping { archive.forget(window.pin.id) }
         finishClosing()

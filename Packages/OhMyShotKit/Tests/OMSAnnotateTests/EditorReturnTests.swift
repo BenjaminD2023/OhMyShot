@@ -7,6 +7,12 @@ import Testing
 /// Return in the annotation editor copies and closes, unless it has something of its own to finish. Nothing is shown.
 @MainActor
 struct EditorReturnTests {
+    private let scratch = ScratchDefaults()
+
+    init() {
+        PictureStore.use(URL.temporaryDirectory.appending(path: "OhMyShotKit Tests \(ProcessInfo.processInfo.processIdentifier)", directoryHint: .isDirectory))
+    }
+
     private func makeCanvas(tool: AnnotationTool) throws -> (AnnotationCanvasView, AnnotationSession, NSWindow) {
         let context = try #require(CGContext(
             data: nil, width: 400, height: 200, bitsPerComponent: 8, bytesPerRow: 0, space: CGColorSpace(name: CGColorSpace.sRGB)!,
@@ -14,7 +20,7 @@ struct EditorReturnTests {
         ))
         context.setFillColor(CGColor(gray: 1, alpha: 1))
         context.fill(CGRect(x: 0, y: 0, width: 400, height: 200))
-        let session = AnnotationSession(image: try #require(context.makeImage()), scale: 1, tool: tool)
+        let session = AnnotationSession(image: try #require(context.makeImage()), scale: 1, tool: tool, defaults: scratch.make())
         let window = NSWindow(contentRect: CGRect(x: 0, y: 0, width: 400, height: 200), styleMask: [.borderless], backing: .buffered, defer: true)
         window.isReleasedWhenClosed = false
         let canvas = AnnotationCanvasView(session: session)
@@ -179,6 +185,7 @@ struct EditorReturnTests {
 
         // 3. Moving `targetBox` near `filledBox`'s top edge (y = 40) activates smart alignment guides when Command is not held.
         // Click on the top edge at x = 215 (between the topLeft handle at 200 and top handle at 230) so it moves rather than reshapes.
+        session.tool = .select
         session.select([targetBox.id])
         let edgePt = canvas.windowPoint(forDocument: CGPoint(x: 215, y: 40))
         let nearTopPt = canvas.windowPoint(forDocument: CGPoint(x: 215, y: 41))
@@ -209,5 +216,75 @@ struct EditorReturnTests {
         ))
         canvas.mouseDown(with: doubleClick)
         #expect(canvas.isEditingText)
+    }
+
+    @Test func primaryCopyButtonLabelAndTooltipDescribeCopyAndCloseVsCommandC() {
+        #expect(EditorView.copyActionTitle == "Copy & Close")
+        #expect(EditorView.copyActionHelp == "Copy the edited capture and close this window (Return). Press ⌘C to copy without closing.")
+        #expect(EditorView.copyWithoutClosingTitle == "Copy Without Closing (⌘C)")
+    }
+
+    @Test func eyedropperReturnCancelsSupportsBackgroundRejectsNonColorToolsAndSamplesPlacedImages() throws {
+        let (canvas, session, window) = try makeCanvas(tool: .arrow)
+        defer { window.close() }
+        var returned = 0
+        canvas.onReturn = { returned += 1 }
+        let iKey = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil,
+            characters: "i", charactersIgnoringModifiers: "i", isARepeat: false, keyCode: 34
+        ))
+
+        // Return cancels an active eyedropper instead of copying and closing.
+        canvas.keyDown(with: iKey)
+        #expect(canvas.isPickingColor)
+        canvas.keyDown(with: try returnKey())
+        #expect(!canvas.isPickingColor)
+        #expect(returned == 0)
+
+        // Non-color tools ignore pressing I instead of entering a dead eyedropper state.
+        for tool in [AnnotationTool.spotlight, .magnifier, .crop, .select] {
+            session.tool = tool
+            canvas.keyDown(with: iKey)
+            #expect(!canvas.isPickingColor, "Tool \(tool) should not enter eyedropper")
+        }
+        session.tool = .redact
+        session.changeSettings("Redaction") { $0.redaction = .blur }
+        canvas.keyDown(with: iKey)
+        #expect(!canvas.isPickingColor)
+        session.changeSettings("Redaction") { $0.redaction = .erase }
+        canvas.keyDown(with: iKey)
+        #expect(!canvas.isPickingColor)
+        session.changeSettings("Redaction") { $0.redaction = .solid }
+        canvas.keyDown(with: iKey)
+        #expect(canvas.isPickingColor)
+        canvas.cancelColorPicker()
+
+        // Sampling over a combined PlacedImage returns the placed image's color rather than only the white base.
+        let greenContext = try #require(CGContext(
+            data: nil, width: 40, height: 40, bitsPerComponent: 8, bytesPerRow: 0,
+            space: CGColorSpace(name: CGColorSpace.sRGB)!, bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+        ))
+        greenContext.setFillColor(CGColor(srgbRed: 0, green: 1, blue: 0, alpha: 1))
+        greenContext.fill(CGRect(x: 0, y: 0, width: 40, height: 40))
+        let placedName = try PictureStore.shared.add(try #require(greenContext.makeImage()))
+        session.addImages([(name: placedName, size: CGSize(width: 40, height: 40))], at: CGPoint(x: 100, y: 100))
+        let sampledPlaced = try #require(canvas.sampleColor(at: CGPoint(x: 100, y: 100)))
+        #expect(sampledPlaced.green > 0.9 && sampledPlaced.red < 0.1)
+
+        // In Background mode, picking a color with the eyedropper sets the backdrop fill to `.color(sampled)`.
+        session.tool = .background
+        canvas.keyDown(with: iKey)
+        #expect(canvas.isPickingColor)
+        let clickGreen = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: canvas.windowPoint(forDocument: CGPoint(x: 100, y: 100)), modifierFlags: [], timestamp: 0,
+            windowNumber: window.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1
+        ))
+        canvas.mouseDown(with: clickGreen)
+        #expect(!canvas.isPickingColor)
+        guard case .color(let backdropColor) = session.document.backdrop?.fill else {
+            Issue.record("Expected solid backdrop fill from eyedropper, got \(String(describing: session.document.backdrop?.fill))")
+            return
+        }
+        #expect(backdropColor.green > 0.9 && backdropColor.red < 0.1)
     }
 }

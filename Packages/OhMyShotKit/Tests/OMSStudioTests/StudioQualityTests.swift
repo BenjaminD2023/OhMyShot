@@ -142,4 +142,57 @@ struct StudioQualityTests {
         for _ in 0..<100 where !document.compositionFailed { try await Task.sleep(for: .milliseconds(50)) }
         #expect(document.compositionFailed)
     }
+
+    @Test func outputMaxSideAndFramesPerSecondRoundTripAndScaleLayout() throws {
+        // Backward compatibility: projects saved without outputMaxSide or framesPerSecond decode cleanly to defaults.
+        let old = #"{"padding":0.0,"shadow":0.0,"aspect":"auto"}"#
+        let decodedOld = try JSONDecoder().decode(StudioProject.self, from: Data(old.utf8))
+        #expect(decodedOld.outputMaxSide == nil && decodedOld.framesPerSecond == nil)
+        #expect(decodedOld.resolvedOutputMaxSide == StudioRenderer.largestSide)
+        #expect(decodedOld.resolvedFramesPerSecond == 60)
+
+        var configured = StudioProject(padding: 0, outputMaxSide: 1920, framesPerSecond: 30)
+        let roundTripped = try JSONDecoder().decode(StudioProject.self, from: JSONEncoder().encode(configured))
+        #expect(roundTripped == configured)
+        #expect(roundTripped.outputMaxSide == 1920 && roundTripped.framesPerSecond == 30)
+        #expect(roundTripped.resolvedOutputMaxSide == 1920 && roundTripped.resolvedFramesPerSecond == 30)
+
+        let layout1080 = StudioRenderer.layout(recordingSize: CGSize(width: 3840, height: 2160), project: configured, hasCamera: false)
+        #expect(layout1080.canvas == CGSize(width: 1920, height: 1080))
+
+        configured.outputMaxSide = 1280
+        let layout720 = StudioRenderer.layout(recordingSize: CGSize(width: 3840, height: 2160), project: configured, hasCamera: false)
+        #expect(layout720.canvas == CGSize(width: 1280, height: 720))
+
+        let settings = StudioExporter.videoSettings(
+            canvas: layout720.canvas, quality: .standard, colors: StudioComposition.Colors(of: nil), framesPerSecond: 30
+        )
+        let properties = try #require(settings[AVVideoCompressionPropertiesKey] as? [String: Any])
+        #expect(properties[AVVideoExpectedSourceFrameRateKey] as? Int == 30)
+    }
+
+    @Test func resolutionAndFrameRateChangesRegisterNamedUndoSteps() throws {
+        let document = try document(recordingBytes: 4_000_000)
+        defer { try? FileManager.default.removeItem(at: document.folder) }
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        document.undoManagerProvider = { undo }
+
+        undo.beginUndoGrouping()
+        document.setOutputMaxSide(1280)
+        undo.endUndoGrouping()
+        #expect(document.project.outputMaxSide == 1280)
+        #expect(undo.undoActionName == "Change Resolution")
+
+        undo.beginUndoGrouping()
+        document.setFramesPerSecond(30)
+        undo.endUndoGrouping()
+        #expect(document.project.framesPerSecond == 30)
+        #expect(undo.undoActionName == "Change Frame Rate")
+
+        undo.undo()
+        #expect(document.project.framesPerSecond == nil)
+        undo.undo()
+        #expect(document.project.outputMaxSide == nil)
+    }
 }

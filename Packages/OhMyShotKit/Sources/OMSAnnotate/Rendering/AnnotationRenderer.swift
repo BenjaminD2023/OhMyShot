@@ -154,9 +154,10 @@ nonisolated public enum AnnotationRenderer {
     /// Dims everything in `canvas` but the spots. Overlapping spots stay bright where they overlap.
     public static func drawSpotlight(_ spots: [Spot], canvas: CGRect, in context: CGContext) {
         guard !spots.isEmpty else { return }
+        let dimming = CGFloat(min(max(spots.last?.dimming ?? Double(spotlightDimming), 0), 1))
         context.saveGState()
         context.beginTransparencyLayer(auxiliaryInfo: nil)
-        context.setFillColor(CGColor(gray: 0, alpha: spotlightDimming))
+        context.setFillColor(CGColor(gray: 0, alpha: dimming))
         context.fill(canvas)
         context.setBlendMode(.clear)
         for spot in spots {
@@ -182,7 +183,7 @@ nonisolated public enum AnnotationRenderer {
     /// `render`, on the caller's thread. `base` is the capture as it was taken: the picture is made from it
     /// and the document's turns and size.
     public static func flatten(_ document: AnnotationDocument, base: CGImage) -> CGImage? {
-        flatten(document, base: base, redactionFilter: Redactor.apply)
+        flatten(document, base: base, redactionFilter: nil)
     }
 
     typealias Composite = (AnnotationDocument, CGImage, CGRect) -> CGImage?
@@ -206,7 +207,7 @@ nonisolated public enum AnnotationRenderer {
 
     static func flatten(
         _ document: AnnotationDocument, base: CGImage,
-        redactionFilter: Redactor.Filter = Redactor.apply, composite: Composite = combinedPicture
+        redactionFilter: Redactor.Filter? = nil, composite: Composite = combinedPicture
     ) -> CGImage? {
         guard let base = document.picture(from: base) else { return nil }
         let canvas = document.canvas.standardized.integral
@@ -391,7 +392,7 @@ nonisolated extension AnnotationDocument {
 
     /// Every redaction with what it draws (`Redactor.coverage`), in drawing order, each made from the picture as it
     /// lies beneath it: `source` (the picture with any combined images) with every earlier redaction on it.
-    func redactionCovers(source: Redactor.Source, filter: Redactor.Filter = Redactor.apply) -> [(item: Annotation, coverage: Redactor.Coverage?)] {
+    func redactionCovers(source: Redactor.Source, filter: Redactor.Filter? = nil) -> [(item: Annotation, coverage: Redactor.Coverage?)] {
         let covered = redactedRects
         var covers: [(item: Annotation, coverage: Redactor.Coverage?)] = []
         for item in items {

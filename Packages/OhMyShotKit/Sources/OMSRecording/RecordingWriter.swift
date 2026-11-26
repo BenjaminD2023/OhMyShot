@@ -3,6 +3,7 @@ import CoreMedia
 import Foundation
 import OMSCore
 import OSLog
+import Synchronization
 
 /// Writes a recording's samples into a QuickTime movie, on the queue the stream delivers them on.
 ///
@@ -68,6 +69,13 @@ public actor RecordingWriter {
     public nonisolated let format: RecordingFormat
     private nonisolated let queue: DispatchSerialQueue
     public nonisolated var unownedExecutor: UnownedSerialExecutor { queue.asUnownedSerialExecutor() }
+    private nonisolated let microphoneMuted = Mutex(false)
+
+    /// Whether incoming microphone buffers are silenced live without stopping the stream.
+    public nonisolated var isMicrophoneMuted: Bool {
+        get { microphoneMuted.withLock { $0 } }
+        set { microphoneMuted.withLock { $0 = newValue } }
+    }
 
     private let writer: AVAssetWriter
     private let video: AVAssetWriterInput
@@ -221,8 +229,17 @@ public actor RecordingWriter {
             statistics.audioBuffersDropped += 1
             return
         }
-        guard let retimed = output == time ? sample : Self.retimed(sample, to: output) else { return }
-        if input.append(retimed) {
+        let prepared: CMSampleBuffer?
+        if track == .microphone, isMicrophoneMuted {
+            prepared = Self.silenced(sample, at: output)
+        } else {
+            prepared = output == time ? sample : Self.retimed(sample, to: output)
+        }
+        guard let prepared else {
+            statistics.audioBuffersDropped += 1
+            return
+        }
+        if input.append(prepared) {
             audioEnds[track] = output + duration
             switch track {
             case .systemAudio: statistics.audioBuffersWritten += 1
@@ -385,5 +402,33 @@ public actor RecordingWriter {
             allocator: nil, sampleBuffer: sample, sampleTimingEntryCount: 1, sampleTimingArray: &timing, sampleBufferOut: &copy
         )
         return status == noErr ? copy : nil
+    }
+
+    /// A zeroed linear-PCM copy of `sample` presented at `time`, keeping audio track timing continuous while muted.
+    static func silenced(_ sample: CMSampleBuffer, at time: CMTime) -> CMSampleBuffer? {
+        guard
+            let description = sample.formatDescription,
+            let asbd = description.audioStreamBasicDescription,
+            asbd.mFormatID == kAudioFormatLinearPCM,
+            let sourceBlock = CMSampleBufferGetDataBuffer(sample)
+        else { return nil }
+        let length = CMBlockBufferGetDataLength(sourceBlock)
+        let sampleCount = CMSampleBufferGetNumSamples(sample)
+        guard length > 0, sampleCount > 0 else { return nil }
+        var block: CMBlockBuffer?
+        let allocStatus = CMBlockBufferCreateWithMemoryBlock(
+            allocator: nil, memoryBlock: nil, blockLength: length, blockAllocator: nil, customBlockSource: nil,
+            offsetToData: 0, dataLength: length, flags: kCMBlockBufferAssureMemoryNowFlag, blockBufferOut: &block
+        )
+        guard allocStatus == kCMBlockBufferNoErr, let block else { return nil }
+        guard CMBlockBufferFillDataBytes(with: 0, blockBuffer: block, offsetIntoDestination: 0, dataLength: length) == kCMBlockBufferNoErr else {
+            return nil
+        }
+        var silent: CMSampleBuffer?
+        let status = CMAudioSampleBufferCreateReadyWithPacketDescriptions(
+            allocator: nil, dataBuffer: block, formatDescription: description, sampleCount: sampleCount,
+            presentationTimeStamp: time, packetDescriptions: nil, sampleBufferOut: &silent
+        )
+        return status == noErr ? silent : nil
     }
 }

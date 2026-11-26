@@ -27,7 +27,12 @@ extension OCRTable {
     /// Tab-separated values, as spreadsheets paste them; tabs and line breaks in cells become spaces.
     public var tsv: String {
         paddedRows.map { row in
-            row.map { $0.replacingOccurrences(of: "\t", with: " ").replacingOccurrences(of: "\n", with: " ") }.joined(separator: "\t")
+            row.map {
+                $0.replacingOccurrences(of: "\r\n", with: " ")
+                    .replacingOccurrences(of: "\r", with: " ")
+                    .replacingOccurrences(of: "\n", with: " ")
+                    .replacingOccurrences(of: "\t", with: " ")
+            }.joined(separator: "\t")
         }.joined(separator: "\n")
     }
 
@@ -45,7 +50,8 @@ extension OCRTable {
     }
 
     private static func csvField(_ field: String) -> String {
-        guard field.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) else { return field }
+        // Check unicodeScalars because Swift treats "\r\n" as a single grapheme cluster that equals neither "\r" nor "\n".
+        guard field.unicodeScalars.contains(where: { $0 == "," || $0 == "\"" || $0 == "\n" || $0 == "\r" }) else { return field }
         return "\"" + field.replacingOccurrences(of: "\"", with: "\"\"") + "\""
     }
 

@@ -1,4 +1,5 @@
 import AppKit
+import CoreGraphics
 import OMSDesign
 import Observation
 import OMSCore
@@ -43,6 +44,10 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         public var upload: ((_ file: URL, _ destination: UUID?) -> Void)?
         /// Whether the capture is uploading now. A capture uploads once at a time, so Upload waits for that one to end.
         public var isUploading: () -> Bool = { false }
+        /// Opens text recognition on the rendered capture. Nil when the editor offers no Recognize Text.
+        public var recognizeText: ((_ image: CGImage, _ scale: CGFloat, _ title: String) -> Void)?
+        /// Prints the rendered capture; nil prints directly from this window with `ImagePrinter`.
+        public var print: ((_ image: CGImage, _ scale: CGFloat, _ title: String, _ window: NSWindow?) -> Void)?
 
         public init(keep: @escaping (AnnotationDocument, Data, CGImage) -> URL?, save: @escaping (URL) async -> URL?) {
             self.keep = keep
@@ -50,9 +55,25 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         }
     }
 
+    enum CloseChoice {
+        case save
+        case dontSave
+        case cancel
+    }
+
     public var onClose: (() -> Void)?
+    /// Whether closing with unsaved changes prompts Save / Don't Save / Cancel instead of silently
+    /// overwriting the file on disk (true for external `.ohmyshot` projects; false for History captures).
+    public var confirmsSaveOnClose = false
+    /// Overridable close-confirmation presenter for tests.
+    var confirmSaveOnClose: ((_ title: String, _ completion: @escaping @MainActor (CloseChoice) -> Void) -> Void)?
     public let session: AnnotationSession
     public private(set) var presentation: Presentation
+
+    /// Current thumbnail shown by `DragOutHandle`, exposed for tests.
+    var currentThumbnail: CGImage? { model.thumbnail }
+    /// Whether the Picture › Revert to Original action is currently enabled.
+    var canRevertToOriginal: Bool { model.canRevertToOriginal }
 
     private let model: EditorModel
     let content: EditorContentView
@@ -63,6 +84,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     public private(set) var didClose = false
     /// The Image Size sheet, while it is down.
     private var imageSizeSheet: NSWindow?
+    /// Background render task keeping `DragOutHandle`'s preview thumbnail in sync with edits.
+    private var thumbnailTask: Task<Void, Never>?
 
     /// - Parameters:
     ///   - image: the capture as it was taken.
@@ -88,11 +111,14 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
         window.minSize = presentation == .preview ? Self.previewMinimumSize : Self.minimumSize
+        window.isDocumentEdited = session.hasUnkeptChanges
         super.init(window: window)
         model.controller = self
         model.presentation = presentation
         model.thumbnail = session.picture
         model.locksCanvas = session.locksCanvas
+        model.canRevertToOriginal = session.canRevertToOriginal
+        model.hasSelection = !session.selection.isEmpty
         let hosting = NSHostingController(rootView: EditorView(model: model, content: content))
         hosting.sceneBridgingOptions = [.toolbars]
         hosting.sizingOptions = []
@@ -110,12 +136,22 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         }
         content.canvas.onPrint = { [weak self] in self?.printCapture() }
         content.canvas.onImageSize = { [weak self] in self?.presentImageSize() }
+        content.canvas.onUndoStateChange = { [weak self] in self?.undoChanged() }
         content.onViewportChange = { [weak self] in self?.updateZoomLabel() }
         content.onClosePreview = { [weak self] in self?.window?.performClose(nil) }
         session.observe { [weak self] event in
             guard let self else { return }
             if event == .history || event == .document { undoChanged() }
-            if event == .document, model.thumbnail !== session.picture { model.thumbnail = session.picture }
+            if event == .document {
+                updateWindowSubtitle()
+                model.canRevertToOriginal = session.canRevertToOriginal
+            }
+            if event == .selection || event == .document {
+                model.hasSelection = !session.selection.isEmpty
+            }
+            if (event == .document && !session.isInLiveChange) || event == .history {
+                scheduleThumbnailRefresh()
+            }
             if event == .settings { model.locksCanvas = session.locksCanvas }
             // An advanced tool chosen by its existing keyboard shortcut, or an advanced mark selected
             // in an older capture, opens the full controls without replacing the document.
@@ -126,6 +162,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 }
             }
         }
+        updateWindowSubtitle()
+        if !session.document.isEmpty { scheduleThumbnailRefresh() }
     }
 
     @available(*, unavailable)
@@ -136,7 +174,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     /// The smallest the window goes: room for the rail (534 pt) above the capsule's resting band (under the
     /// toolbar's 52 pt), and for the widest the style capsule is (the redaction's with a reading that failed
     /// and a full row of kept colors, 884 pt, beside the rail with 8 pt to spare). A test measures them.
-    static let minimumSize = CGSize(width: 954, height: 668)
+    static let minimumSize = CGSize(width: 996, height: 672)
     /// The shorter preview rail and its bottom style band need less vertical space than the editor.
     static let previewMinimumSize = CGSize(width: 880, height: 480)
 
@@ -148,7 +186,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         let width = if presentation == .preview {
             min(max(picture.width + 100, previewMinimumSize.width), max(previewMinimumSize.width, min(960, visible.width * 0.8)))
         } else {
-            min(max(picture.width + 72 + 28, 920), visible.width * 0.9)
+            min(max(picture.width + 72 + 28, minimumSize.width), visible.width * 0.9)
         }
         let height = if presentation == .preview {
             min(max(picture.height + 120, 520), max(previewMinimumSize.height, min(620, visible.height * 0.75)))
@@ -156,6 +194,13 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
             min(max(picture.height + 24 + 62 + 52, minimumSize.height), visible.height * 0.9)
         }
         return CGSize(width: width.rounded(), height: height.rounded())
+    }
+
+    /// Positions this editor's window cascaded from `reference` so multiple editors stay clearly visible.
+    public func cascade(from reference: NSWindow) {
+        guard let window, window !== reference else { return }
+        let nextTopLeft = reference.cascadeTopLeft(from: .zero)
+        window.cascadeTopLeft(from: nextTopLeft)
     }
 
     /// Reveals the complete editor in the same window, retaining the canvas, text edit, crop and undo history.
@@ -366,6 +411,23 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         let task = Task { () -> Bool in
             defer { closing = nil }
             guard let window, window.attachedSheet == nil else { return false }
+            self.content.canvas.endEditing()
+            if !self.session.hasUnkeptChanges {
+                window.close()
+                return true
+            }
+            if self.confirmsSaveOnClose {
+                switch await self.askSaveOnClose(for: window) {
+                case .save:
+                    break
+                case .dontSave:
+                    guard window.attachedSheet == nil else { return false }
+                    window.close()
+                    return true
+                case .cancel:
+                    return false
+                }
+            }
             let mayClose = await EditorCloseRecovery.mayClose {
                 self.content.canvas.endEditing()
                 guard await self.exportAndKeep() != nil else { return .failed }
@@ -401,6 +463,34 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         return task
     }
 
+    private func askSaveOnClose(for window: NSWindow) async -> CloseChoice {
+        if let confirmSaveOnClose {
+            return await withCheckedContinuation { continuation in
+                confirmSaveOnClose(window.title) { choice in
+                    continuation.resume(returning: choice)
+                }
+            }
+        }
+        guard window.attachedSheet == nil else { return .cancel }
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = String(localized: "Do you want to save the changes made to “\(window.title)”?", bundle: .module)
+        alert.informativeText = String(localized: "Your changes will be lost if you don’t save them.", bundle: .module)
+        alert.addButton(withTitle: String(localized: "Save", bundle: .module))
+        let cancelButton = alert.addButton(withTitle: String(localized: "Cancel", bundle: .module))
+        cancelButton.keyEquivalent = "\u{1b}"
+        let dontSaveButton = alert.addButton(withTitle: String(localized: "Don’t Save", bundle: .module))
+        dontSaveButton.hasDestructiveAction = true
+        dontSaveButton.keyEquivalent = "d"
+        dontSaveButton.keyEquivalentModifierMask = .command
+        AppActivation.bringForward(window)
+        switch await alert.beginSheetModal(for: window) {
+        case .alertFirstButtonReturn: return .save
+        case .alertThirdButtonReturn: return .dontSave
+        default: return .cancel
+        }
+    }
+
     /// Destinations are set up in Settings, so coming back from there brings the Upload entries up to date.
     public func windowDidBecomeKey(_ notification: Notification) {
         model.uploadMenu = actions.uploadMenu()
@@ -408,7 +498,10 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     public func windowWillClose(_ notification: Notification) {
         didClose = true
+        thumbnailTask?.cancel()
+        thumbnailTask = nil
         content.releaseColorPanel()
+        model.cancelFlashes()
         windowLease?.end()
         windowLease = nil
         onClose?()
@@ -418,9 +511,10 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     public func keepNow() {
         content.canvas.endEditing()
         let document = session.document
-        guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(document, base: session.base), let png = try? ImageExporter.encoded(image, as: .png),
+        guard session.hasUnkeptChanges, let image = AnnotationRenderer.flatten(document, base: session.base), let png = try? ImageExporter.encoded(image, as: .png, pixelsPerPoint: Double(document.scale)),
               let url = actions.keep(document, png, image) else { return }
         fileURL = url
+        model.thumbnail = Self.scaledThumbnail(from: image)
         if session.document == document { session.markKept() }
     }
 
@@ -450,9 +544,9 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
                 VoiceOver.announce(String(localized: "The picture couldn’t be copied.", bundle: .module), from: content.canvas)
                 return
             }
-            model.flashCopied()
-            VoiceOver.announce(String(localized: "Copied", bundle: .module), from: content.canvas)
-            _ = keep(rendered)
+            if !closesAfterCopy { model.flashCopied() }
+            VoiceOver.announce(String(localized: "Copied", bundle: .module), from: closesAfterCopy ? nil : content.canvas)
+            if !confirmsSaveOnClose { _ = keep(rendered) }
             if closesAfterCopy { window?.performClose(nil) }
         }
     }
@@ -476,6 +570,8 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
 
     var offersPin: Bool { actions.pin != nil }
 
+    var offersRecognizeText: Bool { actions.recognizeText != nil }
+
     /// Pins the picture as it looks now, its edits kept in the capture first, as Copy keeps them. The window stays open.
     @discardableResult
     func pin() -> Task<Void, Never> {
@@ -484,7 +580,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
             guard let pin = actions.pin else { return }
             guard let rendered = await render() else { return NSSound.beep() }
             // A failed keep gives the pin its own picture without the stale capture identity.
-            let kept = keep(rendered) != nil
+            let kept = confirmsSaveOnClose ? false : keep(rendered) != nil
             pin(rendered.image, rendered.document.scale, kept)
         }
     }
@@ -496,9 +592,29 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.endEditing()
         return Task {
             guard let upload = actions.upload else { return }
-            guard !actions.isUploading(), let file = await exportAndKeep() else { return NSSound.beep() }
+            guard !actions.isUploading(), let file = await prepareFileForHandOver(applyFormat: false) else { return NSSound.beep() }
             upload(file, destination)
         }
+    }
+
+    /// Opens the OCR panel on the rendered capture.
+    @discardableResult
+    func recognizeText() -> Task<Void, Never> {
+        content.canvas.endEditing()
+        return Task {
+            guard let recognizeAction = actions.recognizeText else { return }
+            guard let image = await session.render() else {
+                NSSound.beep()
+                return
+            }
+            recognizeAction(image, session.document.scale, window?.title ?? "")
+        }
+    }
+
+    /// Switches to Background mode and opens the Adjust popover scrolled/focused on Watermark.
+    func showWatermark() {
+        content.canvas.endEditing()
+        content.showWatermarkAdjustments()
     }
 
     /// Offers the capture to the system's share menu, its edits kept, in the format Settings choose, as a card's
@@ -513,11 +629,11 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         }
     }
 
-    /// The file to share, with the edits kept in it first; nil when they could not be kept.
+    /// The file to share, with the edits kept in it first (or rendered to the preview file for external projects);
+    /// nil when they could not be kept or rendered.
     func fileForSharing() async -> URL? {
         content.canvas.endEditing()
-        guard let file = await exportAndKeep() else { return nil }
-        return actions.fileToHandOver(file)
+        return await prepareFileForHandOver(applyFormat: true)
     }
 
     /// Asks where to save a copy of the picture as it looks now, and in what format and how, then saves it there. The
@@ -567,7 +683,12 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         content.canvas.endEditing()
         Task {
             guard let image = await session.render() else { return NSSound.beep() }
-            ImagePrinter.print(image, pixelsPerPoint: session.document.scale, title: window?.title ?? "", from: window)
+            let title = window?.title ?? ""
+            if let printAction = actions.print {
+                printAction(image, session.document.scale, title, window)
+            } else {
+                ImagePrinter.print(image, pixelsPerPoint: session.document.scale, title: title, from: window)
+            }
         }
     }
 
@@ -616,9 +737,24 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         if resizing, model.canResize { content.canvas.resizePicture(to: model.sizing.size) }
     }
 
-    /// The file to drag out, with the edits kept in it first.
+    /// The file to drag out, with the edits kept in it first (or rendered to the preview file for external projects).
     func fileForDragging() -> URL? {
         content.canvas.endEditing()
+        if confirmsSaveOnClose {
+            guard let fileURL else { return nil }
+            if session.hasUnkeptChanges {
+                let document = session.document
+                guard let image = AnnotationRenderer.flatten(document, base: session.base),
+                      let png = try? ImageExporter.encoded(image, as: .png) else { return nil }
+                do {
+                    try png.write(to: fileURL, options: .atomic)
+                    model.thumbnail = Self.scaledThumbnail(from: image)
+                } catch {
+                    return nil
+                }
+            }
+            return actions.fileToHandOver(fileURL)
+        }
         keepNow()
         // Edits that could not be kept are not in the file: handing it over would drop them.
         guard !session.hasUnkeptChanges, let fileURL else { return nil }
@@ -626,8 +762,77 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
     }
 
     private func undoChanged() {
-        model.canUndo = session.undoManager.canUndo
-        model.canRedo = session.undoManager.canRedo
+        let manager = content.canvas.activeUndoManager
+        model.canUndo = manager.canUndo
+        model.canRedo = manager.canRedo
+        window?.isDocumentEdited = session.hasUnkeptChanges
+    }
+
+    private func updateWindowSubtitle() {
+        let output = (session.backdropLayout?.output ?? session.document.canvas.standardized).integral
+        window?.subtitle = String(localized: "\(Int(output.width)) × \(Int(output.height)) px", bundle: .module)
+    }
+
+    /// Re-renders `DragOutHandle`'s thumbnail off the main actor after edits settle so toolbar and drag previews stay in sync.
+    private func scheduleThumbnailRefresh() {
+        thumbnailTask?.cancel()
+        thumbnailTask = nil
+        let document = session.document
+        if document.isEmpty {
+            if model.thumbnail !== session.picture { model.thumbnail = session.picture }
+            return
+        }
+        let base = session.base
+        thumbnailTask = Task { [weak self] in
+            guard let thumb = await Self.renderThumbnail(document, base: base) else { return }
+            guard !Task.isCancelled, let self, self.session.document == document else { return }
+            self.model.thumbnail = thumb
+        }
+    }
+
+    @concurrent
+    private static func renderThumbnail(_ document: AnnotationDocument, base: CGImage) async -> CGImage? {
+        guard let image = AnnotationRenderer.flatten(document, base: base) else { return nil }
+        return scaledThumbnail(from: image)
+    }
+
+    nonisolated private static func scaledThumbnail(from image: CGImage) -> CGImage {
+        let maxSide: CGFloat = 128
+        let width = CGFloat(image.width)
+        let height = CGFloat(image.height)
+        let longest = max(width, height)
+        guard longest > maxSide, width > 0, height > 0 else { return image }
+        let factor = maxSide / longest
+        let targetWidth = max(1, Int((width * factor).rounded()))
+        let targetHeight = max(1, Int((height * factor).rounded()))
+        let space = image.colorSpace.flatMap { $0.model == .rgb ? $0 : nil } ?? CGColorSpace(name: CGColorSpace.sRGB)!
+        guard let context = CGContext(
+            data: nil, width: targetWidth, height: targetHeight, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+            bitmapInfo: CGImageAlphaInfo.premultipliedFirst.rawValue | CGBitmapInfo.byteOrder32Little.rawValue
+        ) else { return image }
+        context.interpolationQuality = .high
+        context.draw(image, in: CGRect(x: 0, y: 0, width: targetWidth, height: targetHeight))
+        return context.makeImage() ?? image
+    }
+
+    /// Returns a file URL reflecting the latest edits for Share / Upload: History captures keep edits first;
+    /// external projects render to their cached preview PNG without silently overwriting the `.ohmyshot` file on disk.
+    private func prepareFileForHandOver(applyFormat: Bool) async -> URL? {
+        if confirmsSaveOnClose {
+            guard let fileURL else { return nil }
+            if session.hasUnkeptChanges {
+                guard let rendered = await render() else { return nil }
+                do {
+                    try rendered.png.write(to: fileURL, options: .atomic)
+                    model.thumbnail = Self.scaledThumbnail(from: rendered.image)
+                } catch {
+                    return nil
+                }
+            }
+            return applyFormat ? actions.fileToHandOver(fileURL) : fileURL
+        }
+        guard let file = await exportAndKeep() else { return nil }
+        return applyFormat ? actions.fileToHandOver(file) : file
     }
 
     private func updateZoomLabel() {
@@ -665,6 +870,7 @@ public final class AnnotationEditorWindowController: NSWindowController, NSWindo
         guard session.hasUnkeptChanges else { return fileURL }
         guard let url = actions.keep(rendered.document, rendered.png, rendered.image) else { return nil }
         fileURL = url
+        model.thumbnail = Self.scaledThumbnail(from: rendered.image)
         if session.document == rendered.document { session.markKept() }
         return url
     }
@@ -709,6 +915,10 @@ final class EditorModel {
     var saved = false
     /// Whether the canvas is locked, for the Picture menu's check.
     var locksCanvas = false
+    /// Whether the document has edits that can be reverted back to the original capture.
+    var canRevertToOriginal = false
+    /// Whether any marks are selected, for the Arrange menu items.
+    var hasSelection = false
     /// What Save Options offers for uploading.
     var uploadMenu: UploadMenu = .hidden
     /// The picture the drag-out handle shows.
@@ -736,11 +946,24 @@ final class EditorModel {
             self?.saved = false
         }
     }
+
+    func cancelFlashes() {
+        copiedReset?.cancel()
+        copiedReset = nil
+        savedReset?.cancel()
+        savedReset = nil
+    }
 }
 
 struct EditorView: View {
     @Bindable var model: EditorModel
     let content: EditorContentView
+
+    static var copyActionTitle: String { String(localized: "Copy & Close", bundle: .module) }
+    static var copyActionHelp: String {
+        String(localized: "Copy the edited capture and close this window (Return). Press ⌘C to copy without closing.", bundle: .module)
+    }
+    static var copyWithoutClosingTitle: String { String(localized: "Copy Without Closing (⌘C)", bundle: .module) }
 
     var body: some View {
         EditorArea(content: content)
@@ -772,6 +995,7 @@ struct EditorView: View {
             ToolbarItem(placement: .primaryAction) {
                 Menu {
                     Button { canvas.showImageSize(nil) } label: { Text("Image Size… (⌥⌘I)", bundle: .module) }
+                    Button { model.controller?.showWatermark() } label: { Text("Watermark…", bundle: .module) }
                     Divider()
                     Button { canvas.rotateLeft(nil) } label: { Text("Rotate Left (⌘L)", bundle: .module) }
                     Button { canvas.rotateRight(nil) } label: { Text("Rotate Right (⌘R)", bundle: .module) }
@@ -781,6 +1005,17 @@ struct EditorView: View {
                     Toggle(isOn: Binding(get: { model.locksCanvas }, set: { _ in canvas.toggleCanvasLock(nil) })) {
                         Text("Lock Canvas", bundle: .module)
                     }
+                    Divider()
+                    Menu {
+                        Button { canvas.bringToFront(nil) } label: { Text("Bring to Front (⇧⌘])", bundle: .module) }
+                        Button { canvas.bringForward(nil) } label: { Text("Bring Forward (⌘])", bundle: .module) }
+                        Button { canvas.sendBackward(nil) } label: { Text("Send Backward (⌘[)", bundle: .module) }
+                        Button { canvas.sendToBack(nil) } label: { Text("Send to Back (⇧⌘[)", bundle: .module) }
+                    } label: { Text("Arrange", bundle: .module) }
+                    .disabled(!model.hasSelection)
+                    Divider()
+                    Button { canvas.revertToOriginal(nil) } label: { Text("Revert to Original", bundle: .module) }
+                        .disabled(!model.canRevertToOriginal)
                 } label: {
                     Label { Text("Picture", bundle: .module) } icon: { Image(systemName: "crop.rotate") }
                 }
@@ -790,7 +1025,7 @@ struct EditorView: View {
         ToolbarItem(placement: .primaryAction) {
             Menu {
                 Button { canvas.zoomToFit() } label: { Text("Zoom to Fit (⌘0)", bundle: .module) }
-                Button { canvas.zoomToActualSize() } label: { Text("Actual Size", bundle: .module) }
+                Button { canvas.zoomToActualSize() } label: { Text("Actual Size (⌘1)", bundle: .module) }
                 Divider()
                 Button { canvas.zoomIn() } label: { Text("Zoom In (⌘+)", bundle: .module) }
                 Button { canvas.zoomOut() } label: { Text("Zoom Out (⌘−)", bundle: .module) }
@@ -839,6 +1074,12 @@ struct EditorView: View {
                         Text("Save a Copy as Project…", bundle: .module)
                     }
                     Divider()
+                    Button { model.controller?.copyCapture(thenClose: false) } label: { Text(verbatim: Self.copyWithoutClosingTitle) }
+                    Divider()
+                    if model.controller?.offersRecognizeText == true {
+                        Button { model.controller?.recognizeText() } label: { Text("Recognize Text…", bundle: .module) }
+                    }
+                    Button { model.controller?.printCapture() } label: { Text("Print… (⌘P)", bundle: .module) }
                     if model.controller?.offersPin == true {
                         Button {
                             model.controller?.pin()
@@ -908,14 +1149,14 @@ struct EditorView: View {
                 model.controller?.copyCapture(thenClose: true)
             } label: {
                 Label {
-                    model.copied ? Text("Copied", bundle: .module) : Text("Copy", bundle: .module)
+                    model.copied ? Text("Copied", bundle: .module) : Text(verbatim: Self.copyActionTitle)
                 } icon: {
                     Image(systemName: model.copied ? "checkmark" : "doc.on.doc")
                 }
                 .labelStyle(.titleAndIcon)
             }
             .buttonStyle(.glassProminent)
-            .help(Text("Copy the capture with its marks (⌘C)", bundle: .module))
+            .help(Text(verbatim: Self.copyActionHelp))
         }
     }
 }

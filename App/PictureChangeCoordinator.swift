@@ -64,7 +64,8 @@ final class PictureChangeCoordinator {
         guard current.availability == .available, let entry = record(of: item),
               let change = change.resolved(pixelsPerPoint: current.pixelsPerPoint)
         else { return NSSound.beep() }
-        guard let picture = await Self.changedPicture(at: history.fileURL(for: entry), by: change) else {
+        let outputScale: Double? = if case .scaleToOneX = change { 1 } else { current.pixelsPerPoint }
+        guard let picture = await Self.changedPicture(at: history.fileURL(for: entry), by: change, pixelsPerPoint: outputScale) else {
             Log.capture.error("Changing the picture of \(entry.fileName, privacy: .private) failed")
             return NSSound.beep()
         }
@@ -85,11 +86,11 @@ final class PictureChangeCoordinator {
     /// The picture in the file after the change, as a PNG, read and made off the main actor at its full size:
     /// scrolling captures are tens of thousands of pixels long.
     @concurrent
-    private static func changedPicture(at url: URL, by change: PictureChange) async -> (data: Data, width: Int, height: Int)? {
+    private static func changedPicture(at url: URL, by change: PictureChange, pixelsPerPoint: Double?) async -> (data: Data, width: Int, height: Int)? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, [kCGImageSourceShouldCache: false] as CFDictionary),
               let image = CGImageSourceCreateImageAtIndex(source, 0, nil),
               let changed = change.apply(to: image),
-              let data = try? await ImageExporter.encode(changed, as: .png)
+              let data = try? await ImageExporter.encode(changed, as: .png, pixelsPerPoint: pixelsPerPoint)
         else { return nil }
         return (data, changed.width, changed.height)
     }

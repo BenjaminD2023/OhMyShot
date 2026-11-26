@@ -471,4 +471,35 @@ struct TextReaderToolTests {
         try await Task.sleep(for: .milliseconds(100))
         #expect(updates.withLock { $0 } == stoppedAt)
     }
+
+    @Test func elementsTimeoutAccountsForFormulasAlongsideVLM() {
+        let formulas = URL(filePath: "/packs/formula")
+        let vlm = URL(filePath: "/packs/vlm")
+        // VLM only: budget plus short startup/teardown allowance.
+        #expect(TextReaderTool.elementsTimeout(formulas: nil, vlm: vlm, seconds: 0.1, override: nil) == .seconds(0.1) + .seconds(2))
+        // Formulas + VLM: includes FormulaReader's 30 s budget so short VLM waits never kill multi-formula runs.
+        #expect(TextReaderTool.elementsTimeout(formulas: formulas, vlm: vlm, seconds: 10, override: nil) == .seconds(45))
+        // Formulas without VLM: uses full default deadline even if a stale VLM budget was passed.
+        #expect(TextReaderTool.elementsTimeout(formulas: formulas, vlm: nil, seconds: 10, override: nil) == .seconds(120))
+        #expect(TextReaderTool.elementsTimeout(formulas: formulas, vlm: nil, seconds: nil, override: nil) == .seconds(120))
+        // Explicit timeout override is always preserved.
+        #expect(TextReaderTool.elementsTimeout(formulas: formulas, vlm: vlm, seconds: 10, override: .seconds(2)) == .seconds(2))
+    }
+
+    @Test func formulasWithoutVLMOmitSecondsFromTheJob() async throws {
+        let reader = try helper(answering + """
+
+        case "$line" in *'"seconds"'*) exit 6 ;; esac
+        case "$line" in *'"formulas":"/packs/formula"'*) ;; *) exit 7 ;; esac
+        printf '{"id":"%s","formulas":[{"kind":"display","box":[[1,2],[3,4]],"latex":"x^2"}]}\\n' "$id"
+        """)
+        defer { try? FileManager.default.removeItem(at: reader.deletingLastPathComponent()) }
+        let resources = ActiveResources()
+        let read = try await TextReaderTool.elements(
+            ofPictureAt: URL(filePath: "/tmp/p.png"), formulas: URL(filePath: "/packs/formula"), vlm: nil, seconds: 10,
+            helper: reader, resources: resources
+        )
+        #expect(read.formulas.map(\.latex) == ["x^2"])
+        #expect(resources.isIdle)
+    }
 }

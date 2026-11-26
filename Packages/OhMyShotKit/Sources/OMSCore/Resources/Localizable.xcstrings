@@ -149,6 +149,40 @@
         }
       }
     },
+    "Access key ID" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ID de la clave de acceso"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Identifiant de clé d’accès"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "アクセスキーID"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "访问密钥 ID"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "存取密鑰 ID"
+          }
+        }
+      }
+    },
     "Actual Size" : {
       "localizations" : {
         "es" : {
@@ -251,6 +285,40 @@
         }
       }
     },
+    "Call: %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Llamar: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Appeler : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電話：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "拨打：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "撥打：%@"
+          }
+        }
+      }
+    },
     "Chinese and Japanese Text" : {
       "localizations" : {
         "es" : {
@@ -315,6 +383,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "雲端模型"
+          }
+        }
+      }
+    },
+    "Contact Card" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Tarjeta de contacto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Fiche de contact"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連絡先カード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "联系人名片"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聯絡人名片"
+          }
+        }
+      }
+    },
+    "Contact: %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contacto: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contact : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "連絡先：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "联系人：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "聯絡人：%@"
           }
         }
       }
@@ -967,6 +1103,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "自訂上傳器"
+          }
+        }
+      }
+    },
+    "Email: %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Correo: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "E-mail : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "メール：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "邮件：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "電子郵件：%@"
           }
         }
       }
@@ -1972,6 +2142,40 @@
         }
       }
     },
+    "Note: Could not fetch this pack’s LICENSE.txt right now. Below is the standard Apache License 2.0 text. The pack’s own LICENSE.txt (including any author notices and modification notes) will still be downloaded and verified by SHA-256 during download." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Nota: No se ha podido obtener el archivo LICENSE.txt de este paquete en este momento. A continuación se muestra el texto estándar de Apache License 2.0. El archivo LICENSE.txt propio del paquete (incluidos los avisos de autoría y las notas de modificación) se descargará igualmente y se verificará mediante SHA-256 durante la descarga."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Remarque : impossible de récupérer le fichier LICENSE.txt de ce pack pour le moment. Vous trouverez ci-dessous le texte standard de la licence Apache 2.0. Le fichier LICENSE.txt propre au pack (y compris les mentions d’auteur et les notes de modification) sera tout de même téléchargé et vérifié par SHA-256 lors du téléchargement."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注：現在このパックのLICENSE.txtを取得できませんでした。以下は標準のApache License 2.0の全文です。パック固有のLICENSE.txt（著作権表示や変更点に関する注記を含む）は、ダウンロード時に引き続きダウンロードされ、SHA-256で検証されます。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "提示：暂时无法获取此模型包的 LICENSE.txt。下方为标准的 Apache License 2.0 文本。下载时仍会下载此模型包自带的 LICENSE.txt（包含作者声明与修改说明）并通过 SHA-256 进行校验。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注意：目前無法取得此套件的 LICENSE.txt。以下為標準 Apache License 2.0 條款內容。下載時仍會下載此套件本身的 LICENSE.txt（包含任何作者聲明與修改說明），並以 SHA-256 進行驗證。"
+          }
+        }
+      }
+    },
     "Open Link" : {
       "localizations" : {
         "es" : {
@@ -2142,6 +2346,40 @@
         }
       }
     },
+    "Password" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Contraseña"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Mot de passe"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "パスワード"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密码"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "密碼"
+          }
+        }
+      }
+    },
     "QR Code" : {
       "localizations" : {
         "es" : {
@@ -2206,6 +2444,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "S3 相容儲存空間"
+          }
+        }
+      }
+    },
+    "Secret key" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clave secreta"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Clé secrète"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "シークレットキー"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "秘密密钥"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "私密密鑰"
           }
         }
       }
@@ -3875,6 +4147,40 @@
         }
       }
     },
+    "Wi-Fi: %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi: %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi : %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi：%@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi：%@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Wi-Fi：%@"
+          }
+        }
+      }
+    },
     "Zero" : {
       "localizations" : {
         "es" : {
@@ -3905,6 +4211,74 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "零"
+          }
+        }
+      }
+    },
+    "form field %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "campo de formulario %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "champ de formulaire %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "フォームフィールド %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表单字段 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "表單欄位 %@"
+          }
+        }
+      }
+    },
+    "header %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "cabecera %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "en-tête %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "ヘッダ %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "标头 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "標頭 %@"
           }
         }
       }
@@ -3973,6 +4347,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "macOS 封鎖了到 %@ 的未加密連線。請使用 https，或區域網路中的服務。"
+          }
+        }
+      }
+    },
+    "query parameter %@" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "parámetro de consulta %@"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "paramètre d’URL %@"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "クエリパラメータ %@"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查询参数 %@"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "查詢參數 %@"
           }
         }
       }

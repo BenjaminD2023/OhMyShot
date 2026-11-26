@@ -6,9 +6,12 @@ import UniformTypeIdentifiers
 /// One app, one preview, one capture action. Other windows stay inside their app's switcher instead of
 /// becoming a flat inventory. The panel takes key focus without activating us or moving the target.
 final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSearchFieldDelegate, NSMenuDelegate {
-    var onChoose: ((WindowTarget, RecordingChoices?) -> Void)?
+    var onChoose: ((WindowTarget, RecordingChoices?, NSEvent.ModifierFlags) -> Void)?
     var onCancel: (() -> Void)?
     var onBack: (() -> Void)?
+    var onSelectOnScreen: (() -> Void)? {
+        didSet { selectOnScreen.isHidden = onSelectOnScreen == nil }
+    }
     var onRecordingChange: ((WindowTarget, RecordingChoices) -> Void)?
 
     private let layout: DisplayLayout
@@ -28,6 +31,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
     private let windowTitle = NSTextField(labelWithString: "")
     private let windowSwitch = NSPopUpButton()
     private let capture = NSButton(title: String(localized: "Capture", bundle: .module), target: nil, action: nil)
+    private let selectOnScreen = NSButton(title: String(localized: "Select on Screen", bundle: .module), target: nil, action: nil)
     private let back: NSButton
     private let recordingBar: RecordingBar?
     private var barWidth: NSLayoutConstraint?
@@ -76,7 +80,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         panel.onCancel = { [weak self] in self?.goBack() }
         panel.onSearch = { [weak self] in self?.showSearch() }
         panel.onRefresh = { [weak self] in self?.reload() }
-        root.onConfirm = { [weak self] in self?.choose() }
+        root.onConfirm = { [weak self] modifiers in self?.choose(modifiers: modifiers) }
         root.onMove = { [weak self] step in self?.moveApplication(by: step) }
         root.onMoveWindow = { [weak self] step in self?.moveWindow(by: step) }
         // The well and the tiles draw themselves, so Increase Contrast reaches them only when they are drawn again.
@@ -114,6 +118,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         previewTask?.cancel()
         loading = nil
         previewTask = nil
+        recordingBar?.stopLevelMonitoring()
         picture.image = nil
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
         displayOptions = nil
@@ -239,28 +244,54 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         back.action = #selector(backClicked(_:))
         back.bezelStyle = .rounded
         back.isHidden = recordingBar != nil && !offersBack
+        selectOnScreen.target = self
+        selectOnScreen.action = #selector(selectOnScreenClicked(_:))
+        selectOnScreen.bezelStyle = .rounded
+        selectOnScreen.isHidden = onSelectOnScreen == nil
+        selectOnScreen.toolTip = String(localized: "Click a window directly on screen (Space)", bundle: .module)
+        selectOnScreen.setAccessibilityHelp(selectOnScreen.toolTip)
+        selectOnScreen.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        (selectOnScreen.cell as? NSButtonCell)?.lineBreakMode = .byTruncatingTail
         capture.target = self
         capture.action = #selector(captureClicked(_:))
         capture.bezelStyle = .rounded
         capture.keyEquivalent = "\r"
         capture.isHidden = recordingBar != nil
-        for view in [back, recordingBar ?? capture] {
-            view.translatesAutoresizingMaskIntoConstraints = false
-            footer.addSubview(view)
-            view.centerYAnchor.constraint(equalTo: footer.centerYAnchor).isActive = true
-        }
-        let action: NSView = recordingBar ?? capture
-        action.trailingAnchor.constraint(equalTo: footer.trailingAnchor).isActive = true
         if let recordingBar {
-            back.leadingAnchor.constraint(equalTo: footer.leadingAnchor).isActive = true
+            let leadingActions = NSStackView(views: [back, selectOnScreen])
+            leadingActions.orientation = .horizontal
+            leadingActions.spacing = 8
+            leadingActions.alignment = .centerY
+            leadingActions.detachesHiddenViews = true
+            leadingActions.translatesAutoresizingMaskIntoConstraints = false
+            recordingBar.translatesAutoresizingMaskIntoConstraints = false
+            footer.addSubview(leadingActions)
+            footer.addSubview(recordingBar)
+            NSLayoutConstraint.activate([
+                leadingActions.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
+                leadingActions.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+                leadingActions.trailingAnchor.constraint(lessThanOrEqualTo: recordingBar.leadingAnchor, constant: -8),
+                recordingBar.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
+                recordingBar.centerYAnchor.constraint(equalTo: footer.centerYAnchor),
+                recordingBar.heightAnchor.constraint(equalToConstant: RecordingBar.height),
+            ])
             barWidth = recordingBar.widthAnchor.constraint(equalToConstant: recordingBar.fittingSize.width)
             barWidth?.isActive = true
-            recordingBar.heightAnchor.constraint(equalToConstant: RecordingBar.height).isActive = true
         } else {
-            // A dialog's buttons: Cancel beside the default button, both at the trailing edge.
-            back.trailingAnchor.constraint(equalTo: capture.leadingAnchor, constant: -12).isActive = true
-            back.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
-            capture.widthAnchor.constraint(greaterThanOrEqualToConstant: 90).isActive = true
+            for view in [selectOnScreen, back, capture] {
+                view.translatesAutoresizingMaskIntoConstraints = false
+                footer.addSubview(view)
+                view.centerYAnchor.constraint(equalTo: footer.centerYAnchor).isActive = true
+            }
+            // A dialog's buttons: subtle screen-select switch at leading; Cancel beside default Capture at trailing.
+            NSLayoutConstraint.activate([
+                selectOnScreen.leadingAnchor.constraint(equalTo: footer.leadingAnchor),
+                selectOnScreen.trailingAnchor.constraint(lessThanOrEqualTo: back.leadingAnchor, constant: -12),
+                back.trailingAnchor.constraint(equalTo: capture.leadingAnchor, constant: -12),
+                back.widthAnchor.constraint(greaterThanOrEqualToConstant: 90),
+                capture.widthAnchor.constraint(greaterThanOrEqualToConstant: 90),
+                capture.trailingAnchor.constraint(equalTo: footer.trailingAnchor),
+            ])
         }
         footer.heightAnchor.constraint(equalToConstant: 42).isActive = true
         for view in [search, previewSurface, caption, appScroll, footer] {
@@ -420,9 +451,17 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
         busy ? spinner.startAnimation(nil) : spinner.stopAnimation(nil)
     }
 
-    private func choose() {
+    private static func currentModifiers() -> NSEvent.ModifierFlags {
+        if let event = NSApp?.currentEvent, event.type == .leftMouseUp || event.type == .keyDown {
+            return event.modifierFlags
+        }
+        return NSEvent.modifierFlags
+    }
+
+    private func choose(modifiers: NSEvent.ModifierFlags = WindowPickerController.currentModifiers()) {
         guard !isLoading, previewReady, let selected = model.selected else { return }
-        onChoose?(selected.target, choices)
+        recordingBar?.stopLevelMonitoring()
+        onChoose?(selected.target, choices, modifiers)
     }
 
     private func goBack() {
@@ -478,6 +517,7 @@ final class WindowPickerController: NSWindowController, NSWindowDelegate, NSSear
     @objc private func retryClicked(_ sender: Any?) { reload() }
     @objc private func searchClicked(_ sender: Any?) { showSearch() }
     @objc private func captureClicked(_ sender: Any?) { choose() }
+    @objc private func selectOnScreenClicked(_ sender: Any?) { onSelectOnScreen?() }
     @objc private func backClicked(_ sender: Any?) { goBack() }
 
     func controlTextDidChange(_ obj: Notification) {
@@ -518,14 +558,14 @@ private final class WindowPickerPanel: NSPanel {
 }
 
 private final class WindowPickerContent: NSView {
-    var onConfirm: (() -> Void)?
+    var onConfirm: ((NSEvent.ModifierFlags) -> Void)?
     var onMove: ((Int) -> Void)?
     var onMoveWindow: ((Int) -> Void)?
     override var acceptsFirstResponder: Bool { true }
     override func draw(_ dirtyRect: NSRect) { NSColor.windowBackgroundColor.setFill(); dirtyRect.fill() }
     override func keyDown(with event: NSEvent) {
         switch event.keyCode {
-        case 36, 76: onConfirm?()
+        case 36, 76: onConfirm?(event.modifierFlags)
         case 123: onMove?(-1)
         case 124: onMove?(1)
         case 126: onMoveWindow?(-1)

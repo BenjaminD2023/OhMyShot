@@ -100,6 +100,76 @@ struct CollageLayoutTests {
         let first = layout.cells[0], second = layout.cells[1]
         #expect(pixel(first.midX, first.midY) == (255, 0, 0))
         #expect(pixel(second.midX, second.midY) == (0, 0, 255))
+        #expect(image.colorSpace?.name == CGColorSpace.sRGB)
+    }
+
+    @Test func aGridHonorsExplicitColumnsAndClampsOutOfRangeValues() {
+        let sizes = Array(repeating: CGSize(width: 400, height: 300), count: 6)
+        let twoCols = CollageLayout.layout(sizes, options: .init(arrangement: .grid, width: 1000, spacing: 10, margin: 10, columns: 2))
+        let twoColRows = Dictionary(grouping: twoCols.cells, by: { Int($0.minY.rounded()) })
+        #expect(twoColRows.count == 3)
+        #expect(twoColRows.values.allSatisfy { $0.count == 2 })
+
+        let threeCols = CollageLayout.layout(sizes, options: .init(arrangement: .grid, width: 1000, spacing: 10, margin: 10, columns: 3))
+        let threeColRows = Dictionary(grouping: threeCols.cells, by: { Int($0.minY.rounded()) })
+        #expect(threeColRows.count == 2)
+        #expect(threeColRows.values.allSatisfy { $0.count == 3 })
+
+        // Clamped to 1...count.
+        let clampedLow = CollageLayout.layout(sizes, options: .init(arrangement: .grid, width: 1000, spacing: 10, margin: 10, columns: 0))
+        #expect(Dictionary(grouping: clampedLow.cells, by: { Int($0.minY.rounded()) }).count == 6)
+        let clampedHigh = CollageLayout.layout(sizes, options: .init(arrangement: .grid, width: 1000, spacing: 10, margin: 10, columns: 20))
+        #expect(Dictionary(grouping: clampedHigh.cells, by: { Int($0.minY.rounded()) }).count == 1)
+    }
+
+    @Test func collageColorPreservesDisplayP3AndRoundTripsThroughCodable() throws {
+        let p3Space = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+        let p3CG = try #require(CGColor(colorSpace: p3Space, components: [0.95, 0.25, 0.1, 1]))
+        let parsedP3 = try #require(CollageColor(cgColor: p3CG))
+        #expect(parsedP3.isDisplayP3)
+        #expect(parsedP3.cgColor.colorSpace?.name == CGColorSpace.displayP3)
+
+        let data = try JSONEncoder().encode(parsedP3)
+        let decoded = try JSONDecoder().decode(CollageColor.self, from: data)
+        #expect(decoded == parsedP3)
+
+        let srgbCG = CGColor(srgbRed: 0.2, green: 0.4, blue: 0.6, alpha: 1)
+        let parsedSRGB = try #require(CollageColor(cgColor: srgbCG))
+        #expect(!parsedSRGB.isDisplayP3)
+        #expect(parsedSRGB.cgColor.colorSpace?.name == CGColorSpace.sRGB)
+    }
+
+    @Test func theRendererPreservesDisplayP3AndCustomBackgroundColors() throws {
+        let srgbSpace = try #require(CGColorSpace(name: CGColorSpace.sRGB))
+        let p3Space = try #require(CGColorSpace(name: CGColorSpace.displayP3))
+        func solid(_ red: CGFloat, _ green: CGFloat, _ blue: CGFloat, space: CGColorSpace) throws -> CGImage {
+            let context = try #require(CGContext(
+                data: nil, width: 40, height: 20, bitsPerComponent: 8, bytesPerRow: 0, space: space,
+                bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue
+            ))
+            let color = try #require(CGColor(colorSpace: space, components: [red, green, blue, 1]))
+            context.setFillColor(color)
+            context.fill(CGRect(x: 0, y: 0, width: 40, height: 20))
+            return try #require(context.makeImage())
+        }
+
+        let mixed = [
+            CollageRenderer.Picture(image: try solid(0.2, 0.4, 0.6, space: srgbSpace), size: CGSize(width: 40, height: 20)),
+            CollageRenderer.Picture(image: try solid(1, 0, 0, space: p3Space), size: CGSize(width: 40, height: 20)),
+        ]
+        let layout = CollageLayout.layout(mixed.map(\.size), options: .init(arrangement: .row, width: 200, spacing: 10, margin: 20))
+        let customBackground = CollageColor(red: 0.1, green: 0.8, blue: 0.4, alpha: 1, isDisplayP3: true)
+        let p3Result = try #require(CollageRenderer.render(
+            mixed, layout: layout, fitting: .fit, cornerRadius: 0, background: customBackground.cgColor, scale: 1
+        ))
+        #expect(p3Result.colorSpace?.name == CGColorSpace.displayP3)
+
+        // Margin pixel matches the custom background color.
+        let data = try #require(p3Result.dataProvider?.data as Data?)
+        let offset = 5 * p3Result.bytesPerRow + 5 * 4
+        #expect(abs(Int(data[offset]) - 26) <= 2)
+        #expect(abs(Int(data[offset + 1]) - 204) <= 2)
+        #expect(abs(Int(data[offset + 2]) - 102) <= 2)
     }
 }
 

@@ -198,6 +198,20 @@ struct MeasureCaptureTests {
         #expect(overlay.measurement == nil && !overlay.isFindingEdges)
     }
 
+    @Test func cancellingTheBoxRejectsQueuedCaptureAndPendingEdgeWork() async throws {
+        let overlay = try await largeFixture()
+        defer { overlay.clear() }
+        var captures: [CGRect] = []
+        overlay.onCapture = { captures.append($0) }
+        try selectLargeArea(overlay)
+        overlay.beginBox(at: CGPoint(x: 400, y: 300))
+        overlay.endBox(at: CGPoint(x: 400, y: 300))
+        overlay.cancelBox()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(captures.isEmpty)
+        #expect(overlay.showsLines && !overlay.isFindingEdges)
+    }
+
     @Test func replacingTheFrozenFrameRejectsOldBoundsAndQueuedCapture() async throws {
         let overlay = try await largeFixture()
         defer { overlay.clear() }

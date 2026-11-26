@@ -51,4 +51,32 @@ struct ReadingOrderTests {
         #expect(VisionPipeline.Options.preferred(["zh-Hans-CN"]).fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["en"]])
         #expect(VisionPipeline.Options.preferred(["ko-KR", "en-US"]).fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["ko", "en"], ["en"]])
     }
+
+    @Test func configuredLanguagesControlPrimaryFallbackAndCJKGating() {
+        let korean = VisionPipeline.Options.configured(["ko-KR", "en-US"])
+        #expect(korean.primaryLanguages.map(\.minimalIdentifier) == ["ko", "en"])
+        #expect(korean.fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["en"]])
+        #expect(!VisionPipeline(options: korean).primaryIsCJK)
+
+        let russianFrench = VisionPipeline.Options.configured(["ru-RU", "fr-FR"])
+        #expect(russianFrench.primaryLanguages.map(\.minimalIdentifier) == ["ru", "fr"])
+        #expect(russianFrench.fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["fr", "en"], ["en"]])
+        #expect(!VisionPipeline(options: russianFrench).primaryIsCJK)
+
+        let englishOnly = VisionPipeline.Options.configured(["en-US"])
+        #expect(englishOnly.primaryLanguages.map(\.minimalIdentifier) == ["en"])
+        #expect(englishOnly.fallbackLanguages.isEmpty)
+        #expect(!VisionPipeline(options: englishOnly).primaryIsCJK)
+
+        let deduplicated = VisionPipeline.Options.configured([" ko-KR ", "ko", "", "  ", "en-US", "en"])
+        #expect(deduplicated.primaryLanguages.map(\.minimalIdentifier) == ["ko", "en"])
+        #expect(deduplicated.fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["en"]])
+
+        let automatic = VisionPipeline.Options.configured([], fallback: ["ja-JP", "en-US"])
+        #expect(automatic.primaryLanguages.map(\.minimalIdentifier) == ["ja", "en"])
+        #expect(VisionPipeline(options: automatic).primaryIsCJK)
+
+        let chinese = VisionPipeline.Options.configured(["zh-Hant", "en-US"])
+        #expect(VisionPipeline(options: chinese).primaryIsCJK)
+    }
 }

@@ -218,4 +218,208 @@ struct StudioEditingTests {
         let outside = document(clickAt: 2400)
         #expect(outside.automaticZooms.isEmpty && !outside.hasEventsToFollow)
     }
+
+    @Test func resizingACutClampsToBoundsAndNeighborsAndSupportsUndo() throws {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSStudioCutResizeTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let telemetry = StudioTelemetry(width: 160, height: 100, pixelsPerPoint: 2, samples: [.init(time: 0, x: 80, y: 50, cursor: 0)])
+        let document = StudioDocument(
+            source: folder.appending(path: "none.mp4"), telemetry: telemetry,
+            project: StudioProject(cuts: [1.0...2.0, 4.0...5.0]), duration: 10,
+            recordingSize: CGSize(width: 320, height: 200), folder: folder, hasBeenExported: false, background: { _, _ in nil }
+        )
+        defer { document.releasePreview() }
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        document.undoManagerProvider = { undo }
+
+        // Resizing the start edge keeps the cut selected at its new lowerBound and records a named undo step.
+        document.selection = .cut(1.0)
+        undo.beginUndoGrouping()
+        let widened = try #require(document.setCutEdge(at: 1.0, start: true, to: 0.5))
+        undo.endUndoGrouping()
+        #expect(widened == 0.5...2.0)
+        #expect(document.project.cuts == [0.5...2.0, 4.0...5.0])
+        #expect(document.selection == .cut(0.5))
+        #expect(undo.undoActionName == "Resize Cut")
+
+        // Start clamps at 0; end clamps short of the adjacent cut so cuts never overlap or merge on drag.
+        undo.beginUndoGrouping()
+        #expect(document.setCutEdge(at: 0.5, start: true, to: -2.0) == 0.0...2.0)
+        undo.endUndoGrouping()
+        #expect(document.selection == .cut(0.0))
+
+        undo.beginUndoGrouping()
+        let clampedToNeighbor = try #require(document.setCutEdge(at: 0.0, start: false, to: 4.5))
+        undo.endUndoGrouping()
+        #expect(abs(clampedToNeighbor.upperBound - (4.0 - StudioDocument.minimumCutGap)) < 1e-9)
+        #expect(clampedToNeighbor.upperBound < 4.0)
+
+        // Start dragged past end enforces shortestCut without moving the end; end clamps at duration.
+        undo.beginUndoGrouping()
+        let minWidth = try #require(document.setCutEdge(at: 4.0, start: true, to: 6.0))
+        undo.endUndoGrouping()
+        #expect(abs(minWidth.lowerBound - (5.0 - StudioDocument.shortestCut)) < 1e-9 && minWidth.upperBound == 5.0)
+
+        undo.beginUndoGrouping()
+        let clampedEnd = try #require(document.setCutEdge(at: minWidth.lowerBound, start: false, to: 15.0))
+        undo.endUndoGrouping()
+        #expect(clampedEnd.upperBound == 10.0)
+
+        // Unknown cut returns nil.
+        #expect(document.setCutEdge(at: 99.0, start: true, to: 1.0) == nil)
+
+        // A continuous drag coalesces into a single Undo step.
+        let beforeDrag = document.project.cuts
+        undo.beginUndoGrouping()
+        document.beginContinuousChange()
+        var currentStart = minWidth.lowerBound
+        for target in [4.8, 4.5, 4.2] {
+            if let next = document.setCutEdge(at: currentStart, start: true, to: target) {
+                currentStart = next.lowerBound
+            }
+        }
+        document.endContinuousChange()
+        undo.endUndoGrouping()
+        #expect(abs(document.project.cuts[1].lowerBound - 4.2) < 1e-9)
+
+        undo.undo()
+        #expect(document.project.cuts == beforeDrag)
+        undo.redo()
+        #expect(abs(document.project.cuts[1].lowerBound - 4.2) < 1e-9)
+    }
+
+    @Test func hasKeysIgnoresUnrecordedPlaceholdersUnderShortcutsOnly() {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSStudioKeysTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        func makeDocument(keys: [StudioTelemetry.Key], mode: KeystrokeMode?) -> StudioDocument {
+            StudioDocument(
+                source: folder.appending(path: "none.mp4"),
+                telemetry: StudioTelemetry(
+                    width: 1600, height: 1000, pixelsPerPoint: 2,
+                    samples: [.init(time: 0, x: 800, y: 500, cursor: 0)],
+                    keys: keys, keystrokeMode: mode
+                ),
+                project: StudioProject(), duration: 6,
+                recordingSize: CGSize(width: 3200, height: 2000), folder: folder,
+                hasBeenExported: false, background: { _, _ in nil }
+            )
+        }
+        let unrecordedOnly = (0..<4).map { StudioTelemetry.Key.unrecorded(time: 1 + Double($0) * 0.2, isRepeat: false) }
+        let docUnrecorded = makeDocument(keys: unrecordedOnly, mode: .shortcuts)
+        #expect(!docUnrecorded.hasKeys)
+        #expect(docUnrecorded.hasKeyPresses)
+
+        let withShortcut = unrecordedOnly + [Self.key(2, "s", keyCode: 1, modifiers: .command)]
+        let docShortcut = makeDocument(keys: withShortcut, mode: .shortcuts)
+        #expect(docShortcut.hasKeys)
+
+        let docEmpty = makeDocument(keys: [], mode: .shortcuts)
+        #expect(!docEmpty.hasKeys)
+    }
+
+    @Test func resetToAutomaticAndClearAllZoomsSupportUndo() {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSStudioZoomResetTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let telemetry = StudioTelemetry(
+            width: 1600, height: 1000, pixelsPerPoint: 2,
+            samples: [.init(time: 0, x: 800, y: 500, cursor: 0)],
+            clicks: [1.0, 1.2, 1.4].map { .init(time: $0, x: 800, y: 500, button: .primary) }
+        )
+        let auto = AutoZoom.zooms(for: telemetry, duration: 8)
+        let document = StudioDocument(
+            source: folder.appending(path: "none.mp4"), telemetry: telemetry,
+            project: StudioProject(zooms: auto), duration: 8,
+            recordingSize: CGSize(width: 3200, height: 2000), folder: folder,
+            hasBeenExported: false, background: { _, _ in nil }
+        )
+        defer { document.releasePreview() }
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        document.undoManagerProvider = { undo }
+
+        #expect(document.matchesAutomaticZooms)
+
+        undo.beginUndoGrouping()
+        document.time = 5.0
+        document.addZoom()
+        undo.endUndoGrouping()
+        #expect(!document.matchesAutomaticZooms)
+        #expect(document.project.zooms.count == auto.count + 1)
+
+        undo.beginUndoGrouping()
+        document.resetToAutomaticZooms()
+        undo.endUndoGrouping()
+        #expect(document.matchesAutomaticZooms)
+        let allAutomatic = document.project.zooms.allSatisfy(\.isAutomatic)
+        #expect(allAutomatic)
+        #expect(undo.undoActionName == "Reset to Automatic")
+
+        undo.undo()
+        #expect(document.project.zooms.count == auto.count + 1)
+
+        undo.beginUndoGrouping()
+        document.clearAllZooms()
+        undo.endUndoGrouping()
+        #expect(document.project.zooms.isEmpty)
+        #expect(!document.project.automaticZooms)
+        #expect(undo.undoActionName == "Clear All Zooms")
+
+        undo.undo()
+        #expect(document.project.zooms.count == auto.count + 1)
+    }
+
+    @Test func keepOnlyTrimsBothSidesInOneUndoableStep() {
+        let folder = FileManager.default.temporaryDirectory.appending(path: "OMSStudioKeepOnlyTests-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let telemetry = StudioTelemetry(width: 160, height: 100, pixelsPerPoint: 2, samples: [.init(time: 0, x: 80, y: 50, cursor: 0)])
+        let document = StudioDocument(
+            source: folder.appending(path: "none.mp4"), telemetry: telemetry,
+            project: StudioProject(), duration: 10,
+            recordingSize: CGSize(width: 320, height: 200), folder: folder,
+            hasBeenExported: false, background: { _, _ in nil }
+        )
+        defer { document.releasePreview() }
+        let undo = UndoManager()
+        undo.groupsByEvent = false
+        document.undoManagerProvider = { undo }
+
+        document.selection = .range(2.0...7.0)
+        undo.beginUndoGrouping()
+        document.keepOnly(2.0...7.0)
+        undo.endUndoGrouping()
+        #expect(document.project.cuts == [0.0...2.0, 7.0...10.0])
+        #expect(document.selection == .none)
+        #expect(undo.undoActionName == "Keep Only")
+
+        undo.undo()
+        #expect(document.project.cuts.isEmpty)
+
+        // Preserves interior cuts and handles leading/trailing boundary selections cleanly.
+        document.undoManagerProvider = { nil }
+        document.project.cuts = [4.0...5.0]
+        document.undoManagerProvider = { undo }
+        undo.beginUndoGrouping()
+        document.keepOnly(2.0...7.0)
+        undo.endUndoGrouping()
+        #expect(document.project.cuts == [0.0...2.0, 4.0...5.0, 7.0...10.0])
+
+        document.undoManagerProvider = { nil }
+        document.project.cuts = []
+        document.keepOnly(0.0...6.0)
+        #expect(document.project.cuts == [6.0...10.0])
+
+        document.project.cuts = []
+        document.keepOnly(3.0...10.0)
+        #expect(document.project.cuts == [0.0...3.0])
+
+        // Full range or too-short range does not add spurious cuts.
+        document.project.cuts = []
+        document.selection = .range(0.0...10.0)
+        document.keepOnly(0.0...10.0)
+        #expect(document.project.cuts.isEmpty && document.selection == .none)
+
+        document.keepOnly(2.0...2.01)
+        #expect(document.project.cuts.isEmpty)
+    }
 }

@@ -13,6 +13,8 @@ public struct ShareHandoff: Equatable, Sendable {
         case annotate
         /// Pin each picture to the screen.
         case pin
+        /// Recognize text in the shared picture(s).
+        case recognizeText = "recognize-text"
     }
 
     public static let host = "share"

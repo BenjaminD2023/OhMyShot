@@ -32,6 +32,9 @@ public final class StatusItemController {
         public let isHidden: (() -> Bool)?
         /// Asked each time the menu opens, for an entry with a checkmark while it is on.
         public let isChecked: (() -> Bool)?
+        /// Asked each time the launcher opens; when true, this entry surfaces in the top active-status
+        /// section even if it also carries a global shortcut (e.g. Cancel Self-Timer, Stop Drawing on Screen).
+        public let isActiveStatus: (() -> Bool)?
         /// The entries of a submenu, asked for each time it opens, for a list that changes (the displays).
         public let children: (() -> [Entry])?
         public let perform: () -> Void
@@ -45,6 +48,7 @@ public final class StatusItemController {
             currentTitle: (() -> String)? = nil,
             isHidden: (() -> Bool)? = nil,
             isChecked: (() -> Bool)? = nil,
+            isActiveStatus: (() -> Bool)? = nil,
             perform: @escaping () -> Void
         ) {
             kind = .item
@@ -56,6 +60,7 @@ public final class StatusItemController {
             self.currentTitle = currentTitle
             self.isHidden = isHidden
             self.isChecked = isChecked
+            self.isActiveStatus = isActiveStatus
             children = nil
             self.perform = perform
         }
@@ -71,6 +76,7 @@ public final class StatusItemController {
             currentTitle = nil
             isHidden = nil
             isChecked = nil
+            isActiveStatus = nil
             self.children = children
             perform = {}
         }
@@ -85,6 +91,7 @@ public final class StatusItemController {
             currentTitle = nil
             isHidden = nil
             isChecked = nil
+            isActiveStatus = nil
             children = nil
             perform = {}
         }
@@ -98,6 +105,33 @@ public final class StatusItemController {
         }
     }
 
+    /// Actions shown in the recording control menu when right-clicking the status item while recording
+    /// or clicking it while paused.
+    public struct RecordingActions {
+        public var togglePause: (() -> Void)?
+        public var toggleMicrophone: (() -> Void)?
+        public var microphoneMuted: Bool
+        public var drawOnScreen: (() -> Void)?
+        public var stop: () -> Void
+        public var delete: (() -> Void)?
+
+        public init(
+            togglePause: (() -> Void)? = nil,
+            toggleMicrophone: (() -> Void)? = nil,
+            microphoneMuted: Bool = false,
+            drawOnScreen: (() -> Void)? = nil,
+            stop: @escaping () -> Void,
+            delete: (() -> Void)? = nil
+        ) {
+            self.togglePause = togglePause
+            self.toggleMicrophone = toggleMicrophone
+            self.microphoneMuted = microphoneMuted
+            self.drawOnScreen = drawOnScreen
+            self.stop = stop
+            self.delete = delete
+        }
+    }
+
     /// An image dropped on the icon: return whether it was taken. Set before the icon is shown.
     public var onDrop: ((NSPasteboard) -> Bool)?
 
@@ -108,14 +142,17 @@ public final class StatusItemController {
     /// Runs the menus the launcher's rows open, closing the launcher before the command.
     private let launcherMenuTarget = MenuTarget()
     /// The launcher's lit command, moved by the pointer and by the arrow keys while it is open.
-    private let launcherHighlight = LauncherHighlight()
+    let launcherHighlight = LauncherHighlight()
     /// The open launcher's commands, for the arrow keys; nil while it is closed.
-    private var activeLauncherModel: CaptureLauncherModel?
+    var activeLauncherModel: CaptureLauncherModel?
     private var launcherKeyMonitor: Any?
     /// Whether Settings wants the icon; a recording shows it regardless while it runs.
     private var wantsVisible = false
-    /// Stops the recording when the item is clicked; set only while recording.
-    private var stopRecording: (() -> Void)?
+    /// Actions while recording; nil when idle.
+    private var recordingActions: RecordingActions?
+    private var recordingPaused = false
+    /// Whether Replay (Keep Last 15 Seconds) is actively buffering at least one display.
+    private var replayActive = false
     /// While recording or making a GIF, the item shows that in place of the icon and its menu.
     private var showsActivity = false
     /// The symbol a progress shows, so a change of what is being made changes it.
@@ -241,14 +278,55 @@ public final class StatusItemController {
 
     public func setUpdateVersion(_ version: String?) {
         updateVersion = version
-        if let item = statusItem, !showsActivity { applyUpdateBadge(to: item) }
+        if let item = statusItem, !showsActivity { applyIdleAppearance(to: item) }
     }
 
-    private func applyUpdateBadge(to item: NSStatusItem) {
+    /// Shows or clears a subtle dot indicator on the menu bar icon while Replay (Keep Last 15 Seconds)
+    /// is buffering, without interfering with active recording or export status.
+    public func setReplayActive(_ active: Bool) {
+        guard replayActive != active else { return }
+        replayActive = active
+        if let item = statusItem, !showsActivity { applyIdleAppearance(to: item) }
+    }
+
+    private func applyIdleAppearance(to item: NSStatusItem) {
+        let description = replayActive
+            ? String(localized: "\(appName), keeping last 15 seconds", bundle: .module)
+            : appName
+        item.button?.image = Self.statusIcon(replayActive: replayActive, accessibilityDescription: description)
         item.length = updateVersion == nil ? NSStatusItem.squareLength : NSStatusItem.variableLength
         item.button?.title = updateVersion == nil ? "" : " ↑"
         item.button?.imagePosition = updateVersion == nil ? .imageOnly : .imageLeading
-        item.button?.toolTip = updateVersion.map { String(localized: "Update to Version \($0)…", bundle: .module) } ?? appName
+        if let updateVersion {
+            item.button?.toolTip = String(localized: "Update to Version \(updateVersion)…", bundle: .module)
+        } else if replayActive {
+            item.button?.toolTip = String(localized: "\(appName) — Keeping Last 15 Seconds", bundle: .module)
+        } else {
+            item.button?.toolTip = appName
+        }
+    }
+
+    private static func statusIcon(replayActive: Bool, accessibilityDescription: String) -> NSImage? {
+        guard let base = NSImage.statusItemIcon(accessibilityDescription: accessibilityDescription) else { return nil }
+        guard replayActive else { return base }
+        let size = base.size.width > 0 && base.size.height > 0 ? base.size : NSSize(width: 18, height: 18)
+        let badged = NSImage(size: size, flipped: false) { rect in
+            base.draw(in: rect)
+            let dotDiameter: CGFloat = 5
+            let dotRect = CGRect(x: rect.maxX - dotDiameter, y: rect.minY, width: dotDiameter, height: dotDiameter)
+            if let context = NSGraphicsContext.current?.cgContext {
+                context.saveGState()
+                context.setBlendMode(.clear)
+                NSBezierPath(ovalIn: dotRect.insetBy(dx: -1.25, dy: -1.25)).fill()
+                context.restoreGState()
+            }
+            NSColor.black.setFill()
+            NSBezierPath(ovalIn: dotRect).fill()
+            return true
+        }
+        badged.isTemplate = true
+        badged.accessibilityDescription = accessibilityDescription
+        return badged
     }
 
     private func makeItem() -> NSStatusItem {
@@ -263,30 +341,39 @@ public final class StatusItemController {
             }
         }
         configureLauncherButton(item)
-        applyUpdateBadge(to: item)
+        applyIdleAppearance(to: item)
         return item
     }
 
-    /// While recording: the icon gives way to a stop symbol and the time, and a click stops the recording.
+    /// While recording: the icon gives way to a stop (or pause) symbol and the time. Left-click stops while
+    /// recording; right-click (or any click while paused) opens a compact recording control menu.
     /// Shown even when Settings hides the icon, since it is one of the ways to stop. Call again each second.
     public func showRecording(elapsed: String, paused: Bool, stop: @escaping () -> Void) {
+        showRecording(elapsed: elapsed, paused: paused, actions: RecordingActions(stop: stop))
+    }
+
+    /// While recording: shows elapsed time and paused state, with a compact control menu on right-click or
+    /// when clicked while paused.
+    public func showRecording(elapsed: String, paused: Bool, actions: RecordingActions) {
         dismissLauncher()
-        stopRecording = stop
-        shownSymbol = nil
+        recordingActions = actions
+        recordingPaused = paused
         showsActivity = true
         let item = statusItem ?? makeItem()
         statusItem = item
         item.menu = nil
         item.length = NSStatusItem.variableLength
         guard let button = item.button else { return }
-        button.sendAction(on: [.leftMouseUp])
-        if button.action != #selector(MenuTarget.stopClicked(_:)) {
-            button.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)
+        button.sendAction(on: [.leftMouseUp, .rightMouseUp])
+        let symbol = paused ? "pause.circle" : "stop.circle"
+        if button.action != #selector(MenuTarget.stopClicked(_:)) || shownSymbol != symbol {
+            shownSymbol = symbol
+            button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
             button.image?.isTemplate = true
             button.imagePosition = .imageLeading
             button.target = menuTarget
             button.action = #selector(MenuTarget.stopClicked(_:))
-            menuTarget.stop = { [weak self] in self?.stopRecording?() }
+            menuTarget.stop = { [weak self] in self?.handleRecordingClick() }
         }
         let title = paused ? String(localized: "Paused \(elapsed)", bundle: .module) : elapsed
         if button.title != title {
@@ -294,9 +381,77 @@ public final class StatusItemController {
                 .font: NSFont.monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular),
             ])
         }
+        button.toolTip = paused
+            ? String(localized: "Recording paused — click for options", bundle: .module)
+            : String(localized: "Click to stop recording, or right-click for options", bundle: .module)
         button.setAccessibilityLabel(paused
-            ? String(localized: "Stop Recording, paused at \(elapsed)", bundle: .module)
+            ? String(localized: "Recording controls, paused at \(elapsed)", bundle: .module)
             : String(localized: "Stop Recording, \(elapsed)", bundle: .module))
+    }
+
+    private func handleRecordingClick() {
+        guard let actions = recordingActions else { return }
+        let isRightClick = NSApp.currentEvent?.type == .rightMouseUp
+        if (isRightClick || recordingPaused), let button = statusItem?.button {
+            let menu = makeRecordingMenu(actions: actions, paused: recordingPaused)
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.minY), in: button)
+        } else {
+            actions.stop()
+        }
+    }
+
+    func makeRecordingMenu(actions: RecordingActions, paused: Bool) -> NSMenu {
+        menuTarget.removeAll()
+        let menu = NSMenu()
+        var hasTopItems = false
+        if let togglePause = actions.togglePause {
+            let item = menuTarget.item(for: Entry(
+                title: paused ? String(localized: "Resume", bundle: .module) : String(localized: "Pause", bundle: .module),
+                perform: togglePause
+            ))
+            item.image = NSImage(systemSymbolName: paused ? "play.fill" : "pause.fill", accessibilityDescription: nil)
+            menu.addItem(item)
+            hasTopItems = true
+        }
+        if let toggleMicrophone = actions.toggleMicrophone {
+            let item = menuTarget.item(for: Entry(
+                title: actions.microphoneMuted
+                    ? String(localized: "Unmute Microphone", bundle: .module)
+                    : String(localized: "Mute Microphone", bundle: .module),
+                perform: toggleMicrophone
+            ))
+            item.image = NSImage(
+                systemSymbolName: actions.microphoneMuted ? "mic.fill" : "mic.slash.fill",
+                accessibilityDescription: nil
+            )
+            menu.addItem(item)
+            hasTopItems = true
+        }
+        if let drawOnScreen = actions.drawOnScreen {
+            let item = menuTarget.item(for: Entry(
+                title: String(localized: "Draw on Screen", bundle: .module),
+                perform: drawOnScreen
+            ))
+            item.image = NSImage(systemSymbolName: "pencil.and.scribble", accessibilityDescription: nil)
+            menu.addItem(item)
+            hasTopItems = true
+        }
+        if hasTopItems { menu.addItem(.separator()) }
+        let stopItem = menuTarget.item(for: Entry(
+            title: String(localized: "Stop Recording", bundle: .module),
+            perform: actions.stop
+        ))
+        stopItem.image = NSImage(systemSymbolName: "stop.circle", accessibilityDescription: nil)
+        menu.addItem(stopItem)
+        if let delete = actions.delete {
+            let deleteItem = menuTarget.item(for: Entry(
+                title: String(localized: "Delete Recording", bundle: .module),
+                perform: delete
+            ))
+            deleteItem.image = NSImage(systemSymbolName: "trash", accessibilityDescription: nil)
+            menu.addItem(deleteItem)
+        }
+        return menu
     }
 
     /// What the menu bar shows the progress of after a recording, each with how far along it is, from 0 to 1.
@@ -332,7 +487,8 @@ public final class StatusItemController {
     /// the menu still there; the card comes when it is done. Shown even when Settings hides the icon, as while
     /// recording, since it says the recording isn't kept yet.
     public func showProgress(_ progress: Progress) {
-        stopRecording = nil
+        recordingActions = nil
+        recordingPaused = false
         menuTarget.stop = nil
         showsActivity = true
         let item = statusItem ?? makeItem()
@@ -361,7 +517,9 @@ public final class StatusItemController {
     public func endRecording() {
         guard showsActivity else { return }
         showsActivity = false
-        stopRecording = nil
+        shownSymbol = nil
+        recordingActions = nil
+        recordingPaused = false
         menuTarget.stop = nil
         guard let item = statusItem else { return }
         guard wantsVisible else {
@@ -380,7 +538,7 @@ public final class StatusItemController {
             button.imagePosition = .imageOnly
         }
         configureLauncherButton(item)
-        applyUpdateBadge(to: item)
+        applyIdleAppearance(to: item)
     }
 
     /// Close synchronously before a capture freezes the screen, including captures started by a hotkey.
@@ -472,10 +630,18 @@ public final class StatusItemController {
     }
 
     /// An arrow key moves the launcher's highlight, passing over dimmed commands; Return or Space presses the
-    /// command the arrow keys reached, which opens its menu when it has one. Returns whether the key was taken:
-    /// with a modifier, or Return and Space before any arrow key, it is the focused control's as before.
+    /// command the arrow keys reached, which opens its menu when it has one. Tab / Shift-Tab hands focus back
+    /// to AppKit's key-view loop and clears the arrow-key highlight so two items are never highlighted at once.
+    /// Returns whether the key was taken: with a modifier, or Return and Space before any arrow key, it is the
+    /// focused control's as before.
     func handleLauncherKey(code: UInt16, modifiers: NSEvent.ModifierFlags) -> Bool {
-        guard let model = activeLauncherModel, modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
+        guard let model = activeLauncherModel else { return false }
+        if code == 48, modifiers.intersection([.command, .control, .option]).isEmpty {
+            launcherHighlight.cell = nil
+            launcherHighlight.fromKeys = false
+            return false
+        }
+        guard modifiers.intersection([.command, .control, .option, .shift]).isEmpty else { return false }
         let direction: CaptureLauncherModel.Direction
         switch code {
         case 126: direction = .up
@@ -494,8 +660,9 @@ public final class StatusItemController {
                                                            rows: rows.map { ($0.entries.count, $0.columns) }) { cell in
             rows[cell.row].entries[cell.column].isEnabled?() != false
         }
-        launcherHighlight.fromKeys = true
+        launcherHighlight.fromKeys = launcherHighlight.cell != nil
         launcherHighlight.keysPointer = NSEvent.mouseLocation
+        launcher.contentViewController?.view.window?.makeFirstResponder(nil)
         return true
     }
 

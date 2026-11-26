@@ -1,5 +1,6 @@
 import AVFoundation
 import CoreImage
+import CoreMedia
 import Foundation
 import OMSCore
 import OSLog
@@ -18,6 +19,11 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
     public let colors: Colors
     /// Its audio tracks, with the sound each plays.
     var audioTracks: [AudioTrack] = []
+    /// The kept recording segments laid end to end in this composition.
+    var segments: [Segment] = []
+
+    /// Micro-fade duration (15 ms) applied on each side of an interior cut boundary to avoid pops or clicks.
+    static let cutMicroFade = 0.015
 
     struct AudioTrack: Equatable {
         let sound: StudioSound
@@ -40,14 +46,146 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         StudioSound.allCases.filter { sound in audioTracks.contains { $0.sound == sound } }
     }
 
-    /// Plays each sound as `audio` sets it; nil while every one plays as recorded, which needs no mix.
+    /// Plays each sound as `audio` sets it, applying master gain, start/end fades, and 15 ms cut micro-fades;
+    /// returns nil while every sound plays as recorded with no fades and no interior cut gaps.
     public func audioMix(for audio: StudioProject.Audio) -> AVAudioMix? {
-        guard audioTracks.contains(where: { audio[$0.sound].gain < 1 }) else { return nil }
+        Self.makeAudioMix(tracks: audioTracks, segments: segments, duration: duration, audio: audio)
+    }
+
+    /// Builds a non-overlapping piecewise-linear `AVMutableAudioMix` honoring per-track and master gain,
+    /// start/end fades, and 15 ms micro-fades across interior cut gaps (never across continuous speed seams).
+    static func makeAudioMix(
+        tracks: [AudioTrack], segments: [Segment], duration: Double, audio: StudioProject.Audio
+    ) -> AVAudioMix? {
+        guard !tracks.isEmpty, duration > 0 else { return nil }
+        let clampedFadeIn = min(StudioProject.Audio.clampedFade(audio.fadeIn), duration)
+        let clampedFadeOut = min(StudioProject.Audio.clampedFade(audio.fadeOut), duration)
+        let hasCutGaps: Bool = segments.count > 1 && (1..<segments.count).contains { index in
+            let previous = segments[index - 1]
+            let next = segments[index]
+            return next.sourceStart - (previous.sourceStart + previous.sourceDuration) > 1e-4
+        }
+        let needsMix = clampedFadeIn > 1e-6
+            || clampedFadeOut > 1e-6
+            || hasCutGaps
+            || tracks.contains { abs(audio.effectiveGain(for: $0.sound) - 1.0) > 1e-6 }
+        guard needsMix else { return nil }
+
+        var fadeIn = clampedFadeIn
+        var fadeOut = clampedFadeOut
+        if fadeIn + fadeOut > duration, fadeIn + fadeOut > 0 {
+            let scale = duration / (fadeIn + fadeOut)
+            fadeIn *= scale
+            fadeOut *= scale
+        }
+        let fadeInEnd = fadeIn
+        let fadeOutStart = max(fadeInEnd, duration - fadeOut)
+
+        struct CutDip {
+            let leftStart: Double
+            let boundary: Double
+            let rightEnd: Double
+        }
+        var dips: [CutDip] = []
+        if segments.count > 1 {
+            for index in 1..<segments.count {
+                let previous = segments[index - 1]
+                let next = segments[index]
+                // Only micro-fade across actual cut gaps, never across continuous speed-change seams.
+                guard next.sourceStart - (previous.sourceStart + previous.sourceDuration) > 1e-4 else { continue }
+                let boundary = next.movieStart
+                let leftReach = min(Self.cutMicroFade, previous.duration * 0.25)
+                let rightReach = min(Self.cutMicroFade, next.duration * 0.25)
+                guard leftReach > 0 || rightReach > 0 else { continue }
+                dips.append(CutDip(
+                    leftStart: max(0, boundary - leftReach),
+                    boundary: boundary,
+                    rightEnd: min(duration, boundary + rightReach)
+                ))
+            }
+        }
+
+        func outerGain(at t: Double) -> Double {
+            var gain = 1.0
+            if fadeInEnd > 1e-6, t < fadeInEnd {
+                gain = min(gain, max(0, t / fadeInEnd))
+            }
+            if duration - fadeOutStart > 1e-6, t > fadeOutStart {
+                gain = min(gain, max(0, (duration - t) / (duration - fadeOutStart)))
+            }
+            return gain
+        }
+
+        func cutGain(at t: Double) -> Double {
+            var gain = 1.0
+            for dip in dips {
+                if t > dip.leftStart, t < dip.boundary {
+                    let span = dip.boundary - dip.leftStart
+                    if span > 1e-9 { gain = min(gain, max(0, (dip.boundary - t) / span)) }
+                } else if abs(t - dip.boundary) <= 1e-9 {
+                    return 0
+                } else if t > dip.boundary, t < dip.rightEnd {
+                    let span = dip.rightEnd - dip.boundary
+                    if span > 1e-9 { gain = min(gain, max(0, (t - dip.boundary) / span)) }
+                }
+            }
+            return gain
+        }
+
+        var rawTimes: [Double] = [0, duration]
+        if fadeInEnd > 1e-6, fadeInEnd < duration { rawTimes.append(fadeInEnd) }
+        if fadeOutStart > 1e-6, fadeOutStart < duration { rawTimes.append(fadeOutStart) }
+        for dip in dips {
+            rawTimes.append(dip.leftStart)
+            rawTimes.append(dip.boundary)
+            rawTimes.append(dip.rightEnd)
+        }
+
+        var points: [(seconds: Double, cm: CMTime)] = []
+        for seconds in rawTimes.sorted() {
+            let clamped = min(max(seconds, 0), duration)
+            let cm = time(clamped)
+            if let last = points.last, last.cm == cm {
+                if dips.contains(where: { abs($0.boundary - clamped) <= 1e-9 }) {
+                    points[points.count - 1] = (clamped, cm)
+                }
+            } else {
+                points.append((clamped, cm))
+            }
+        }
+
         let mix = AVMutableAudioMix()
-        mix.inputParameters = audioTracks.map { track in
+        mix.inputParameters = tracks.map { track in
             let parameters = AVMutableAudioMixInputParameters()
             parameters.trackID = track.trackID
-            parameters.setVolume(Float(audio[track.sound].gain), at: .zero)
+            let effective = audio.effectiveGain(for: track.sound)
+            if effective <= 1e-6 || points.count < 2 {
+                parameters.setVolume(Float(max(effective, 0)), at: .zero)
+                return parameters
+            }
+            var lastVolume: Float?
+            var lastWasRamp = false
+            for index in 0..<(points.count - 1) {
+                let a = points[index], b = points[index + 1]
+                guard b.cm > a.cm else { continue }
+                let v0 = Float(effective * outerGain(at: a.seconds) * cutGain(at: a.seconds))
+                let v1 = Float(effective * outerGain(at: b.seconds) * cutGain(at: b.seconds))
+                if abs(v0 - v1) <= 1e-5 {
+                    if lastWasRamp || lastVolume.map({ abs($0 - v0) > 1e-5 }) ?? true {
+                        parameters.setVolume(v0, at: a.cm)
+                    }
+                    lastVolume = v0
+                    lastWasRamp = false
+                } else {
+                    parameters.setVolumeRamp(
+                        fromStartVolume: v0,
+                        toEndVolume: v1,
+                        timeRange: CMTimeRange(start: a.cm, end: b.cm)
+                    )
+                    lastVolume = v1
+                    lastWasRamp = true
+                }
+            }
             return parameters
         }
         return mix
@@ -138,13 +276,14 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
             cursor = until
         }
         let duration = segments.reduce(0) { $0 + $1.duration }
+        let fps = renderer.project.resolvedFramesPerSecond
         let movieEnd = video.timeRange.end
         var cameraTrackID: CMPersistentTrackID?
         if let camera, let cameraVideo = try await camera.asset.loadTracks(withMediaType: .video).first,
            let track = composition.addMutableTrack(withMediaType: .video, preferredTrackID: kCMPersistentTrackID_Invalid) {
             let cameraDuration = try await camera.asset.load(.duration).seconds
             let cameraEnd = try await cameraVideo.load(.timeRange).end
-            let frame = time(max(try await cameraVideo.load(.minFrameDuration).seconds, 1.0 / 60))
+            let frame = time(max(try await cameraVideo.load(.minFrameDuration).seconds, 1.0 / Double(fps)))
             let ranges = cameraRanges(segments: segments, cameraStart: camera.start, cameraDuration: cameraDuration)
             // Where the camera has nothing (before it began, after it ended), its nearest frame is held, so its
             // bubble is there from the first frame to the last.
@@ -190,7 +329,7 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
             renderer: renderer, segments: segments, reusesFrames: reusesFrames
         )
         var configuration = AVVideoComposition.Configuration(
-            customVideoCompositorClass: StudioCompositor.self, frameDuration: CMTime(value: 1, timescale: 60),
+            customVideoCompositorClass: StudioCompositor.self, frameDuration: CMTime(value: 1, timescale: CMTimeScale(fps)),
             instructions: [instruction], renderSize: renderer.layout.canvas
         )
         // The recording's colors, kept: its frames come in as they are, the movie's frames are tagged alike,
@@ -204,7 +343,7 @@ nonisolated public struct StudioComposition: @unchecked Sendable {
         return StudioComposition(
             asset: composition.copy() as? AVComposition ?? composition, videoComposition: AVVideoComposition(configuration: configuration),
             renderer: renderer, duration: duration, colors: colors,
-            audioTracks: audioTracks
+            audioTracks: audioTracks, segments: segments
         )
     }
 

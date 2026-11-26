@@ -75,6 +75,18 @@ public enum AutomationURLParser {
             return .captureText(file: try p.file(), region: try p.region(), lineBreaks: try p.bool("linebreaks"))
         case "capture-formula":
             return .captureFormula(file: try p.file(), region: try p.region())
+        case "annotate-area":
+            return .annotateArea(try p.region())
+        case "translate-area":
+            return .translateArea(try p.region())
+        case "pick-color":
+            return .pickColor
+        case "measure":
+            return .measure
+        case "draw-on-screen":
+            return .drawOnScreen
+        case "save-replay":
+            return .saveReplay
         case "open-annotate":
             return .openAnnotate(file: try p.file())
         case "open-from-clipboard":

@@ -290,7 +290,7 @@ public final class HistoryStore: Sendable {
     /// Keeps the marked-up picture as the capture and lets the original and the marks go: the marks can
     /// no longer be changed.
     public func flatten(_ item: HistoryItem) {
-        removeExtras(of: item)
+        removeEditExtras(of: item)
     }
 
     /// The record with the new size, length, and scale, written beside the file when any of them changed. Whether it is
@@ -307,9 +307,13 @@ public final class HistoryStore: Sendable {
         return updated
     }
 
-    private func removeExtras(of item: HistoryItem) {
+    private func removeEditExtras(of item: HistoryItem) {
         try? FileManager.default.removeItem(at: originalURL(for: item))
         try? FileManager.default.removeItem(at: annotationsURL(for: item))
+    }
+
+    private func removeExtras(of item: HistoryItem) {
+        removeEditExtras(of: item)
         try? FileManager.default.removeItem(at: studioURL(for: item))
     }
 
@@ -580,15 +584,20 @@ public final class HistoryStore: Sendable {
         try? FileManager.default.removeItem(at: textURL(for: item))
     }
 
-    /// Moves the capture to the Trash, where it can still be recovered, and forgets it.
+    /// Moves the capture to the Trash, where it can still be recovered, and forgets it. A Studio recording's
+    /// `.studio` project bundle is moved to the Trash beside it rather than deleted permanently.
     public func moveToTrash(
         _ item: HistoryItem, trash: (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) }
     ) throws {
         try trash(fileURL(for: item))
+        let studio = studioURL(for: item)
+        if FileManager.default.fileExists(atPath: studio.path(percentEncoded: false)) {
+            try trash(studio)
+        }
         fileNames.withLock { $0[item.id] = nil }
         try? FileManager.default.removeItem(at: sidecarURL(forFileName: item.fileName))
-        // The Trash keeps the picture as it was last shown; the original, the marks, and its text go with the record.
-        removeExtras(of: item)
+        // The Trash keeps the capture (and any Studio project) as it was last shown; the original, the marks, and its text go with the record.
+        removeEditExtras(of: item)
         try? FileManager.default.removeItem(at: textURL(for: item))
     }
 

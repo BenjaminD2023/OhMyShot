@@ -1,3 +1,4 @@
+import AppKit
 import CoreGraphics
 import Foundation
 import OMSCore
@@ -185,5 +186,193 @@ struct OCRPanelFormulaTests {
         await Self.settle { model.phase == .ready }
         #expect(model.beingRead == nil)
         #expect(model.text == "Euler wrote")
+    }
+
+    @Test func translationKeepsVisionTableCellsAfterTableMerge() async {
+        let rows = [
+            OCRLine(text: "Region Q1", box: CGRect(x: 10, y: 40, width: 200, height: 20), confidence: 1),
+            OCRLine(text: "North 1,240", box: CGRect(x: 10, y: 70, width: 200, height: 20), confidence: 1),
+        ]
+        let visionTable = OCRTable(rows: [["Region Q1"], ["North 1,240"]], cellBoxes: [[rows[0].box], [rows[1].box]])
+        let analyze: @Sendable (CGImage) async throws -> TextAnalysis = { _ in
+            TextAnalysis(result: OCRResult(lines: rows, text: "", duration: .zero), tables: [visionTable], codes: [])
+        }
+        let table = TableMerge.Table(kind: .table, box: CGRect(x: 8, y: 36, width: 210, height: 58), rows: [["Region", "Q1"], ["North", "1,240"]], isWhole: true)
+        let elements = TextRecognitionWindowController.Elements(
+            read: { _, found in
+                found(.init(formulas: 0, tables: 1))
+                return .init(tables: [table])
+            },
+            merge: { lines, _, _ in lines }
+        )
+        let model = Self.model()
+        model.load(image: Self.image(), scale: 2, analyze: analyze, elements: elements)
+        await Self.settle { model.beingRead == nil && model.lines.contains(where: \.isTableRow) }
+        // Display/copy lines use the VLM table rows, while translation keeps Vision's cell lines so tables can translate.
+        let allTableRows = model.lines.allSatisfy(\.isTableRow)
+        let translationHasTableRow = model.translationLines.contains(where: \.isTableRow)
+        #expect(allTableRows)
+        #expect(model.translationLines == rows)
+        #expect(!translationHasTableRow)
+    }
+
+    @Test func translationEmptyReasonsDistinguishFormulasTablesVerticalAndCode() {
+        func makeTranslation(_ skips: [TranslationUnit.Skip]) -> TextRecognitionModel.Translation {
+            let units = skips.enumerated().map { index, skip in
+                TranslationUnit(lines: [index], text: "item", box: .zero, skip: skip)
+            }
+            return TextRecognitionModel.Translation(
+                choice: "zh-Hans",
+                outcome: Translator.Outcome(target: Locale.Language(identifier: "zh-Hans")),
+                units: units,
+                text: "",
+                translated: [],
+                image: nil
+            )
+        }
+        #expect(TranslationPane.emptyReason(for: makeTranslation([.code])) == .code)
+        #expect(TranslationPane.emptyReason(for: makeTranslation([.formula])) == .formula)
+        #expect(TranslationPane.emptyReason(for: makeTranslation([.formula, .figures])) == .formula)
+        #expect(TranslationPane.emptyReason(for: makeTranslation([.table])) == .table)
+        #expect(TranslationPane.emptyReason(for: makeTranslation([.table, .figures])) == .table)
+        #expect(TranslationPane.emptyReason(for: makeTranslation([.vertical])) == .vertical)
+        #expect(TranslationPane.emptyReason(for: makeTranslation([.link, .figures])) == .other)
+        #expect(TranslationPane.emptyReason(for: makeTranslation([.code, .formula])) == .other)
+    }
+
+    @Test func visionPipelineConfiguredAndTextRecognitionRespectExplicitLanguages() {
+        let korean = VisionPipeline.Options.configured(["ko-KR", "en-US"])
+        #expect(korean.primaryLanguages.map(\.minimalIdentifier) == ["ko", "en"])
+        #expect(korean.fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["en"]])
+
+        let russianFrench = VisionPipeline.Options.configured(["ru-RU", "fr-FR"])
+        #expect(russianFrench.primaryLanguages.map(\.minimalIdentifier) == ["ru", "fr"])
+        #expect(russianFrench.fallbackLanguages.map { $0.map(\.minimalIdentifier) } == [["fr", "en"], ["en"]])
+
+        let englishOnly = VisionPipeline.Options.configured(["en-US"])
+        #expect(englishOnly.primaryLanguages.map(\.minimalIdentifier) == ["en"])
+        #expect(englishOnly.fallbackLanguages.isEmpty)
+
+        let automatic = VisionPipeline.Options.configured([], fallback: ["ja-JP", "en-US"])
+        #expect(automatic.primaryLanguages.map(\.minimalIdentifier) == ["ja", "en"])
+
+        let parsed = TextRecognition.parsedLanguages(["ar-SA", "en-US", "ar-SA", "  "])
+        #expect(TextRecognition.resolvedLanguages(for: .chinese, configured: parsed).map { $0.languageCode?.identifier } == ["ar", "en"])
+        #expect(TextRecognition.resolvedLanguages(for: .latin, configured: parsed).map { $0.languageCode?.identifier } == ["en"])
+        #expect(TextRecognition.resolvedLanguages(for: .chinese, configured: []).map { $0.languageCode?.identifier } == ["zh", "en"])
+    }
+
+    @Test func formulaDelimiterFormatsCopiedFormulasAndText() async throws {
+        let suite = "OCRPanelFormulaDelimiter-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+
+        let model = TextRecognitionModel(settings: settings, translator: Translator(), pasteboard: pasteboard)
+        let mathLine = OCRLine(text: "$e^{i\\pi}+1=0$", box: CGRect(x: 10, y: 60, width: 200, height: 40), confidence: 1, math: .inline)
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([Self.line, mathLine]))
+        await Self.settle { model.phase == .ready }
+        #expect(model.text == "Euler wrote\n$e^{i\\pi}+1=0$")
+
+        settings.formulaDelimiter = .displayDollar
+        model.copyText()
+        #expect(pasteboard.string(forType: .string) == "Euler wrote\n$$e^{i\\pi}+1=0$$")
+
+        settings.formulaDelimiter = .inlineParen
+        model.copyText()
+        #expect(pasteboard.string(forType: .string) == #"Euler wrote"# + "\n" + #"\(e^{i\pi}+1=0\)"#)
+
+        model.copyFormula(#"\frac{a}{b}"#)
+        #expect(pasteboard.string(forType: .string) == #"\(\frac{a}{b}\)"#)
+
+        // Pure-formula content respects `.raw` cleanly without leaving delimiters.
+        model.load(image: Self.image(), scale: 2, analyze: Self.analysis([mathLine]))
+        await Self.settle { model.phase == .ready && model.lines.count == 1 }
+        settings.formulaDelimiter = .raw
+        model.copyText()
+        #expect(pasteboard.string(forType: .string) == #"e^{i\pi}+1=0"#)
+    }
+
+    @Test func inlineTableCellEditingUpdatesTSVAndCSVExports() async throws {
+        let suite = "OCRPanelTableEdit-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+
+        let model = TextRecognitionModel(settings: SettingsStore(defaults: defaults), translator: Translator(), pasteboard: pasteboard)
+        let table = OCRTable(rows: [["Region", "Q1"], ["North", "100"]])
+        let line = Self.line
+        let analyze: @Sendable (CGImage) async throws -> TextAnalysis = { _ in
+            TextAnalysis(result: OCRResult(lines: [line], text: line.text, duration: .zero), tables: [table], codes: [])
+        }
+        model.load(image: Self.image(), scale: 2, analyze: analyze)
+        await Self.settle { model.phase == .ready && !model.tables.isEmpty }
+
+        model.updateTableCell(row: 1, column: 1, value: "1,240 \"net\"")
+        #expect(model.currentTable?.rows == [["Region", "Q1"], ["North", "1,240 \"net\""]])
+
+        model.copyTable(as: .tsv)
+        #expect(pasteboard.string(forType: .string) == "Region\tQ1\nNorth\t1,240 \"net\"")
+
+        model.copyTable(as: .csv)
+        #expect(pasteboard.string(forType: .string) == "Region,Q1\r\nNorth,\"1,240 \"\"net\"\"\"")
+    }
+
+    @Test func imageRotationAndAreaCropReAnalyzeAndRestoreFullImage() async {
+        let model = Self.model()
+        let analyze: @Sendable (CGImage) async throws -> TextAnalysis = { img in
+            let text = "\(img.width)x\(img.height)"
+            let line = OCRLine(text: text, box: CGRect(x: 0, y: 0, width: 40, height: 12), confidence: 1)
+            return TextAnalysis(result: OCRResult(lines: [line], text: text, duration: .zero), tables: [], codes: [])
+        }
+        model.freshAnalyzer = { analyze }
+        model.load(image: Self.image(width: 400, height: 200), scale: 2, analyze: analyze)
+        await Self.settle { model.phase == .ready && model.text == "400x200" }
+        #expect(!model.isCropped)
+
+        // Rotating 90° clockwise transposes dimensions and re-runs OCR.
+        model.rotateImage(clockwise: true)
+        await Self.settle { model.phase == .ready && model.text == "200x400" }
+        #expect(model.image?.width == 200 && model.image?.height == 400)
+        #expect(!model.isCropped)
+
+        // Cropping to a sub-region sets isCropped, preserves fullImage, and re-runs OCR on the cropped pixels.
+        model.cropImage(to: CGRect(x: 20, y: 30, width: 100, height: 80))
+        await Self.settle { model.phase == .ready && model.text == "100x80" }
+        #expect(model.isCropped)
+        #expect(model.image?.width == 100 && model.image?.height == 80)
+        #expect(model.fullImage?.width == 200 && model.fullImage?.height == 400)
+
+        // Restoring full image brings back the full rotated image and clears isCropped.
+        model.restoreFullImage()
+        await Self.settle { model.phase == .ready && model.text == "200x400" }
+        #expect(!model.isCropped)
+        #expect(model.image?.width == 200 && model.image?.height == 400)
+    }
+
+    @Test func structuredQRCodeActionsCopyPasswordAndAllowOnlySafeSchemes() throws {
+        let suite = "OCRPanelCodes-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let pasteboard = NSPasteboard.withUniqueName()
+        defer { pasteboard.releaseGlobally() }
+
+        let model = TextRecognitionModel(settings: SettingsStore(defaults: defaults), translator: Translator(), pasteboard: pasteboard)
+        let wifi = OCRCode(payload: "WIFI:T:WPA;S:Lab;P:p\\;ss;;", kind: .qr, box: .zero)
+        let wifiAction = try #require(model.action(for: wifi))
+        #expect(wifiAction.symbol == "key")
+        wifiAction.perform()
+        #expect(pasteboard.string(forType: .string) == "p;ss")
+
+        let openWifi = OCRCode(payload: "WIFI:T:nopass;S:Guest;;", kind: .qr, box: .zero)
+        #expect(model.action(for: openWifi) == nil)
+
+        #expect(model.action(for: OCRCode(payload: "https://example.com", kind: .qr, box: .zero))?.symbol == "arrow.up.forward.app")
+        #expect(model.action(for: OCRCode(payload: "mailto:hi@example.com", kind: .qr, box: .zero))?.symbol == "envelope")
+        #expect(model.action(for: OCRCode(payload: "tel:+15550100", kind: .qr, box: .zero))?.symbol == "phone.arrow.up.right")
+        #expect(model.action(for: OCRCode(payload: "javascript:alert(1)", kind: .qr, box: .zero)) == nil)
     }
 }

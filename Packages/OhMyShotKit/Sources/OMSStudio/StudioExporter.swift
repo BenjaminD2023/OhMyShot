@@ -41,7 +41,7 @@ nonisolated public enum StudioExporter {
         let videoTracks = try await asset.loadTracks(withMediaType: .video)
         let audio = composition.renderer.project.audio
         let audioTracks = try await asset.loadTracks(withMediaType: .audio).filter { track in
-            composition.audioTracks.contains { $0.trackID == track.trackID && audio[$0.sound].gain > 0 }
+            composition.audioTracks.contains { $0.trackID == track.trackID && audio.effectiveGain(for: $0.sound) > 0 }
         }
         guard !videoTracks.isEmpty else { throw StudioError.noVideo }
 
@@ -79,7 +79,11 @@ nonisolated public enum StudioExporter {
         }
         writer.shouldOptimizeForNetworkUse = true
         let videoInput = AVAssetWriterInput(
-            mediaType: .video, outputSettings: videoSettings(canvas: canvas, quality: composition.renderer.project.quality, colors: composition.colors)
+            mediaType: .video,
+            outputSettings: videoSettings(
+                canvas: canvas, quality: composition.renderer.project.quality, colors: composition.colors,
+                framesPerSecond: composition.renderer.project.resolvedFramesPerSecond
+            )
         )
         writer.add(videoInput)
         var layout = AudioChannelLayout()
@@ -134,10 +138,13 @@ nonisolated public enum StudioExporter {
     /// The writer's settings for the movie's video track: H.264 while `canvas` fits it, HEVC beyond, either at
     /// `quality`'s constant quality, encoded and tagged in the recording's color space (`colors`), as the frames
     /// are drawn.
-    static func videoSettings(canvas: CGSize, quality: StudioProject.Quality, colors: StudioComposition.Colors) -> [String: Any] {
+    static func videoSettings(
+        canvas: CGSize, quality: StudioProject.Quality, colors: StudioComposition.Colors, framesPerSecond: Int = 60
+    ) -> [String: Any] {
         let fitsH264 = canvas.width <= 4096 && canvas.height <= 4096
+        let fps = min(max(framesPerSecond, 1), 120)
         var properties: [String: Any] = [
-            AVVideoQualityKey: videoQuality(for: quality), AVVideoExpectedSourceFrameRateKey: 60, AVVideoMaxKeyFrameIntervalDurationKey: 2,
+            AVVideoQualityKey: videoQuality(for: quality), AVVideoExpectedSourceFrameRateKey: fps, AVVideoMaxKeyFrameIntervalDurationKey: 2,
             AVVideoAllowFrameReorderingKey: false,
         ]
         properties[AVVideoProfileLevelKey] = fitsH264 ? AVVideoProfileLevelH264HighAutoLevel : kVTProfileLevel_HEVC_Main_AutoLevel as String

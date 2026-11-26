@@ -97,6 +97,53 @@ enum PinGeometry {
         min(max(value, range.lowerBound), range.upperBound)
     }
 
+    /// Clamps `frame` so it stays inside `visible` (aligning its leading and top edges when larger than `visible`,
+    /// so Close, More, and the lock badge remain reachable).
+    static func clamped(_ frame: CGRect, to visible: CGRect) -> CGRect {
+        let x: CGFloat = frame.width <= visible.width
+            ? min(max(frame.minX, visible.minX), visible.maxX - frame.width)
+            : visible.minX
+        let y: CGFloat = frame.height <= visible.height
+            ? min(max(frame.minY, visible.minY), visible.maxY - frame.height)
+            : visible.maxY - frame.height
+        return CGRect(origin: CGPoint(x: x, y: y), size: frame.size)
+    }
+
+    /// Cascades `initial` by `step` away from `existing` pins while keeping the resulting frame inside `visible`.
+    static func cascaded(
+        _ initial: CGRect,
+        avoiding existing: [CGRect],
+        in visible: CGRect,
+        step: CGVector = CGVector(dx: 24, dy: -24)
+    ) -> CGRect {
+        var candidate = clamped(initial, to: visible)
+        let maxSteps = max(existing.count + 1, 1)
+        for _ in 0..<maxSteps {
+            let collides = existing.contains { abs($0.minX - candidate.minX) < 1 && abs($0.maxY - candidate.maxY) < 1 }
+            guard collides else { return candidate }
+            let next = clamped(candidate.offsetBy(dx: step.dx, dy: step.dy), to: visible)
+            if abs(next.minX - candidate.minX) < 0.5 && abs(next.maxY - candidate.maxY) < 0.5 {
+                return candidate
+            }
+            candidate = next
+        }
+        return candidate
+    }
+
+    /// Relocates `frame` onto `fallback` if it no longer intersects any connected screen's visible frame; nil when
+    /// it is already visible on a connected screen.
+    static func rescuedFrame(for frame: CGRect, screens: [CGRect], fallback: CGRect) -> CGRect? {
+        guard !screens.isEmpty else { return nil }
+        guard !screens.contains(where: { !$0.intersection(frame).isEmpty }) else { return nil }
+        let centered = CGRect(
+            x: fallback.midX - frame.width / 2,
+            y: fallback.midY - frame.height / 2,
+            width: frame.width,
+            height: frame.height
+        )
+        return clamped(centered, to: fallback)
+    }
+
     enum Corner: CaseIterable, Equatable, Sendable {
         case bottomLeft, bottomRight, topLeft, topRight
     }

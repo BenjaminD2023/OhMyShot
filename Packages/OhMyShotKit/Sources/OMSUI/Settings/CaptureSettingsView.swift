@@ -16,6 +16,7 @@ struct CaptureSettingsView: View {
                 HelpTopic(String(localized: "All-In-One remembers the last area", bundle: .module), Text("All-In-One opens with the area it last took, framed to adjust or take again. Without it, All-In-One opens with nothing chosen, and L brings back the last area you took since OhMyShot opened.", bundle: .module)),
                 HelpTopic(String(localized: "Color picker magnification", bundle: .module), Text("Controls how much each screen pixel is enlarged in the centered screenshot picker. The size stays the same when you change magnification. Applies to the next screenshot or Annotate Area capture; Pick Color is unchanged.", bundle: .module)),
                 HelpTopic(String(localized: "Copy color shortcut", bundle: .module), Text("Before starting an area selection, or while using Pick Color, this left-click shortcut copies the pointed color without closing the overlay. Other clicks keep their usual behavior.", bundle: .module)),
+                HelpTopic(String(localized: "Hide desktop icons while capturing", bundle: .module), Text("Covers desktop icons with the wallpaper while taking a capture or recording, then shows them again as soon as it finishes.", bundle: .module)),
             ]) {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle(isOn: $settings.freezeScreen) {
@@ -40,11 +41,21 @@ struct CaptureSettingsView: View {
                     Toggle(isOn: $settings.snapSelectionToText) {
                         Text("Snap the selection to text", bundle: .module)
                     }
+                    .disabled(!settings.freezeScreen)
+                    if !settings.freezeScreen {
+                        Text("Requires Freeze the screen.", bundle: .module)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .padding(.leading, 20)
+                    }
                     Toggle(isOn: $settings.showsCodesInSelection) {
                         Text("Find QR codes and barcodes", bundle: .module)
                     }
                     Toggle(isOn: $settings.allInOneRemembersArea) {
                         Text("All-In-One remembers the last area", bundle: .module)
+                    }
+                    Toggle(isOn: $settings.hidesDesktopIconsWhileCapturing) {
+                        Text("Hide desktop icons while capturing", bundle: .module)
                     }
                 }
             }
@@ -106,7 +117,7 @@ struct CaptureSettingsView: View {
             SettingsDivider()
 
             SettingsRow(String(localized: "Windows", bundle: .module), help: [
-                HelpTopic(String(localized: "Windows", bundle: .module), Text("Include window shadow captures the window’s native shadow; Background around windows is added outside the captured window. Screenshot background uses the automatic background from Screenshots, except Rounded corners and shadow is skipped because windows already have native rounded corners and a separately controlled native shadow. For an ordinary single-window capture, Shift toggles the chosen background off or on (a saved preset becomes transparent); in All-in-One, Shift adds or removes windows from the selection.", bundle: .module)),
+                HelpTopic(String(localized: "Windows", bundle: .module), Text("Include window shadow captures the window’s native shadow; Background around windows is added outside the captured window. Screenshot background uses the automatic background from Screenshots, except Rounded corners and shadow is skipped because windows already have native rounded corners and a separately controlled native shadow. Hold Option as you click a window to toggle the chosen background off or on (a saved preset becomes transparent); in All-in-One, Shift adds or removes windows from the selection.", bundle: .module)),
             ]) {
                 VStack(alignment: .leading, spacing: 6) {
                     Toggle(isOn: $settings.windowShadow) {

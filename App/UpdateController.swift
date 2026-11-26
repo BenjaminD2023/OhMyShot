@@ -19,6 +19,16 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
     private static let seenBuildKey = "updates.seenBuild"
     private var currentBuild: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0" }
     var isCapturing: () -> Bool = { false }
+    private static let skippedVersionKey = "updates.skippedVersion"
+    private var userInitiated = false
+    private let feedOverride: URL?
+    private let alwaysGentle: Bool
+
+    init(feedOverride: URL? = nil, alwaysGentle: Bool = false) {
+        self.feedOverride = feedOverride
+        self.alwaysGentle = alwaysGentle
+        super.init()
+    }
 
     @ObservationIgnored private lazy var controller = SPUStandardUpdaterController(
         startingUpdater: false,
@@ -27,10 +37,10 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
     )
     @ObservationIgnored private var observations: [NSKeyValueObservation] = []
 
-    func start() {
+    @discardableResult
+    func start() -> Bool {
         // Development builds must never offer to replace themselves with a release.
-        guard let feed = Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String,
-              URL(string: feed)?.scheme == "https" else { return }
+        guard feedOverride != nil || (Bundle.main.object(forInfoDictionaryKey: "SUFeedURL") as? String).flatMap(URL.init(string:))?.scheme == "https" else { return false }
         let updater = controller.updater
         observations = [
             updater.observe(\.canCheckForUpdates, options: [.initial, .new]) { [weak self] updater, _ in
@@ -47,19 +57,28 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
             },
         ]
         status.checkNow = { [weak self] in self?.checkForUpdates() }
-        controller.startUpdater()
+        do {
+            try updater.start()
+        } catch {
+            Log.updates.error("updates.start failed: \(error.localizedDescription, privacy: .public)")
+            return false
+        }
         status.lastCheck = updater.lastUpdateCheckDate
-        if let pending = UserDefaults.standard.dictionary(forKey: Self.pendingKey),
+        if feedOverride == nil, let pending = UserDefaults.standard.dictionary(forKey: Self.pendingKey),
            let build = pending["build"] as? String, let version = pending["version"] as? String,
            build.compare(currentBuild, options: .numeric) == .orderedDescending {
-            status.waiting = version
-        } else {
+            if UserDefaults.standard.string(forKey: Self.skippedVersionKey) != version {
+                status.waiting = version
+            }
+        } else if feedOverride == nil {
             UserDefaults.standard.removeObject(forKey: Self.pendingKey)
         }
+        return true
     }
 
     @objc func checkForUpdates(_ sender: Any? = nil) {
         guard canCheckForUpdates else { return }
+        userInitiated = true
         controller.checkForUpdates(sender)
     }
 
@@ -75,6 +94,20 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
         controller.updater.automaticallyDownloadsUpdates = enabled
     }
 
+    func setChecksAutomatically(_ enabled: Bool) { setAutomaticallyChecksForUpdates(enabled) }
+
+    func checkInBackground(skippingRecent: Bool) {
+        guard canCheckForUpdates, !controller.updater.sessionInProgress else { return }
+        if skippingRecent, let last = controller.updater.lastUpdateCheckDate,
+           Date.now.timeIntervalSince(last) < 18 * 60 * 60 { return }
+        userInitiated = false
+        controller.updater.checkForUpdatesInBackground()
+    }
+
+    func feedURLString(for updater: SPUUpdater) -> String? {
+        feedOverride?.absoluteString
+    }
+
     // A scheduled check, or one that finished while a capture began, waits for the next cycle.
     func updater(_ updater: SPUUpdater, mayPerform updateCheck: SPUUpdateCheck) throws {
         try requireIdleCapture()
@@ -84,9 +117,20 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
         try requireIdleCapture()
     }
 
+    var isShowingReleaseNotes: Bool { releaseWindow != nil }
+
     func showReleaseNotes(preview: Bool = false) {
-        releaseWindow = makeReleaseNotesWindow(preview: preview)
-        releaseWindow?.present()
+        if let existing = releaseWindow, !preview {
+            existing.present()
+            return
+        }
+        releaseWindow?.close()
+        let controller = makeReleaseNotesWindow(preview: preview)
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
+            if self?.releaseWindow === controller { self?.releaseWindow = nil }
+        }
+        releaseWindow = controller
+        controller.present()
     }
 
     #if DEBUG
@@ -94,6 +138,9 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
     func renderReleaseNotes(dark: Bool) -> NSWindow? {
         releaseWindow?.close()
         let controller = makeReleaseNotesWindow(preview: true)
+        controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak controller] in
+            if self?.releaseWindow === controller { self?.releaseWindow = nil }
+        }
         releaseWindow = controller
         controller.window?.appearance = NSAppearance(named: dark ? .darkAqua : .aqua)
         controller.showBehindWallpaper()
@@ -118,15 +165,19 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
         return ReleaseNotesWindowController(version: preview ? "0.2.0" : version, markdown: notes, banner: NSImage(named: "ReleaseBanner"))
     }
 
-    func showReleaseNotesAfterUpdate() {
+    func showReleaseNotesAfterUpdate(onboardingPending: Bool = false) {
+        guard feedOverride == nil else { return }
         let previous = UserDefaults.standard.string(forKey: Self.seenBuildKey)
-        if ReleaseNotes.shouldShow(previousBuild: previous, currentBuild: currentBuild) { showReleaseNotes() }
+        if ReleaseNotes.shouldShow(previousBuild: previous, currentBuild: currentBuild, onboardingPending: onboardingPending) {
+            showReleaseNotes()
+        }
         UserDefaults.standard.set(currentBuild, forKey: Self.seenBuildKey)
     }
 
-    /// Called when an update arrives and when the person returns to the app. Snooze for a day, never forget it.
+    /// Called when an update arrives and when the person returns to the app. Snooze for a day, or skip this version.
     func presentReminderIfNeeded(preview: Bool = false) {
-        guard !isCapturing(), let version = status.waiting, reminder == nil, canPresentReminder() else { return }
+        guard !isCapturing(), (!alwaysGentle || preview), let version = status.waiting, reminder == nil, canPresentReminder() else { return }
+        if !preview, UserDefaults.standard.string(forKey: Self.skippedVersionKey) == version { return }
         let key = "updates.reminded." + version
         if !preview, let last = UserDefaults.standard.object(forKey: key) as? Date, Date.now.timeIntervalSince(last) < 86400 { return }
         if !preview { UserDefaults.standard.set(Date.now, forKey: key) }
@@ -136,11 +187,23 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
         alert.informativeText = String(localized: "A newer OhMyShot is ready. Update now for the latest improvements and fixes. Your captures will stay safe.")
         alert.addButton(withTitle: String(localized: "Update Now"))
         alert.addButton(withTitle: String(localized: "Remind Me Tomorrow"))
+        alert.addButton(withTitle: String(localized: "Skip This Version"))
         reminder = alert
         NSApp.activate(ignoringOtherApps: true)
         let answer = alert.runModal()
         reminder = nil
-        if answer == .alertFirstButtonReturn { checkForUpdates() }
+        switch answer {
+        case .alertFirstButtonReturn:
+            checkForUpdates()
+        case .alertThirdButtonReturn:
+            if !preview {
+                UserDefaults.standard.set(version, forKey: Self.skippedVersionKey)
+                status.waiting = nil
+                if feedOverride == nil { UserDefaults.standard.removeObject(forKey: Self.pendingKey) }
+            }
+        default:
+            break
+        }
     }
 
     var menuTitle: String {
@@ -153,13 +216,28 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
 
     func updater(_ updater: SPUUpdater, didFindValidUpdate item: SUAppcastItem) {
         status.lastCheck = updater.lastUpdateCheckDate
-        status.waiting = item.displayVersionString
-        UserDefaults.standard.set(["build": item.versionString, "version": item.displayVersionString], forKey: Self.pendingKey)
+        let skipped = UserDefaults.standard.string(forKey: Self.skippedVersionKey) == item.displayVersionString
+        if userInitiated || !skipped {
+            status.waiting = item.displayVersionString
+            if feedOverride == nil, !skipped {
+                UserDefaults.standard.set(["build": item.versionString, "version": item.displayVersionString], forKey: Self.pendingKey)
+            }
+        }
         Log.updates.notice("updates.found \(item.displayVersionString, privacy: .public) (\(item.versionString, privacy: .public))")
+    }
+
+    func updaterDidNotFindUpdate(_ updater: SPUUpdater) {
+        status.lastCheck = updater.lastUpdateCheckDate
+        status.waiting = nil
+        if feedOverride == nil {
+            UserDefaults.standard.removeObject(forKey: Self.pendingKey)
+        }
+        Log.updates.notice("updates.none newer")
     }
 
     func updater(_ updater: SPUUpdater, didFinishUpdateCycleFor updateCheck: SPUUpdateCheck, error: (any Error)?) {
         status.lastCheck = updater.lastUpdateCheckDate
+        userInitiated = false
     }
 
     nonisolated var supportsGentleScheduledUpdateReminders: Bool { true }
@@ -169,9 +247,12 @@ final class UpdateController: NSObject, SPUUpdaterDelegate, NSMenuItemValidation
     }
 
     func standardUserDriverWillHandleShowingUpdate(_ handleShowingUpdate: Bool, forUpdate update: SUAppcastItem, state: SPUUserUpdateState) {
-        guard !handleShowingUpdate, !state.userInitiated else { return }
-        status.waiting = update.displayVersionString
-        if !state.userInitiated { presentReminderIfNeeded() }
+        if state.userInitiated {
+            status.waiting = update.displayVersionString
+        } else if UserDefaults.standard.string(forKey: Self.skippedVersionKey) != update.displayVersionString {
+            status.waiting = update.displayVersionString
+            presentReminderIfNeeded()
+        }
     }
 
     func standardUserDriverDidReceiveUserAttention(forUpdate update: SUAppcastItem) {

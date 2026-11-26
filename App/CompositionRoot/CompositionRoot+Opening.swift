@@ -7,6 +7,7 @@ import OMSCapture
 import OMSCore
 import OMSOCR
 import OMSRecording
+import OMSStudio
 import OMSUI
 import OSLog
 import UniformTypeIdentifiers
@@ -22,6 +23,8 @@ extension CompositionRoot {
         for url in urls where url.isFileURL {
             if url.pathExtension.lowercased() == AnnotationProject.fileExtension {
                 annotations.openProject(at: url)
+            } else if url.pathExtension.lowercased() == StudioPackage.fileExtension {
+                Task { await recordings.importStudioPackage(at: url) }
             } else if HistoryStore.isMovie(url) {
                 Task { await editMovie(at: url) }
             } else if ImageLoader.canLoad(url) {
@@ -82,6 +85,8 @@ extension CompositionRoot {
                 switch handoff.action {
                 case .annotate: await annotate(picture, name: url.deletingPathExtension().lastPathComponent)
                 case .pin: pins.pin(picture.image, scale: picture.scale, origin: .clipboard)
+                case .recognizeText:
+                    textCapture.openPanel(image: picture.image, scale: picture.scale, source: url.deletingPathExtension().lastPathComponent)
                 }
                 opened += 1
             }
@@ -94,11 +99,11 @@ extension CompositionRoot {
     /// Chooses pictures or projects to open in the editor, or movies to open in the recording window.
     func chooseFilesToAnnotate() {
         let chooser = NSOpenPanel()
-        chooser.allowedContentTypes = [.image, AnnotationProject.contentType, .mpeg4Movie, .quickTimeMovie]
+        chooser.allowedContentTypes = [.image, AnnotationProject.contentType, StudioPackage.contentType, .mpeg4Movie, .quickTimeMovie]
         chooser.allowsMultipleSelection = true
         chooser.message = String(localized: "Choose a picture to mark up, a project to go on with, or a movie to edit.")
         chooser.prompt = String(localized: "Open")
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         chooser.begin { [weak self] response in
             guard response == .OK else { return }
             self?.open(chooser.urls)
@@ -130,7 +135,7 @@ extension CompositionRoot {
         let date = Date.now
         let fileName = name ?? settings.nextFileName(date: date, appName: nil, windowTitle: nil)
         do {
-            let png = try await ImageExporter.encode(image, as: .png)
+            let png = try await ImageExporter.encode(image, as: .png, pixelsPerPoint: pixelsPerPoint)
             let entry = try history.add(
                 data: png, name: fileName, fileExtension: ImageExporter.Format.png.fileExtension,
                 kind: .screenshot, pixelWidth: image.width, pixelHeight: image.height, appName: nil, pixelsPerPoint: pixelsPerPoint,

@@ -126,6 +126,58 @@ enum AreaFrame {
         }
     }
 
+    /// `rect` with `handle` dragged to `point` (flipped points) keeping `ratio` (width over height) inside `bounds`:
+    /// smoothly clamps to the largest rectangle inside `bounds` that preserves `ratio` instead of distorting or
+    /// freezing when one axis hits a display edge.
+    static func resized(_ rect: CGRect, dragging handle: Handle, to point: CGPoint, in bounds: CGRect, keeping ratio: CGFloat) -> CGRect {
+        let free = resized(rect, dragging: handle, to: point)
+        guard ratio > 0 else { return free }
+        switch handle {
+        case .left, .right:
+            let anchorX = handle == .left ? rect.maxX : rect.minX
+            let goesLeft = point.x < anchorX
+            let maxWidth = max(0, goesLeft ? anchorX - bounds.minX : bounds.maxX - anchorX)
+            let limitWidth = min(maxWidth, bounds.height * ratio)
+            let width = min(free.width, limitWidth)
+            let height = min(width / ratio, bounds.height)
+            let finalWidth = min(height * ratio, maxWidth)
+            let x = goesLeft ? (finalWidth >= maxWidth ? bounds.minX : anchorX - finalWidth) : anchorX
+            let y = min(max(rect.midY - height / 2, bounds.minY), bounds.maxY - height)
+            return CGRect(x: x, y: y, width: finalWidth, height: height)
+        case .top, .bottom:
+            let anchorY = handle == .top ? rect.maxY : rect.minY
+            let goesUp = point.y < anchorY
+            let maxHeight = max(0, goesUp ? anchorY - bounds.minY : bounds.maxY - anchorY)
+            let limitHeight = min(maxHeight, bounds.width / ratio)
+            let height = min(free.height, limitHeight)
+            let width = min(height * ratio, bounds.width)
+            let finalHeight = min(width / ratio, maxHeight)
+            let x = min(max(rect.midX - width / 2, bounds.minX), bounds.maxX - width)
+            let y = goesUp ? (finalHeight >= maxHeight ? bounds.minY : anchorY - finalHeight) : anchorY
+            return CGRect(x: x, y: y, width: width, height: finalHeight)
+        case .topLeft, .topRight, .bottomRight, .bottomLeft:
+            let anchor = CGPoint(
+                x: handle == .topLeft || handle == .bottomLeft ? rect.maxX : rect.minX,
+                y: handle == .topLeft || handle == .topRight ? rect.maxY : rect.minY
+            )
+            let goesLeft = point.x < anchor.x
+            let goesUp = point.y < anchor.y
+            let maxWidth = max(0, goesLeft ? anchor.x - bounds.minX : bounds.maxX - anchor.x)
+            let maxHeight = max(0, goesUp ? anchor.y - bounds.minY : bounds.maxY - anchor.y)
+            var width = free.width, height = free.height
+            if width / max(height, 0.001) > ratio { height = width / ratio } else { width = height * ratio }
+            let limitWidth = min(maxWidth, maxHeight * ratio)
+            if width > limitWidth {
+                width = limitWidth
+                height = min(width / ratio, maxHeight)
+                width = min(height * ratio, maxWidth)
+            }
+            let x = goesLeft ? (width >= maxWidth ? bounds.minX : anchor.x - width) : anchor.x
+            let y = goesUp ? (height >= maxHeight ? bounds.minY : anchor.y - height) : anchor.y
+            return CGRect(x: x, y: y, width: width, height: height)
+        }
+    }
+
     /// The area `adjustment` makes with the pointer at `point` (flipped points) in `bounds`, keeping `ratio` (width over
     /// height) when one is kept: moved, kept inside the bounds whole; resized, or a new area, with the pointer held to
     /// the bounds. Cut to the bounds it may still have to be (`fitted`).
@@ -141,13 +193,14 @@ enum AreaFrame {
             // The edge where the pointer took hold of it, then held to the bounds.
             let clamped = clampedToBounds(CGPoint(x: point.x + grip.dx, y: point.y + grip.dy))
             return if let ratio {
-                resized(original, dragging: handle, to: clamped, keeping: ratio)
+                resized(original, dragging: handle, to: clamped, in: bounds, keeping: ratio)
             } else {
                 resized(original, dragging: handle, to: clamped)
             }
         case .selecting(let start):
+            let anchor = clampedToBounds(start)
             return if let ratio {
-                resized(CGRect(origin: start, size: .zero), dragging: .bottomRight, to: clamped, keeping: ratio)
+                resized(CGRect(origin: anchor, size: .zero), dragging: .bottomRight, to: clamped, in: bounds, keeping: ratio)
             } else {
                 CGRect(x: min(start.x, clamped.x), y: min(start.y, clamped.y), width: abs(clamped.x - start.x), height: abs(clamped.y - start.y))
             }

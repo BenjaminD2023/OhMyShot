@@ -130,13 +130,13 @@ struct HistoryTextTests {
 }
 
 struct HistorySearchTests {
-    private func entry(_ text: String, app: String? = nil) -> HistorySearch.Entry {
+    private func entry(_ text: String, app: String? = nil, windowTitle: String? = nil, fileName: String? = nil) -> HistorySearch.Entry {
         var folding = HistorySearch.Folding()
-        return HistorySearch.Entry(text: text, appName: app, folding: &folding)
+        return HistorySearch.Entry(text: text, appName: app, windowTitle: windowTitle, fileName: fileName, folding: &folding)
     }
 
-    private func finds(_ query: String, in text: String, app: String? = nil) -> Bool {
-        HistorySearch.match(HistorySearch.terms(in: query), in: entry(text, app: app)) != nil
+    private func finds(_ query: String, in text: String, app: String? = nil, windowTitle: String? = nil, fileName: String? = nil) -> Bool {
+        HistorySearch.match(HistorySearch.terms(in: query), in: entry(text, app: app, windowTitle: windowTitle, fileName: fileName)) != nil
     }
 
     @Test func spacesLineBreaksAndPunctuationDoNotCount() {
@@ -169,6 +169,13 @@ struct HistorySearchTests {
         #expect(!finds("safari 注册", in: "请登录", app: "Safari"))
         let byApp = HistorySearch.match(HistorySearch.terms(in: "safari"), in: entry("", app: "Safari"))
         #expect(byApp == HistorySearch.Match(excerpt: nil))
+    }
+
+    @Test func windowTitleAndFileNameAreSearchable() {
+        #expect(finds("roadmap", in: "", app: "Safari", windowTitle: "Q4 Product Roadmap — Notion", fileName: "OhMyShot 2026.png"))
+        #expect(finds("invoice 2026", in: "", app: "Preview", windowTitle: nil, fileName: "Invoice_2026-04.png"))
+        #expect(finds("safari roadmap invoice", in: "Total due", app: "Safari", windowTitle: "Roadmap", fileName: "invoice.png"))
+        #expect(!finds("missingterm", in: "Total due", app: "Safari", windowTitle: "Roadmap", fileName: "invoice.png"))
     }
 
     @Test func aQueryOfNothingToLookForHasNoTerms() {

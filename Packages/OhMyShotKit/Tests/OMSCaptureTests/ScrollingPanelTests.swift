@@ -27,4 +27,30 @@ struct ScrollingPanelTests {
         let inside = CGRect(x: 288, y: 288, width: 200, height: 300)
         #expect(ScrollingPanel.withShadowRoom(inside, clear: area) == inside.insetBy(dx: -34, dy: -34))
     }
+
+    @Test func placePinnedKeepsUserTopLeftAsPanelGrowsAndClampsInsideDisplay() {
+        let display = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let topLeft = CGPoint(x: 920, y: 740)
+        let initial = ScrollingPanel.placePinned(CGSize(width: 220, height: 200), topLeft: topLeft, on: display)
+        #expect(initial.minX == 920 && initial.maxY == 740 && initial.height == 200)
+
+        let grown = ScrollingPanel.placePinned(CGSize(width: 220, height: 360), topLeft: topLeft, on: display)
+        #expect(grown.minX == 920 && grown.maxY == 740 && grown.height == 360)
+
+        // Near the bottom-right corner, it clamps cleanly inside the 8 pt margin.
+        let clamped = ScrollingPanel.placePinned(CGSize(width: 220, height: 360), topLeft: CGPoint(x: 1350, y: 200), on: display)
+        #expect(display.insetBy(dx: 8, dy: 8).contains(clamped))
+    }
+
+    #if DEBUG
+    @MainActor
+    @Test func directionSelectorUpdatesDirectionAndNotifiesCallback() {
+        let panel = ScrollingPanel()
+        var chosen: [AutoScroller.Direction] = []
+        panel.onDirectionChanged = { chosen.append($0) }
+        panel.debugSelectDirection(.right)
+        panel.debugSelectDirection(.up)
+        #expect(chosen == [.right, .up])
+    }
+    #endif
 }

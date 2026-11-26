@@ -26,13 +26,13 @@ final class TextCaptureCoordinator {
     /// compiles them on the Neural Engine first: about 18 s for each of the two passes, one after the other, so about
     /// 37 s in all, and longer while other apps compile. The highlight stays on meanwhile, and Escape stops the reading
     /// (Docs/ocr.md › Escape stops a reading); at 30 s nearly every such reading failed and copied nothing.
-    private let pipeline: VisionPipeline = {
-        var options = VisionPipeline.Options.preferred()
+    private var pipeline: VisionPipeline {
+        var options = VisionPipeline.Options.configured(settings.ocrLanguages)
         options.timeout = .seconds(60)
         options.overallTimeout = .seconds(60)
         options.trace = { step in Log.performance.notice("ocr.pipeline \(step, privacy: .public)") }
         return VisionPipeline(options: options)
-    }()
+    }
     /// Shared by the panel and Translate Area: a language pair's first translation loads its model.
     private let translator = Translator()
     private let highlight = TextSelectionHighlight()
@@ -89,6 +89,33 @@ final class TextCaptureCoordinator {
     /// Text read but left off the clipboard, which changed while the cloud model read it; the card's Copy puts it there.
     private var uncopied: (text: String, note: String?, selection: CGRect)?
     private let resultSetting: Task<Void, Never>
+    /// Cached translation target languages for `TranslationLens`'s quick language switcher.
+    private var cachedTranslationTargets: [Locale.Language] = []
+    /// Active in-place re-translation triggered from `TranslationLens`'s quick language switcher.
+    private var lensRetranslation: Task<Void, Never>?
+    /// Monotonic counter so stale `TranslationLens` re-translations never replace a newer lens.
+    private var lensGeneration: UInt = 0
+
+    /// Optional hook wired by CompositionRoot to pin a rendered translated image from TranslationLens or the panel.
+    var onPinImage: ((CGImage, CGFloat) -> Void)? {
+        didSet {
+            lens.onPinImage = onPinImage
+            TextRecognitionWindowController.onPinImage = onPinImage
+        }
+    }
+
+    /// The image read by Capture Text or Capture Formula, with any already-computed OCR / Cloud reading so
+    /// Open in Panel reuses them without redundant re-OCR or duplicate cloud requests. Owned only by the
+    /// active result card's `onOpenInPanel` closure so it is released as soon as the card closes or is disabled.
+    private struct CapturedSnapshot {
+        let image: CGImage
+        let scale: CGFloat
+        let source: String
+        let place: AppTextPlace?
+        var cachedLines: [OCRLine]?
+        var cachedCloud: CloudReading?
+        var secondReadingDone: Bool = false
+    }
 
     private struct Recognition {
         let lines: [OCRLine]
@@ -211,12 +238,24 @@ final class TextCaptureCoordinator {
     private func presentCard(_ state: TextResultHUD.State, near selection: CGRect, note: String? = nil, openInPanel: (() -> Void)? = nil) {
         hud.setPanelAction(openInPanel, showsResult: settings.showTextResult)
         hud.show(state, near: selection, position: settings.textResultPosition,
-                 closeAfter: settings.showTextResult ? settings.textResultCloseAfter : nil, note: note)
+                 closeAfter: settings.showTextResult ? settings.textResultCloseAfter : nil, note: note,
+                 canOpenInPanel: openInPanel != nil)
     }
 
-    private func panelAction(for image: CGImage, near selection: CGRect, place: AppTextPlace? = nil) -> () -> Void {
-        let scale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
-        return { [weak self] in self?.openPanel(image: image, scale: scale, source: String(localized: "Screen Area"), place: place) }
+    private func panelAction(for snapshot: CapturedSnapshot) -> () -> Void {
+        return { [weak self] in
+            guard let self else { return }
+            TextRecognitionWindowController.seedNextCloudReading(snapshot.cachedCloud)
+            self.openPanel(
+                image: snapshot.image, scale: snapshot.scale, source: snapshot.source,
+                place: snapshot.place, cachedLines: snapshot.cachedLines,
+                secondReadingDone: snapshot.secondReadingDone
+            )
+        }
+    }
+
+    private func openInPanel(for snapshot: CapturedSnapshot) -> (() -> Void)? {
+        settings.showTextResult ? panelAction(for: snapshot) : nil
     }
 
     /// Shows the overlay for text. `joinLines` joins the lines of each paragraph. `done` is told the text copied, or
@@ -381,9 +420,9 @@ final class TextCaptureCoordinator {
     }
 
     /// A picture file's text as Capture Text puts it together, or nil when it has none; nothing is copied or shown. It is
-    /// read on this Mac, never by the cloud model: in the text reader, with the formula and VLM packs installed, so the
-    /// app is no larger after it (Docs/perf.md, M5 — power gate), or here while the reader isn't in the app. For a
-    /// shortcut's Recognize Text in Image, and Copy Text on a Quick Access card or in Capture History.
+    /// read on this Mac, never by the cloud model: in the text reader, with the second reading, formula, and VLM packs
+    /// installed, so the app is no larger after it (Docs/perf.md, M5 — power gate), or here while the reader isn't in
+    /// the app. For a shortcut's Recognize Text in Image, and Copy Text on a Quick Access card or in Capture History.
     func text(ofPictureAt url: URL, joinLines: Bool) async throws -> String? {
         guard let reader = readers?() else {
             guard let loaded = await Self.load(.file(url), fallbackScale: 1) else { return nil }
@@ -391,7 +430,8 @@ final class TextCaptureCoordinator {
         }
         do {
             let text = try await TextReaderTool.text(
-                ofPictureAt: url, joinsWrappedLines: joinLines, formulas: reader.formula, vlm: reader.vlm, seconds: Self.panelTableWait,
+                ofPictureAt: url, joinsWrappedLines: joinLines, pack: reader.second?.folder,
+                formulas: reader.formula, vlm: reader.vlm, seconds: reader.vlm != nil ? Self.panelTableWait : nil,
                 helper: reader.helper
             )
             return text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : text
@@ -417,8 +457,9 @@ final class TextCaptureCoordinator {
         done: ((String?) -> Void)? = nil
     ) async {
         guard !Task.isCancelled else { done?(nil); return }
+        let capturedScale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
+        var snapshot = CapturedSnapshot(image: image, scale: capturedScale, source: String(localized: "Screen Area"), place: place)
         var showsCard: Bool { settings.showTextResult }
-        var openInPanel: (() -> Void)? { showsCard ? panelAction(for: image, near: selection, place: place) : nil }
         let probe = LatencyProbe("ocr.recognize")
         defer { probe.end() }
         let localDeadline = ContinuousClock.now + .seconds(60)
@@ -428,19 +469,27 @@ final class TextCaptureCoordinator {
         waitingForCloud = nil
         let clipboard = NSPasteboard.general.changeCount
         let cloud = allowsCloud ? captureTextCloud?() : nil
+        if let cloud, !cloud.model.isLocal, selection.width > 0, selection.height > 0 {
+            let host = cloud.model.host ?? cloud.model.displayName
+            highlight.updateStatus(String(localized: "Sending to \(host)… · Esc"))
+        }
         let cloudReading = cloud.map { cloud in Task { try await cloud.read(image, joinLines) } }
         waitingForCloud = cloudReading
+        let second = settings.usesSecondReadingInCaptureText
+            ? readers?().flatMap { reader in reader.second.map { (pack: $0, helper: reader.helper) } }
+            : nil
         let reader = elementReader
         let vlm = reader?.vlm.flatMap { isTerminal(place) ? nil : $0 }
         if reader?.vlm != nil, vlm == nil { Log.capture.notice("Capture Text leaves the tables to Vision: the picture is of a terminal") }
         let formulas = reader.map { reader in
             let worker = elementTextReader
-            return Task { await Self.elements(in: image, formulas: reader.formula, vlm: vlm, seconds: Self.tableWait, helper: reader.helper, worker: worker) }
+            return Task { await Self.elements(in: image, formulas: reader.formula, vlm: vlm, seconds: vlm != nil ? Self.tableWait : nil, helper: reader.helper, worker: worker) }
         }
         defer {
             cloudReading?.cancel()
             formulas?.cancel()
         }
+        let currentPipeline = pipeline
         let visionLines: [OCRLine]?
         var visionReader: (worker: TextReaderWorker, compatibility: Bool)?
         var visionFailure: String?
@@ -468,11 +517,18 @@ final class TextCaptureCoordinator {
             done?(nil)
             return
         }
+        if let visionLines {
+            snapshot.cachedLines = visionLines
+        }
         // Asked at once, while the screen still shows what the picture does: before any wait for the cloud model.
         let appText = Self.appText(for: visionLines, in: settings.readsAppText ? place : nil, layout: displays.layout)
 
         var note: String?
         if let cloud, let cloudReading {
+            if cloud.model.isLocal, selection.width > 0, selection.height > 0 {
+                let host = cloud.model.host ?? cloud.model.displayName
+                highlight.updateStatus(String(localized: "Sending to \(host)… · Esc"))
+            }
             let started = ContinuousClock.now
             let outcome = await Self.first(cloudReading, within: Self.cloudWait)
             guard !Task.isCancelled, reading == readings else {
@@ -485,6 +541,7 @@ final class TextCaptureCoordinator {
             waitingForCloud = nil
             switch outcome {
             case .success(let cloudText)?:
+                snapshot.cachedCloud = cloudText
                 let text = cloudText.text
                 if !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
                     onTextRecognized?()
@@ -493,13 +550,13 @@ final class TextCaptureCoordinator {
                     let readBy = String(localized: "Read by \(cloud.model.displayName)")
                     Log.capture.notice("Capture Text read \(text.count, privacy: .public) characters with the cloud model, \(String(describing: ContinuousClock.now - started), privacy: .public) after Vision's reading")
                     if copiesToClipboard, NSPasteboard.general.changeCount != clipboard {
-                        keepUncopied(text, note: readBy, near: selection, openInPanel: openInPanel)
+                        keepUncopied(text, note: readBy, near: selection, openInPanel: openInPanel(for: snapshot))
                         done?(nil)
                         return
                     }
                     if copiesToClipboard { copy(text) }
                     highlight.finish(copied: text, announces: !showsCard)
-                    if showsCard { presentCard(.copied(text: text, joined: joinLines, canJoin: false), near: selection, note: readBy, openInPanel: openInPanel) }
+                    if showsCard { presentCard(.copied(text: text, joined: joinLines, canJoin: false), near: selection, note: readBy, openInPanel: openInPanel(for: snapshot)) }
                     done?(text)
                     return
                 }
@@ -510,6 +567,7 @@ final class TextCaptureCoordinator {
                 cloudReading.cancel()
                 note = String(localized: "\(cloud.model.displayName) took too long, so this Mac’s reading was copied.")
             }
+            highlight.updateStatus(nil)
             Log.capture.notice("Capture Text falls back to this Mac's reading: the cloud model gave no text")
         }
 
@@ -517,9 +575,15 @@ final class TextCaptureCoordinator {
             formulas?.cancel()
             note = note ?? visionFailure
             highlight.finish(copied: nil, announces: !showsCard)
-            if showsCard || note != nil { presentCard(.empty, near: selection, note: note) }
+            if showsCard || note != nil { presentCard(.empty, near: selection, note: note, openInPanel: openInPanel(for: snapshot)) }
             done?(nil)
             return
+        }
+        if let second, SecondReading.wanted(lines), PPOCRReader.reads(width: image.width, height: image.height) {
+            if let secondLines = await Self.secondReading(of: image, with: second.pack, helper: second.helper) {
+                lines = SecondReading.merged(lines, with: secondLines)
+                snapshot.secondReadingDone = true
+            }
         }
         var appNote: String?
         if let appText {
@@ -558,6 +622,7 @@ final class TextCaptureCoordinator {
                 Self.log(merge, of: found.tables, in: "Capture Text", after: ContinuousClock.now - started)
             }
         }
+        snapshot.cachedLines = lines
 
         guard !Task.isCancelled, reading == readings else { done?(nil); return }
 
@@ -565,10 +630,47 @@ final class TextCaptureCoordinator {
         var recognition = Recognition(lines: lines, selection: selection, joined: joinLines, copiesToClipboard: copiesToClipboard, note: note ?? (showsCard ? appNote : nil))
         let text = assemble(recognition)
         guard !text.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            let detectedCodes = (try? await VisionPipeline.selectionCodes(in: image)) ?? []
+            guard !Task.isCancelled, reading == readings else { done?(nil); return }
+            var seenPayloads = Set<String>()
+            let uniqueCodes = detectedCodes.filter { seenPayloads.insert($0.payload).inserted }
+            if !uniqueCodes.isEmpty {
+                let copiedText = uniqueCodes.map(\.payload).joined(separator: "\n")
+                let foundCodes = uniqueCodes.map { FoundCode(payload: $0.payload, isMatrix: $0.kind.isMatrix, box: $0.box) }
+                let codeSummary: String
+                if foundCodes.count == 1 {
+                    let code = foundCodes[0]
+                    let summary = code.displaySummary
+                    codeSummary = summary == code.payload
+                        ? (code.isMatrix ? String(localized: "Copied QR code") : String(localized: "Copied barcode"))
+                        : summary
+                } else {
+                    codeSummary = String(localized: "Copied \(foundCodes.count) codes")
+                }
+                onTextRecognized?()
+                if cloud != nil, copiesToClipboard, NSPasteboard.general.changeCount != clipboard {
+                    last = nil
+                    keepUncopied(copiedText, note: note ?? codeSummary, near: selection, openInPanel: openInPanel(for: snapshot))
+                    done?(nil)
+                    return
+                }
+                if copiesToClipboard { copy(copiedText) }
+                last = nil
+                let announcement = foundCodes.count == 1
+                    ? String(localized: "Copied \(foundCodes[0].displaySummary)")
+                    : codeSummary
+                highlight.finish(copied: copiedText, announces: !showsCard, announcement: announcement)
+                Log.capture.notice("Capture Text fell back to \(uniqueCodes.count, privacy: .public) code(s), copied \(copiedText.count, privacy: .public) characters")
+                if showsCard || note != nil {
+                    presentCard(.copied(text: copiedText, joined: false, canJoin: false), near: selection, note: note ?? codeSummary, openInPanel: openInPanel(for: snapshot))
+                }
+                done?(copiedText)
+                return
+            }
             last = nil
             Log.capture.notice("Capture Text found no text")
             highlight.finish(copied: nil, announces: !showsCard)
-            if showsCard || note != nil { presentCard(.empty, near: selection, note: note) }
+            if showsCard || note != nil { presentCard(.empty, near: selection, note: note, openInPanel: openInPanel(for: snapshot)) }
             done?(nil)
             return
         }
@@ -576,7 +678,7 @@ final class TextCaptureCoordinator {
         // After a wait for the cloud model, something copied meanwhile stays on the clipboard.
         if cloud != nil, copiesToClipboard, NSPasteboard.general.changeCount != clipboard {
             last = nil
-            keepUncopied(text, note: note, near: selection, openInPanel: openInPanel)
+            keepUncopied(text, note: note, near: selection, openInPanel: openInPanel(for: snapshot))
             done?(nil)
             return
         }
@@ -588,7 +690,7 @@ final class TextCaptureCoordinator {
         // The cloud model's failure is said even with the card off: Capture Text would otherwise read differently
         // without a word.
         if showsCard || note != nil {
-            presentCard(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: recognition.note, openInPanel: openInPanel)
+            presentCard(.copied(text: text, joined: joinLines, canJoin: canJoin(recognition)), near: selection, note: recognition.note, openInPanel: openInPanel(for: snapshot))
         }
         done?(text)
     }
@@ -873,10 +975,12 @@ final class TextCaptureCoordinator {
 
     private func readFormula(_ image: CGImage, selection: CGRect, copiesToClipboard: Bool, done: ((String?) -> Void)?) async {
         guard !Task.isCancelled else { done?(nil); return }
+        let capturedScale = selection.width > 0 ? CGFloat(image.width) / selection.width : 1
+        let snapshot = CapturedSnapshot(image: image, scale: capturedScale, source: String(localized: "Screen Area"), place: nil)
         var showsCard: Bool { settings.showTextResult }
         guard let reader = readers?(), let pack = reader.formula else {
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
-            if showsCard { presentCard(.noFormula, near: selection) }
+            if showsCard { presentCard(.noFormula, near: selection, openInPanel: openInPanel(for: snapshot)) }
             done?(nil)
             return
         }
@@ -889,16 +993,17 @@ final class TextCaptureCoordinator {
         guard let formula, formula.isFormula else {
             Log.capture.notice("Capture Formula found no formula (\(formula?.ended.rawValue ?? "failed", privacy: .public)) in \(String(describing: ContinuousClock.now - started), privacy: .public)")
             highlight.finish(copied: nil, announces: !showsCard, formula: true)
-            if showsCard { presentCard(.noFormula, near: selection) }
+            if showsCard { presentCard(.noFormula, near: selection, openInPanel: openInPanel(for: snapshot)) }
             done?(nil)
             return
         }
         onTextRecognized?()
-        if copiesToClipboard { copy(formula.latex) }
-        highlight.finish(copied: formula.latex, announces: !showsCard, formula: true)
-        Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formula.latex.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
-        if showsCard { presentCard(.copiedFormula(latex: formula.latex), near: selection, openInPanel: panelAction(for: image, near: selection)) }
-        done?(formula.latex)
+        let formatted = settings.formulaDelimiter.wrap(formula.latex)
+        if copiesToClipboard { copy(formatted) }
+        highlight.finish(copied: formatted, announces: !showsCard, formula: true)
+        Log.capture.notice("Capture Formula \(copiesToClipboard ? "copied" : "read", privacy: .public) \(formatted.count, privacy: .public) characters of LaTeX in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+        if showsCard { presentCard(.copiedFormula(latex: formatted), near: selection, openInPanel: openInPanel(for: snapshot)) }
+        done?(formatted)
     }
 
     /// Warms both of Capture Text's models again, as its first reading would, for `TextModelWarmup`.
@@ -913,6 +1018,9 @@ final class TextCaptureCoordinator {
     /// Option held when the drag ends opens the OCR panel, translated, instead.
     func translateArea() {
         guard !overlay.isActive else { return }
+        lensRetranslation?.cancel()
+        lensRetranslation = nil
+        lensGeneration &+= 1
         lens.close(animated: false)
         overlay.freezesScreen = settings.freezeScreen
         overlay.begin(mode: .area, purpose: .text) { [weak self] outcome in
@@ -934,7 +1042,7 @@ final class TextCaptureCoordinator {
         }
     }
 
-    private func translate(region rect: CGRect, frozen: CapturedFrame?, inPanel: Bool) async {
+    func translate(region rect: CGRect, frozen: CapturedFrame? = nil, inPanel: Bool = false) async {
         await selection.run { [self] in
             do {
                 let frame = try await capture(rect, frozen: frozen)
@@ -968,6 +1076,9 @@ final class TextCaptureCoordinator {
     /// the OCR panel, translated, which says why and offers a download or another language: a beep alone
     /// said nothing anyone could act on.
     func translate(_ image: CGImage, scale: CGFloat, over frame: CGRect, source: String, inPanel: Bool) async {
+        lensRetranslation?.cancel()
+        lensRetranslation = nil
+        lensGeneration &+= 1
         let place = AppTextPlace(frame: frame, scale: scale)
         if inPanel {
             highlight.hide()
@@ -975,41 +1086,17 @@ final class TextCaptureCoordinator {
             return
         }
         let probe = LatencyProbe("ocr.translate-area")
-        let target = settings.translationLanguage
         do {
+            async let targetOptionsTask = availableTranslationTargets()
             let lines = try await pipeline.recognize(image).lines
             try Task.checkCancellation()
             let units = TranslationUnits.group(lines, image: image)
-            let outcome = try await translator.translate(units, to: target)
-            // Escape stopped it (the highlight has gone): nothing is laid over the area, nor the panel opened.
+            let targetOptions = await targetOptionsTask
             try Task.checkCancellation()
-            guard !outcome.translations.isEmpty else {
-                let skipped = Dictionary(grouping: units.compactMap(\.skip), by: { "\($0)" }).map { "\($1.count) \($0)" }.sorted().joined(separator: ", ")
-                Log.capture.notice("Translate Area translated nothing into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, skipped \(skipped, privacy: .public), \(outcome.inTarget.count, privacy: .public) already in it, to download \(outcome.needsDownload.map(\.minimalIdentifier), privacy: .public); opening the panel")
-                highlight.hide()
-                openPanel(image: image, scale: scale, source: source, translating: true, place: place)
-                return
-            }
-            let rendering = await TranslationOverlay.render(
-                image, lines: lines, units: units, translations: outcome.translations, language: outcome.target, scale: scale
+            await presentTranslation(
+                image: image, lines: lines, units: units, scale: scale, over: frame,
+                source: source, place: place, targetOptions: targetOptions, probe: probe, isInitial: true
             )
-            try Task.checkCancellation()
-            guard let rendering else {
-                highlight.finish(copied: nil, announces: true)
-                return
-            }
-            probe.end()
-            onTextRecognized?()
-            let (text, translated) = Translator.text(of: units, outcome)
-            let sources = ListFormatter.localizedString(byJoining: outcome.sources.map { Translator.name(of: $0) })
-            lens.show(
-                rendering.image, original: image, scale: scale, over: frame, text: text, translated: translated,
-                language: Translator.identifier(of: outcome.target), summary: "\(sources) → \(Translator.name(of: outcome.target))",
-                shortened: !rendering.truncated.isEmpty
-            )
-            lens.onOpenInPanel = { [weak self] in self?.openPanel(image: image, scale: scale, source: source, translating: true, place: place) }
-            highlight.hide()
-            Log.capture.notice("Translate Area translated \(outcome.translations.count, privacy: .public) of \(units.count, privacy: .public) units into \(outcome.target.minimalIdentifier, privacy: .public), \(rendering.truncated.count, privacy: .public) shortened")
         } catch {
             guard !Task.isCancelled else { return }
             Log.capture.error("Translate Area failed: \(String(describing: error), privacy: .public)")
@@ -1017,10 +1104,118 @@ final class TextCaptureCoordinator {
         }
     }
 
+    private func presentTranslation(
+        image: CGImage, lines: [OCRLine], units: [TranslationUnit], scale: CGFloat, over frame: CGRect,
+        source: String, place: AppTextPlace, targetOptions: [(id: String, name: String)],
+        probe: LatencyProbe?, isInitial: Bool
+    ) async {
+        let generation = lensGeneration
+        let target = settings.translationLanguage
+        do {
+            let outcome = try await translator.translate(units, to: target)
+            // Escape stopped it (the highlight has gone): nothing is laid over the area, nor the panel opened.
+            try Task.checkCancellation()
+            guard lensGeneration == generation else { return }
+            if !isInitial, lens.onOpenInPanel == nil { return }
+            guard !outcome.translations.isEmpty else {
+                let skipped = Dictionary(grouping: units.compactMap(\.skip), by: { "\($0)" }).map { "\($1.count) \($0)" }.sorted().joined(separator: ", ")
+                Log.capture.notice("Translate Area translated nothing into \(outcome.target.minimalIdentifier, privacy: .public): \(units.count, privacy: .public) units, skipped \(skipped, privacy: .public), \(outcome.inTarget.count, privacy: .public) already in it, to download \(outcome.needsDownload.map(\.minimalIdentifier), privacy: .public); opening the panel")
+                if isInitial { highlight.hide() } else { lens.close(animated: false) }
+                openPanel(image: image, scale: scale, source: source, translating: true, place: place, cachedLines: lines)
+                return
+            }
+            let rendering = await TranslationOverlay.render(
+                image, lines: lines, units: units, translations: outcome.translations, language: outcome.target, scale: scale
+            )
+            try Task.checkCancellation()
+            guard lensGeneration == generation else { return }
+            if !isInitial, lens.onOpenInPanel == nil { return }
+            guard let rendering else {
+                if isInitial { highlight.finish(copied: nil, announces: true) } else { NSSound.beep() }
+                return
+            }
+            probe?.end()
+            if isInitial { onTextRecognized?() }
+            let (text, translated) = Translator.text(of: units, outcome)
+            let sources = ListFormatter.localizedString(byJoining: outcome.sources.map { Translator.name(of: $0) })
+            let options = resolvedTargetOptions(base: targetOptions)
+            lens.saveDirectory = settings.exportDirectory
+            lens.show(
+                rendering.image, original: image, scale: scale, over: frame, text: text, translated: translated,
+                language: Translator.identifier(of: outcome.target), summary: "\(sources) → \(Translator.name(of: outcome.target))",
+                shortened: !rendering.truncated.isEmpty, needsDownload: !outcome.needsDownload.isEmpty,
+                targetLanguage: settings.translationLanguage,
+                availableTargetLanguages: options,
+                onChangeTargetLanguage: { [weak self] identifier in
+                    self?.changeLensTargetLanguage(
+                        to: identifier, image: image, lines: lines, units: units,
+                        scale: scale, over: frame, source: source, place: place, targetOptions: targetOptions
+                    )
+                }
+            )
+            lens.onOpenInPanel = { [weak self] in
+                self?.lensRetranslation?.cancel()
+                self?.lensRetranslation = nil
+                self?.openPanel(image: image, scale: scale, source: source, translating: true, place: place, cachedLines: lines)
+            }
+            if isInitial { highlight.hide() }
+            Log.capture.notice("Translate Area translated \(outcome.translations.count, privacy: .public) of \(units.count, privacy: .public) units into \(outcome.target.minimalIdentifier, privacy: .public), \(rendering.truncated.count, privacy: .public) shortened")
+        } catch {
+            guard !Task.isCancelled else { return }
+            Log.capture.error("Translate Area failed: \(String(describing: error), privacy: .public)")
+            if isInitial {
+                highlight.finish(copied: nil, announces: true)
+            } else {
+                NSSound.beep()
+            }
+        }
+    }
+
+    private func changeLensTargetLanguage(
+        to identifier: String, image: CGImage, lines: [OCRLine], units: [TranslationUnit],
+        scale: CGFloat, over frame: CGRect, source: String, place: AppTextPlace,
+        targetOptions: [(id: String, name: String)]
+    ) {
+        guard identifier != settings.translationTarget else { return }
+        settings.translationTarget = identifier
+        lensRetranslation?.cancel()
+        lensGeneration &+= 1
+        lensRetranslation = Task { [weak self] in
+            await self?.presentTranslation(
+                image: image, lines: lines, units: units, scale: scale, over: frame,
+                source: source, place: place, targetOptions: targetOptions, probe: nil, isInitial: false
+            )
+        }
+    }
+
+    private func availableTranslationTargets() async -> [(id: String, name: String)] {
+        if cachedTranslationTargets.isEmpty {
+            cachedTranslationTargets = await Translator.targets()
+        }
+        return cachedTranslationTargets.map {
+            (id: Translator.identifier(of: $0), name: Translator.name(of: $0))
+        }
+    }
+
+    private func resolvedTargetOptions(base: [(id: String, name: String)]) -> [(id: String, name: String)] {
+        var options = base
+        let current = settings.translationTarget
+        if !current.isEmpty, !options.contains(where: { $0.id.caseInsensitiveCompare(current) == .orderedSame }) {
+            let language = Locale.Language(identifier: current)
+            options.insert((id: Translator.identifier(of: language), name: Translator.name(of: language)), at: 0)
+        }
+        return options
+    }
+
     #if DEBUG
     func revealLensControls() { lens.revealControls() }
 
-    func closeLens() { lens.close(animated: false) }
+    func closeLens() {
+        lensRetranslation?.cancel()
+        lensRetranslation = nil
+        lensGeneration &+= 1
+        lens.close(animated: false)
+    }
     #endif
 
     // MARK: OCR panel
@@ -1029,7 +1224,7 @@ final class TextCaptureCoordinator {
     /// image's pixels per point; `source` names it under the title.
     ///
     /// With a model pack installed, a picture whose text holds Chinese or Japanese is read again with it in the text
-    /// reader, and the two readings are put together (`TextAnalysis.withSecondReading`) before the panel shows them.
+    /// reader asynchronously (`TextRecognitionWindowController.secondReadingRefiner`) once Vision's reading shows.
     ///
     /// With the formula pack installed, the formulas in the picture are found and read in the text reader beside
     /// Vision's reading, and come into the text as LaTeX once read.
@@ -1037,12 +1232,39 @@ final class TextCaptureCoordinator {
     /// A picture of the screen (`place`) takes the characters of the apps there for the lines they show alike, while
     /// Settings says so (L0, Docs/ocr.md › Text from apps); they are asked as soon as Vision has read, and their
     /// characters go over the second reading's.
-    func openPanel(image: CGImage, scale: CGFloat, source: String, translating: Bool = false, place: AppTextPlace? = nil) {
+    func openPanel(
+        image: CGImage, scale: CGFloat, source: String, translating: Bool = false, place: AppTextPlace? = nil,
+        cachedLines: [OCRLine]? = nil, secondReadingDone: Bool = false
+    ) {
         let controller = panel ?? makePanel()
         panel = controller
+        let second = (cachedLines?.isEmpty == false && secondReadingDone)
+            ? nil
+            : readers?().flatMap { reader in reader.second.map { (pack: $0, helper: reader.helper) } }
+        let placeForL2 = settings.readsAppText ? place : nil
+        let layout = displays.layout
+        TextRecognitionWindowController.secondReadingRefiner = second.map { second in
+            { @Sendable image, visionLines in
+                guard SecondReading.wanted(visionLines), PPOCRReader.reads(width: image.width, height: image.height) else {
+                    return visionLines
+                }
+                let started = ContinuousClock.now
+                guard let l2Lines = await Self.secondReading(of: image, with: second.pack, helper: second.helper) else {
+                    return visionLines
+                }
+                var merged = SecondReading.merged(visionLines, with: l2Lines)
+                if let asking = Self.appText(for: merged, in: placeForL2, layout: layout, within: .milliseconds(500)) {
+                    let reading = await asking.value
+                    let appMerge = AppTextMerge.merged(merged, with: reading.lines.map { AppTextLine(box: $0.box, pieces: $0.pieces, app: $0.app) })
+                    merged = appMerge.lines
+                }
+                Log.capture.notice("Second reading (async): \(l2Lines.count, privacy: .public) lines merged in \(String(describing: ContinuousClock.now - started), privacy: .public)")
+                return merged
+            }
+        }
         controller.show(
             image: image, scale: scale, source: source, translating: translating, elements: panelElements(readsTables: !isTerminal(place)),
-            analyze: analyzer(for: place)
+            analyze: analyzer(for: place, cachedLines: cachedLines)
         )
     }
 
@@ -1074,29 +1296,21 @@ final class TextCaptureCoordinator {
         return Self.terminals.contains(identifier)
     }
 
-    /// How the panel reads a picture: Vision; the second reading while a pack is installed; and for a picture of the
-    /// screen (`place`), the apps' characters while Settings says so.
-    func analyzer(for place: AppTextPlace?) -> @Sendable (CGImage) async throws -> TextAnalysis {
+    /// How the panel reads a picture: Vision (or cached OCR lines from Capture Text) and, for a picture of the
+    /// screen (`place`), the apps' characters while Settings says so. L2 runs asynchronously via
+    /// `TextRecognitionWindowController.secondReadingRefiner` so Vision shows immediately without a 3 s block.
+    func analyzer(for place: AppTextPlace?, cachedLines: [OCRLine]? = nil) -> @Sendable (CGImage) async throws -> TextAnalysis {
         let pipeline = pipeline
-        let second = readers?().flatMap { reader in reader.second.map { (pack: $0, helper: reader.helper) } }
         let place = settings.readsAppText ? place : nil
         let layout = displays.layout
         return { image in
+            if let cachedLines, !cachedLines.isEmpty {
+                return try await pipeline.analysis(reusing: cachedLines, in: image)
+            }
             let analysis = try await pipeline.analyze(image)
             // Longer than Capture Text: the window shows Vision's reading meanwhile.
             let asking = Self.appText(for: analysis.result.lines, in: place, layout: layout, within: .milliseconds(500))
             var shown = analysis
-            if let second, SecondReading.wanted(analysis.result.lines), PPOCRReader.reads(width: image.width, height: image.height) {
-                let started = ContinuousClock.now
-                if let lines = await Self.secondReading(of: image, with: second.pack, helper: second.helper) {
-                    let merged = analysis.withSecondReading(lines, assembly: pipeline.options.assembly)
-                    // Vision's lines keep their boxes; the added ones are sorted in among them.
-                    let first = Dictionary(analysis.result.lines.map { ("\($0.box)", $0.text) }) { a, _ in a }
-                    let changed = merged.result.lines.count { line in first["\(line.box)"].map { $0 != line.text } ?? false }
-                    Log.capture.notice("Second reading: \(lines.count, privacy: .public) lines read, \(changed, privacy: .public) of \(analysis.result.lines.count, privacy: .public) changed, \(merged.result.lines.count - analysis.result.lines.count, privacy: .public) added, in \(String(describing: ContinuousClock.now - started), privacy: .public)")
-                    shown = merged
-                }
-            }
             if let asking {
                 let reading = await asking.value
                 let (merged, merge) = shown.withAppText(
@@ -1110,8 +1324,7 @@ final class TextCaptureCoordinator {
     }
 
     /// How the panel gets the formulas, tables, and charts into its text; nil while neither the formula pack nor the VLM
-    /// pack is installed. Asked as each panel
-    /// opens.
+    /// pack is installed. Asked as each panel opens.
     private func panelElements(readsTables: Bool = true) -> TextRecognitionWindowController.Elements? {
         guard let found = elementReader else { return nil }
         let reader = (formula: found.formula, vlm: readsTables ? found.vlm : nil, helper: found.helper)
@@ -1119,7 +1332,9 @@ final class TextCaptureCoordinator {
         let pipeline = pipeline
         return .init(
             read: { image, found in
-                await Self.elements(in: image, formulas: reader.formula, vlm: reader.vlm, seconds: Self.panelTableWait, helper: reader.helper, found: found)
+                await Self.elements(
+                    in: image, formulas: reader.formula, vlm: reader.vlm, seconds: reader.vlm != nil ? Self.panelTableWait : nil, helper: reader.helper, found: found
+                )
             },
             merge: { lines, formulas, image in await pipeline.lines(lines, with: formulas, in: image) }
         )
@@ -1128,6 +1343,17 @@ final class TextCaptureCoordinator {
     private func makePanel() -> TextRecognitionWindowController {
         let controller = TextRecognitionWindowController(settings: settings, translator: translator, cloud: cloud?())
         controller.onTextRecognized = { [weak self] in self?.onTextRecognized?() }
+        controller.onOpenImage = { [weak self] image, scale, source in
+            self?.openPanel(image: image, scale: scale, source: source)
+        }
+        controller.freshAnalyzer = { [weak self] in
+            self?.analyzer(for: nil, cachedLines: nil) ?? { image in
+                try await VisionPipeline().analyze(image)
+            }
+        }
+        controller.formulaDelimiter = { [weak self] in
+            self?.settings.formulaDelimiter ?? .raw
+        }
         controller.onClose = MemoryRelief.releasingOnNextTurn { [weak self] in
             self?.panel = nil
             // Nothing translates until the next panel: the system's models need not stay loaded.
@@ -1175,13 +1401,13 @@ final class TextCaptureCoordinator {
     }
 
     /// Opens an image file. `fallbackScale` applies when the file does not record its resolution.
-    func openPanel(forFileAt url: URL, fallbackScale: CGFloat = 1, source: String? = nil) async {
+    func openPanel(forFileAt url: URL, fallbackScale: CGFloat = 1, source: String? = nil, translating: Bool = false) async {
         guard let loaded = await Self.load(.file(url), fallbackScale: fallbackScale) else {
             Log.capture.error("Could not read \(url.lastPathComponent, privacy: .private) to recognize its text")
             showFailure(.unreadableFile, source: source ?? url.lastPathComponent)
             return
         }
-        openPanel(image: loaded.image, scale: loaded.scale, source: source ?? url.lastPathComponent)
+        openPanel(image: loaded.image, scale: loaded.scale, source: source ?? url.lastPathComponent, translating: translating)
     }
 
     private func showFailure(_ failure: TextRecognitionWindowController.OpenFailure, source: String) {
@@ -1221,6 +1447,11 @@ final class TextCaptureCoordinator {
         if !openPanel(from: .general, source: source) {
             showFailure(.noImageOnClipboard, source: source)
         }
+    }
+
+    /// Alias for `openClipboardImage()`, used by the Recognize Text from Clipboard shortcut.
+    func recognizeClipboard() {
+        openClipboardImage()
     }
 
     /// Asks for an image file to open.

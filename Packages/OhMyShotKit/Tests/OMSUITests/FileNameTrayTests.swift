@@ -1,4 +1,6 @@
 import CoreGraphics
+import Foundation
+import OMSCore
 import Testing
 @testable import OMSUI
 
@@ -31,5 +33,26 @@ struct FileNameTrayTests {
         #expect(FileNameSettings.caret(forGap: 3, frames: frames)?.minY == 0)
         #expect(FileNameSettings.caret(forGap: 5, frames: frames)?.minY == 26)
         #expect(FileNameSettings.caret(forGap: 0, frames: []) == nil)
+    }
+
+    @Test func automationDeniedStoreRecordsRemovesAndClearsCallers() {
+        let store = AutomationDeniedStore()
+        var removed: [String] = []
+        var cleared = 0
+        store.onRemove = { removed.append($0) }
+        store.onClear = { cleared += 1 }
+
+        store.recordDenied("com.example.one")
+        store.recordDenied("com.example.one")
+        store.recordDenied("com.example.two")
+        #expect(store.callers == ["com.example.one", "com.example.two"])
+
+        store.remove("com.example.one")
+        #expect(store.callers == ["com.example.two"])
+        #expect(removed == ["com.example.one"])
+
+        store.clear()
+        #expect(store.callers.isEmpty)
+        #expect(cleared == 1)
     }
 }

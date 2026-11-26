@@ -163,6 +163,49 @@ struct PictureExportTests {
         #expect(abs(dpi - 144) < 1)
     }
 
+    @Test func imageExporterPreservesRetinaDPIInPNGWhenScaleIsProvided() async throws {
+        let image = try picture(400, 300)
+
+        let retina = try await ImageExporter.encode(image, as: .png, pixelsPerPoint: 2)
+        let decodedRetina = try decode(retina)
+        let dpiWidth = try #require(decodedRetina.properties[kCGImagePropertyDPIWidth] as? Double)
+        let dpiHeight = try #require(decodedRetina.properties[kCGImagePropertyDPIHeight] as? Double)
+        #expect(abs(dpiWidth - 144) < 1)
+        #expect(abs(dpiHeight - 144) < 1)
+        let retinaSource = try #require(CGImageSourceCreateWithData(retina as CFData, nil))
+        #expect(ImageLoader.pixelsPerPoint(of: retinaSource) == 2)
+
+        let clipboard = try #require(await PictureExport.clipboardPicture(image, pixelsPerPoint: 2, output: .standard))
+        let clipboardSource = try #require(CGImageSourceCreateWithData(clipboard.png as CFData, nil))
+        #expect(ImageLoader.pixelsPerPoint(of: clipboardSource) == 2)
+
+        let threeX = try ImageExporter.encoded(image, as: .png, pixelsPerPoint: 3)
+        let threeXSource = try #require(CGImageSourceCreateWithData(threeX as CFData, nil))
+        #expect(ImageLoader.pixelsPerPoint(of: threeXSource) == 3)
+
+        let oneX = try ImageExporter.encoded(image, as: .png, pixelsPerPoint: 1)
+        let decodedOneX = try decode(oneX)
+        #expect((decodedOneX.properties[kCGImagePropertyDPIWidth] as? Double ?? 72) < 72.5)
+        let oneXSource = try #require(CGImageSourceCreateWithData(oneX as CFData, nil))
+        #expect(ImageLoader.pixelsPerPoint(of: oneXSource) == nil)
+
+        // Default nil and non-positive values do not write a Retina DPI.
+        let omitted = try await ImageExporter.encode(image, as: .png)
+        let omittedSource = try #require(CGImageSourceCreateWithData(omitted as CFData, nil))
+        #expect(ImageLoader.pixelsPerPoint(of: omittedSource) == nil)
+
+        let nonPositive = try ImageExporter.encoded(image, as: .png, pixelsPerPoint: 0)
+        let nonPositiveSource = try #require(CGImageSourceCreateWithData(nonPositive as CFData, nil))
+        #expect(ImageLoader.pixelsPerPoint(of: nonPositiveSource) == nil)
+
+        let folder = try makeFolder()
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let file = folder.appending(path: "Retina.png")
+        try await ImageExporter.write(image, to: file, format: .png, pixelsPerPoint: 2)
+        let fileSource = try #require(CGImageSourceCreateWithURL(file as CFURL, nil))
+        #expect(ImageLoader.pixelsPerPoint(of: fileSource) == 2)
+    }
+
     // MARK: sRGB
 
     @Test func aDisplayP3PictureIsConvertedToSRGB() throws {

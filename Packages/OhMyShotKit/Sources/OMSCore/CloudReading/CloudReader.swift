@@ -63,6 +63,14 @@ public final class CloudReader: Sendable {
         return configuration
     }
 
+    /// Shorter timeouts for Settings' Test connection button so a bad endpoint fails quickly instead of hanging.
+    public static func testConfiguration() -> URLSessionConfiguration {
+        let configuration = defaultConfiguration()
+        configuration.timeoutIntervalForRequest = 30
+        configuration.timeoutIntervalForResource = 30
+        return configuration
+    }
+
     /// The most a reading asks the model to write: room for a dense page and its tables (non-streaming code is told to
     /// keep under about 16,000 so it never meets an HTTP timeout; this streams, but needs no more).
     static let maxTokens = 16_000

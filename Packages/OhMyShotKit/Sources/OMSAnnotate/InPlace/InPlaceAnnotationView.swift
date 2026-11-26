@@ -52,7 +52,7 @@ public final class InPlaceAnnotationView: NSView {
     /// The canvas (pixels) the chips were last looked for in, so only a change of selection looks again.
     private var scannedCanvas: CGRect?
     let toolbar: InPlaceToolbar
-    private let capsule = StyleCapsule()
+    let capsule = StyleCapsule()
     private let actions: Actions
     private var adjustment: Adjustment?
     private var finished = false
@@ -114,11 +114,13 @@ public final class InPlaceAnnotationView: NSView {
         }
 
         toolbar.onTool = { [weak self] tool in self?.choose(tool) }
+        toolbar.onLockTool = { [weak self] tool in self?.lock(tool) }
         toolbar.onAction = { [weak self] action in self?.perform(action) }
         // A color kept here shows in the capsule at once.
         capsule.bind(to: session, canvas: canvas) { [weak self] in self?.refreshCapsule() }
         canvas.onCopy = { [weak self] in self?.perform(.copy) }
         canvas.onSave = { [weak self] in self?.perform(.save) }
+        canvas.onUndoStateChange = { [weak self] in self?.undoChanged() }
         canvas.onViewportChange = { [weak self] in self?.placeAccessories() }
         canvas.onRightClickAway = { [weak self] in self?.backOut() }
         canvas.cursorOverride = { [weak self] point in
@@ -137,6 +139,21 @@ public final class InPlaceAnnotationView: NSView {
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) is not supported")
+    }
+
+    isolated deinit {
+        discardHint?.cancel()
+        codeScan?.cancel()
+        capsule.releaseColorPanel()
+    }
+
+    public override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil, window != nil {
+            clearDiscardHint()
+            clearCodes()
+            capsule.releaseColorPanel()
+        }
     }
 
     public override var isFlipped: Bool { true }
@@ -325,21 +342,26 @@ public final class InPlaceAnnotationView: NSView {
             layoutSelection()
             // The selection changed by Undo or Redo is looked at again; a drag looks once it ends.
             if adjustment == nil { refreshCodes() }
-            if !session.selection.isEmpty || capsule.countsStaleSuggestions(of: session) { refreshCapsule() }
+            if !session.selection.isEmpty || session.tool == .counter || capsule.countsStaleSuggestions(of: session) { refreshCapsule() }
         case .selection, .settings:
             refreshCapsule()
         case .tool:
-            toolbar.select(session.tool == .select ? nil : session.tool)
+            toolbar.select(session.tool == .select ? nil : session.tool, locked: session.isToolLocked)
             refreshCapsule()
             window?.invalidateCursorRects(for: self)
         case .history:
-            toolbar.canUndo = session.undoManager.canUndo
-            toolbar.canRedo = session.undoManager.canRedo
+            undoChanged()
         case .suggestions:
-            if session.tool == .redact { refreshCapsule() }
+            if session.tool == .redact || session.currentKind == .redact { refreshCapsule() }
         case .textLines:
             if session.tool == .highlighter { refreshCapsule() }
         }
+    }
+
+    private func undoChanged() {
+        let manager = canvas.activeUndoManager
+        toolbar.canUndo = manager.canUndo
+        toolbar.canRedo = manager.canRedo
     }
 
     private func refreshCapsule() {
@@ -349,10 +371,24 @@ public final class InPlaceAnnotationView: NSView {
 
     /// The chip of the tool in hand puts it down again: the selection itself or its marks are adjusted then.
     private func choose(_ tool: AnnotationTool) {
+        clearDiscardHint()
         if tool == .select {
             session.tool = .select
         } else {
             session.tool = session.tool == tool ? .select : tool
+        }
+        window?.makeFirstResponder(canvas)
+    }
+
+    private func lock(_ tool: AnnotationTool) {
+        guard tool.isPutDownAfterMark else { return }
+        clearDiscardHint()
+        if session.tool == tool, session.isToolLocked {
+            session.isToolLocked = false
+            VoiceOver.announce(String(localized: "\(tool.name) unlocked", bundle: .module), from: toolbar)
+        } else {
+            session.lockTool(tool)
+            VoiceOver.announce(String(localized: "\(tool.name) locked", bundle: .module), from: toolbar)
         }
         window?.makeFirstResponder(canvas)
     }
@@ -427,6 +463,7 @@ public final class InPlaceAnnotationView: NSView {
         finished = true
         clearDiscardHint()
         clearCodes()
+        capsule.releaseColorPanel()
         canvas.endEditing()
         body(actions)
     }
@@ -557,7 +594,7 @@ public final class InPlaceAnnotationView: NSView {
             begin(.resizing(handle: handle, original: rect, grip: Geometry.grip(of: handle, on: line, pressedAt: point)))
             showEdgeLoupe(for: handle, near: point)
         } else if rect.contains(point) {
-            if event.clickCount == 2 {
+            if event.clickCount == 2, session.document.items.isEmpty {
                 perform(.copy)
                 return
             }
@@ -655,9 +692,15 @@ public final class InPlaceAnnotationView: NSView {
         }
     }
 
-    /// ⇧⌘P pins and ⇧⌘U uploads, as on a card, Caps Lock on or off; the tools keep their plain letters (P is the Pen).
+    /// ⌘E opens the marked selection in the editor; ⇧⌘P pins and ⇧⌘U uploads, as on a card, Caps Lock on or off;
+    /// the tools keep their plain letters (P is the Pen).
     public override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.modifierFlags.intersection([.command, .shift, .option, .control]) == [.command, .shift] else { return super.performKeyEquivalent(with: event) }
+        let flags = event.modifierFlags.intersection([.command, .shift, .option, .control])
+        if flags == .command, event.charactersIgnoringModifiers?.lowercased() == "e", !canvas.isEditingText, !codeChips.isShowingCard {
+            perform(.openInEditor)
+            return true
+        }
+        guard flags == [.command, .shift] else { return super.performKeyEquivalent(with: event) }
         switch event.charactersIgnoringModifiers?.lowercased() {
         case "p" where actions.pin != nil:
             perform(.pin)

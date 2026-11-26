@@ -44,10 +44,11 @@ nonisolated public enum AnnotationTool: String, CaseIterable, Codable, Sendable 
         }
     }
 
-    /// Tools put down once they have made a mark, Select taking over: Text and the dragged shapes. The
-    /// pen, the highlighter, and the counter stay in hand, as they are used several times in a row.
+    /// Tools put down once they have made a mark, Select taking over: Text and the dragged shapes other
+    /// than Redact. The pen, the highlighter, the counter, and redaction stay in hand, as they are
+    /// commonly used several times in a row.
     public var isPutDownAfterMark: Bool {
-        self == .text || dragsShape
+        self == .text || (dragsShape && self != .redact)
     }
 }
 
@@ -75,12 +76,17 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         get { magnifierZoom ?? .two }
         set { magnifierZoom = newValue }
     }
+    /// Scales blur radius and pixelation block size for `.redact`: Low (0.5), Medium (1.0), High (1.6).
+    public var redactionStrength: Double
+    /// Dimming opacity for `.spotlight`: Light (0.35), Medium (0.50), Dark (0.78).
+    public var spotlightDimming: Double
 
     public init(
         color: RGBA = .red, lineWidth: CGFloat = 4, shadow: Bool = true, arrowHead: Arrow.Head = .classic,
         dashed: Bool = false, filled: Bool = false, cornerRadius: CGFloat = 4, redaction: Redaction.Method = .solid,
         numbering: Counter.Numbering = .numbers, textLook: TextBlock.Look = .plain, fontSize: CGFloat = 20, oval: Bool = false,
-        zoom: Magnifier.Zoom = .two
+        zoom: Magnifier.Zoom = .two, redactionStrength: Double = Redaction.Strength.medium.rawValue,
+        spotlightDimming: Double = Spot.Dimming.medium.rawValue
     ) {
         self.color = color
         self.lineWidth = lineWidth
@@ -95,6 +101,32 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
         self.fontSize = fontSize
         self.oval = oval
         magnifierZoom = zoom
+        self.redactionStrength = redactionStrength
+        self.spotlightDimming = spotlightDimming
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        color = try container.decodeIfPresent(RGBA.self, forKey: .color) ?? .red
+        lineWidth = try container.decodeIfPresent(CGFloat.self, forKey: .lineWidth) ?? 4
+        shadow = try container.decodeIfPresent(Bool.self, forKey: .shadow) ?? true
+        arrowHead = try container.decodeIfPresent(Arrow.Head.self, forKey: .arrowHead) ?? .classic
+        dashed = try container.decodeIfPresent(Bool.self, forKey: .dashed) ?? false
+        filled = try container.decodeIfPresent(Bool.self, forKey: .filled) ?? false
+        cornerRadius = try container.decodeIfPresent(CGFloat.self, forKey: .cornerRadius) ?? 4
+        redaction = try container.decodeIfPresent(Redaction.Method.self, forKey: .redaction) ?? .solid
+        numbering = try container.decodeIfPresent(Counter.Numbering.self, forKey: .numbering) ?? .numbers
+        textLook = try container.decodeIfPresent(TextBlock.Look.self, forKey: .textLook) ?? .plain
+        fontSize = try container.decodeIfPresent(CGFloat.self, forKey: .fontSize) ?? 20
+        oval = try container.decodeIfPresent(Bool.self, forKey: .oval) ?? false
+        magnifierZoom = try container.decodeIfPresent(Magnifier.Zoom.self, forKey: .magnifierZoom)
+        redactionStrength = try container.decodeIfPresent(Double.self, forKey: .redactionStrength) ?? Redaction.Strength.medium.rawValue
+        spotlightDimming = try container.decodeIfPresent(Double.self, forKey: .spotlightDimming) ?? Spot.Dimming.medium.rawValue
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case color, lineWidth, shadow, arrowHead, dashed, filled, cornerRadius, redaction, numbering, textLook, fontSize, oval
+        case magnifierZoom, redactionStrength, spotlightDimming
     }
 
     /// A tool's settings before the user changes them.
@@ -130,8 +162,12 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
             textLook = block.look
             fontSize = block.fontSize
         case .counter(let counter): numbering = counter.numbering
-        case .redaction(let redaction): self.redaction = redaction.method
-        case .spotlight(let spot): oval = spot.oval
+        case .redaction(let redaction):
+            self.redaction = redaction.method
+            redactionStrength = redaction.strength
+        case .spotlight(let spot):
+            oval = spot.oval
+            spotlightDimming = spot.dimming
         case .magnifier(let magnifier): zoom = magnifier.zoom
         case .pen, .highlighter, .textHighlight, .image: break
         }
@@ -167,9 +203,11 @@ nonisolated public struct ToolSettings: Codable, Sendable, Equatable {
             item.shape = .counter(counter)
         case .redaction(var redaction):
             redaction.method = self.redaction
+            redaction.strength = redactionStrength
             item.shape = .redaction(redaction)
         case .spotlight(var spot):
             spot.oval = oval
+            spot.dimming = spotlightDimming
             item.shape = .spotlight(spot)
         case .magnifier(var magnifier):
             magnifier.zoom = zoom
@@ -206,9 +244,9 @@ nonisolated extension AnnotationTool {
         case .highlightBox:
             shape = .highlightBox(Box(rect: Geometry.rect(from: start, to: end, square: constrained), filled: true, cornerRadius: settings.cornerRadius))
         case .redact:
-            shape = .redaction(Redaction(rect: Geometry.rect(from: start, to: end, square: constrained), method: settings.redaction))
+            shape = .redaction(Redaction(rect: Geometry.rect(from: start, to: end, square: constrained), method: settings.redaction, strength: settings.redactionStrength))
         case .spotlight:
-            shape = .spotlight(Spot(rect: Geometry.rect(from: start, to: end, square: constrained), oval: settings.oval))
+            shape = .spotlight(Spot(rect: Geometry.rect(from: start, to: end, square: constrained), oval: settings.oval, dimming: settings.spotlightDimming))
         case .magnifier:
             func radius(at center: CGPoint) -> CGFloat {
                 let largest = Magnifier.lensRadius * scale

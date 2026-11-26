@@ -1954,6 +1954,7 @@
       }
     },
     "Choose an app and preview its window (W)": {
+      "extractionState": "stale",
       "localizations": {
         "es": {
           "stringUnit": {
@@ -2295,6 +2296,7 @@
       }
     },
     "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.": {
+      "extractionState": "stale",
       "localizations": {
         "es": {
           "stringUnit": {
@@ -4728,6 +4730,7 @@
       }
     },
     "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.": {
+      "extractionState": "stale",
       "localizations": {
         "es": {
           "stringUnit": {
@@ -4762,6 +4765,7 @@
       }
     },
     "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, U uploads, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.": {
+      "extractionState": "stale",
       "localizations": {
         "es": {
           "stringUnit": {
@@ -4864,6 +4868,7 @@
       }
     },
     "Press Return to start, then scroll what is under the area. Press Escape to cancel.": {
+      "extractionState": "stale",
       "localizations": {
         "es": {
           "stringUnit": {
@@ -6258,6 +6263,7 @@
       }
     },
     "Studio doesn’t add the camera to a window recorded on its own yet": {
+      "extractionState": "stale",
       "localizations": {
         "es": {
           "stringUnit": {
@@ -6530,6 +6536,7 @@
       }
     },
     "Tolerance: %@ · T / + / −": {
+      "extractionState": "stale",
       "localizations": {
         "es": {
           "stringUnit": {
@@ -6851,6 +6858,1332 @@
           "stringUnit": {
             "state": "translated",
             "value": "視窗預覽"
+          }
+        }
+      }
+    },
+    "%lld seconds": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld segundos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld secondes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld秒"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒"
+          }
+        }
+      }
+    },
+    "%lld seconds remaining": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld segundos restantes"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld secondes restantes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "残り%lld秒"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩余 %lld 秒"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "剩餘 %lld 秒"
+          }
+        }
+      }
+    },
+    "%llds": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld s"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld s"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld秒"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld秒"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒"
+          }
+        }
+      }
+    },
+    "All Windows (W) · Space selects on screen": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Todas las ventanas (W) · Espacio selecciona en pantalla"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Toutes les fenêtres (W) · Espace sélectionne à l’écran"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "すべてのウインドウ（W） · スペースキーで画面上で選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有窗口（W）· 空格键在屏幕上选择"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "所有視窗（W）· 空白鍵在螢幕上選取"
+          }
+        }
+      }
+    },
+    "Annotate the area (Return)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Anotar el área (Retorno)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annoter la zone (Retour)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "範囲に注釈を付ける（return）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "标注该区域（返回）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "標註區域（Return）"
+          }
+        }
+      }
+    },
+    "Auto-scroll Direction": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección del desplazamiento automático"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sens du défilement auto"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動スクロールの方向"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动滚动方向"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動捲動方向"
+          }
+        }
+      }
+    },
+    "Auto-scroll direction": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección del desplazamiento automático"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sens du défilement auto"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動スクロールの方向"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动滚动方向"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動捲動方向"
+          }
+        }
+      }
+    },
+    "Auto-scroll direction: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dirección del desplazamiento automático: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sens du défilement auto : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動スクロールの方向：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自动滚动方向：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "自動捲動方向：%@"
+          }
+        }
+      }
+    },
+    "Cancel countdown": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cancelar cuenta atrás"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Annuler le compte à rebours"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カウントダウンをキャンセル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消倒计时"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "取消倒數"
+          }
+        }
+      }
+    },
+    "Capture after %lld seconds (this capture only)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capturar después de %lld segundos (solo para esta captura)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Capturer après %lld secondes (cette capture uniquement)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld秒後にキャプチャ（このキャプチャのみ）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒后截取（仅限本次）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%lld 秒後擷取（僅限此次擷取）"
+          }
+        }
+      }
+    },
+    "Click a window directly on screen (Space)": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic directamente en una ventana en pantalla (Espacio)"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquer directement sur une fenêtre à l’écran (Espace)"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面上のウインドウを直接クリック（スペース）"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直接在屏幕上点按窗口（空格键）"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "直接在螢幕上按一下視窗（空白鍵）"
+          }
+        }
+      }
+    },
+    "Click a window to capture it, or press Space to select an area.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic en una ventana para capturarla o pulsa Espacio para seleccionar un área."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez sur une fenêtre pour la capturer, ou appuyez sur Espace pour sélectionner une zone."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "ウインドウをクリックしてキャプチャするか、スペースキーで範囲を選択します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按窗口以截取，或按下空格键选择区域。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按一下視窗以擷取，或按空白鍵選取區域。"
+          }
+        }
+      }
+    },
+    "Click or press Escape to cancel": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic o pulsa Escape para cancelar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez ou appuyez sur Échap pour annuler"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリックまたはescキーでキャンセル"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按或按下 Esc 键取消"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按一下或按 Esc 鍵以取消"
+          }
+        }
+      }
+    },
+    "Click or press Return to copy the color under the crosshair; with Option, see it in every notation. Press Tab to switch notations. The arrow keys move the crosshair a pixel, ten with Shift. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haz clic o pulsa Retorno para copiar el color que hay bajo la cruz; con Opción, lo verás en todas las notaciones. Pulsa Tabulador para cambiar de notación. Las flechas mueven la cruz un píxel, o diez con Mayúsculas. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cliquez ou appuyez sur Retour pour copier la couleur sous le réticule ; avec Option, affichez-la dans toutes les notations. Appuyez sur Tab pour changer de notation. Les touches fléchées déplacent le réticule d’un pixel, de dix avec Maj. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "クリックするかreturnキーを押すと、十字線の下の色をコピーします。optionキーを押しながらだと、すべての表記で確認できます。tabキーで表記を切り替えられます。矢印キーで十字線が1ピクセルずつ、shiftキーを押しながらだと10ピクセルずつ移動します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "点按或按下返回键以拷贝十字准线下的颜色；按住 Option 键可查看所有表示法。按 Tab 键切换表示法。方向键可将十字准线移动一个像素，按住 Shift 键则移动十个像素。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按一下或按 Return 鍵以拷貝十字準線下的顏色；按住 Option 可查看所有表示法。按 Tab 鍵切換表示法。方向鍵可將十字準線移動一個像素，按住 Shift 則移動十個。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
+    "Countdown cancelled": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Cuenta atrás cancelada"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Compte à rebours annulé"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "カウントダウンをキャンセルしました"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "倒计时已取消"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已取消倒數"
+          }
+        }
+      }
+    },
+    "Default Microphone": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Micrófono predeterminado"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Micro par défaut"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "デフォルトのマイク"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "默认麦克风"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "預設麥克風"
+          }
+        }
+      }
+    },
+    "Down": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Abajo"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bas"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "下"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向下"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向下"
+          }
+        }
+      }
+    },
+    "Left": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Izquierda"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gauche"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "左"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向左"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向左"
+          }
+        }
+      }
+    },
+    "Microphone access is off, so the recording would have no microphone sound. Turn on OhMyShot in System Settings, Privacy and Security, Microphone.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "El acceso al micrófono está desactivado, por lo que la grabación no tendría sonido de micrófono. Activa OhMyShot en Ajustes del Sistema > Privacidad y seguridad > Micrófono."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "L’accès au micro est désactivé ; l’enregistrement n’aurait donc aucun son de micro. Activez OhMyShot dans Réglages Système > Confidentialité et sécurité > Micro."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "マイクへのアクセスがオフになっているため、録画にマイク音声は入りません。「システム設定」＞「プライバシーとセキュリティ」＞「マイク」でOhMyShotをオンにしてください。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麦克风访问权限已关闭，因此录制将不包含麦克风声音。请在“系统设置”>“隐私与安全性”>“麦克风”中开启 OhMyShot。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "麥克風取用權限已關閉，因此錄製將不會包含麥克風聲音。請在「系統設定」>「隱私權與安全性」>「麥克風」中開啟 OhMyShot。"
+          }
+        }
+      }
+    },
+    "Press D or 1–5 to change the Self-Timer delay for this capture.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa D o del 1 al 5 para cambiar el retardo del temporizador de esta captura."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur D ou 1 à 5 pour modifier le délai du retardateur pour cette capture."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Dキーまたは1〜5キーを押すと、このキャプチャでのセルフタイマーの待ち時間を変更できます。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 D 或 1–5 可更改本次截图的定时器延迟。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 D 或 1 至 5 可更改此次擷取的定時器延遲時間。"
+          }
+        }
+      }
+    },
+    "Press Return to annotate the area. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them, and the aspect ratio button keeps a shape. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa Retorno para anotar el área. Las flechas mueven el área; con Opción, cambian su tamaño. Tabulador va a su anchura y altura en píxeles para escribirlas, y el botón de proporción mantiene una forma. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur Retour pour annoter la zone. Les touches fléchées déplacent la zone ; avec Option, elles la redimensionnent. Tab passe à sa largeur et à sa hauteur en pixels, pour les saisir, et le bouton de format conserve une forme. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "returnキーで範囲に注釈を付けます。矢印キーで範囲を移動し、optionキーを押しながらだとサイズを変更します。tabキーで幅と高さ（ピクセル）に移動して入力でき、縦横比ボタンで形を保持します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下返回键标注该区域。方向键移动区域；按住 Option 键则调整其大小。Tab 键跳到以像素为单位的宽度和高度，以便输入；长宽比按钮可保持形状。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 Return 鍵標註區域。方向鍵可移動區域；按住 Option 則調整大小。Tab 鍵會移到以像素表示的寬度和高度欄位以便輸入，長寬比按鈕可保持形狀。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
+    "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. Press Delete to clear the area, or W or Space to choose a window. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa Retorno para capturar el área, Comando + C para copiarla o Comando + S para guardarla. E la anota, P la fija, O copia su texto, S inicia una captura con desplazamiento, R la graba y F captura toda la pantalla. Pulsa Suprimir para borrar el área, o W o Espacio para elegir una ventana. Las flechas mueven el área; con Opción, cambian su tamaño. Tabulador va a su anchura y altura en píxeles para escribirlas. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur Retour pour capturer la zone, Commande-C pour la copier ou Commande-S pour l’enregistrer. E l’annote, P l’épingle, O copie son texte, S lance une capture défilante, R l’enregistre en vidéo et F capture tout l’écran. Appuyez sur Supprimer pour effacer la zone, ou sur W ou Espace pour choisir une fenêtre. Les touches fléchées déplacent la zone ; avec Option, elles la redimensionnent. Tab passe à sa largeur et à sa hauteur en pixels, pour les saisir. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "returnキーで範囲をキャプチャ、command + Cでコピー、command + Sで保存します。Eキーで注釈、Pキーでピン留め、Oキーでテキストのコピー、Sキーでスクロールキャプチャ、Rキーで収録、Fキーで画面全体をキャプチャします。deleteキーで選択範囲をクリア、Wキーまたはスペースキーでウインドウを選択します。矢印キーで範囲を移動し、optionキーを押しながらだとサイズを変更します。tabキーで幅と高さ（ピクセル）に移動して入力できます。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下返回键截取该区域，Command-C 拷贝，Command-S 存储。E 标注，P 贴图，O 拷贝其中文字，S 开始滚动截图，R 录制，F 截取整个屏幕。按 Delete 清除区域，或按 W、空格键选择窗口。方向键移动区域；按住 Option 键则调整其大小。Tab 键跳到以像素为单位的宽度和高度，以便输入。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 Return 鍵擷取區域、Command-C 拷貝，或 Command-S 儲存。E 標註、P 釘選、O 拷貝其中文字、S 開始捲動擷取、R 錄製，F 擷取整個螢幕。按 Delete 清除區域，或按 W、空白鍵選擇視窗。方向鍵可移動區域；按住 Option 則調整大小。Tab 鍵會移到以像素表示的寬度和高度欄位，以便輸入。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
+    "Press Return to capture the area, Command-C to copy it, or Command-S to save it. E annotates, P pins, U uploads, O copies its text, S starts a scrolling capture, R records it, and F captures the whole screen. Press Delete to clear the area, or W or Space to choose a window. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels, to type them. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa Retorno para capturar el área, Comando + C para copiarla o Comando + S para guardarla. E la anota, P la fija, U la sube, O copia su texto, S inicia una captura con desplazamiento, R la graba y F captura toda la pantalla. Pulsa Suprimir para borrar el área, o W o Espacio para elegir una ventana. Las flechas mueven el área; con Opción, cambian su tamaño. Tabulador va a su anchura y altura en píxeles para escribirlas. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur Retour pour capturer la zone, Commande-C pour la copier ou Commande-S pour l’enregistrer. E l’annote, P l’épingle, U l’envoie, O copie son texte, S lance une capture défilante, R l’enregistre en vidéo et F capture tout l’écran. Appuyez sur Supprimer pour effacer la zone, ou sur W ou Espace pour choisir une fenêtre. Les touches fléchées déplacent la zone ; avec Option, elles la redimensionnent. Tab passe à sa largeur et à sa hauteur en pixels, pour les saisir. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "returnキーで範囲をキャプチャ、command + Cでコピー、command + Sで保存します。Eキーで注釈、Pキーでピン留め、Uキーでアップロード、Oキーでテキストのコピー、Sキーでスクロールキャプチャ、Rキーで収録、Fキーで画面全体をキャプチャします。deleteキーで選択範囲をクリア、Wキーまたはスペースキーでウインドウを選択します。矢印キーで範囲を移動し、optionキーを押しながらだとサイズを変更します。tabキーで幅と高さ（ピクセル）に移動して入力できます。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下返回键截取该区域，Command-C 拷贝，Command-S 存储。E 标注，P 贴图，U 上传，O 拷贝其中文字，S 开始滚动截图，R 录制，F 截取整个屏幕。按 Delete 清除区域，或按 W、空格键选择窗口。方向键移动区域；按住 Option 键则调整其大小。Tab 键跳到以像素为单位的宽度和高度，以便输入。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 Return 鍵擷取區域、Command-C 拷貝，或 Command-S 儲存。E 標註、P 釘選、U 上傳、O 拷貝其中文字、S 開始捲動擷取、R 錄製，F 擷取整個螢幕。按 Delete 清除區域，或按 W、空白鍵選擇視窗。方向鍵可移動區域；按住 Option 則調整大小。Tab 鍵會移到以像素表示的寬度和高度欄位，以便輸入。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
+    "Press Return to start recording. The arrow keys move the area; with Option they resize it. Tab edits its size in pixels. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa Retorno para empezar a grabar. Las flechas mueven el área; con Opción, cambian su tamaño. Tabulador edita su tamaño en píxeles. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur Retour pour lancer l’enregistrement. Les touches fléchées déplacent la zone ; avec Option, elles la redimensionnent. Tab modifie sa taille en pixels. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "returnキーで収録を開始します。矢印キーで範囲を移動し、optionキーを押しながらだとサイズを変更します。tabキーでサイズ（ピクセル）を編集します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下返回键开始录制。方向键移动区域；按住 Option 键则调整其大小。Tab 键可编辑以像素为单位的大小。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 Return 鍵開始錄製。方向鍵可移動區域；按住 Option 則調整大小。Tab 鍵可編輯以像素表示的大小。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
+    "Press Return to start, then scroll what is under the area. The arrow keys move the area; with Option they resize it. Tab goes to its width and height in pixels. Press Escape to cancel.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Pulsa Retorno para empezar y desplaza lo que hay bajo el área. Las flechas mueven el área; con Opción, cambian su tamaño. Tabulador va a su anchura y altura en píxeles. Pulsa Escape para cancelar."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Appuyez sur Retour pour commencer, puis faites défiler ce qui se trouve sous la zone. Les touches fléchées déplacent la zone ; avec Option, elles la redimensionnent. Tab passe à sa largeur et à sa hauteur en pixels. Appuyez sur Échap pour annuler."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "returnキーで開始してから、範囲の下にある内容をスクロールします。矢印キーで範囲を移動し、optionキーを押しながらだとサイズを変更します。tabキーで幅と高さ（ピクセル）に移動します。キャンセルするにはescキーを押します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按下返回键开始，然后滚动区域下方的内容。方向键移动区域；按住 Option 键则调整其大小。Tab 键跳到以像素为单位的宽度和高度。按下 Esc 键取消。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "按 Return 鍵開始，然後捲動區域下方的內容。方向鍵可移動區域；按住 Option 則調整大小。Tab 鍵會移到以像素表示的寬度和高度欄位。按 Esc 鍵取消。"
+          }
+        }
+      }
+    },
+    "Record clicks for Studio — you can toggle or adjust them after recording": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grabar los clics para Studio: puedes activarlos, desactivarlos o ajustarlos después de grabar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer les clics pour Studio — vous pourrez les activer, les désactiver ou les ajuster après l’enregistrement"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スタジオ用にクリックを記録します — 収録後に表示のオン／オフや調整ができます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为 Studio 记录点按——录制后可切换或调整"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "為 Studio 記錄點按 — 錄製後可切換或調整"
+          }
+        }
+      }
+    },
+    "Record keystrokes for Studio — you can toggle or adjust them after recording": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Grabar las pulsaciones de teclas para Studio: puedes activarlas, desactivarlas o ajustarlas después de grabar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Enregistrer les touches pour Studio — vous pourrez les activer, les désactiver ou les ajuster après l’enregistrement"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スタジオ用にキー操作を記録します — 収録後に表示のオン／オフや調整ができます"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "为 Studio 记录按键——录制后可切换或调整"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "為 Studio 記錄按鍵 — 錄製後可切換或調整"
+          }
+        }
+      }
+    },
+    "Recording area size": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tamaño del área de grabación"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Taille de la zone d’enregistrement"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "収録範囲のサイズ"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "录制区域大小"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "錄製區域大小"
+          }
+        }
+      }
+    },
+    "Right": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Derecha"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Droite"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "右"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向右"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向右"
+          }
+        }
+      }
+    },
+    "Scroll Element · Tab Cycle · ⇧ Click Multi-select": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Desplazar: elemento · Tab: alternar · ⇧ Clic: selección múltiple"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Défiler Élément · Tab Parcourir · ⇧ Clic Sélection multiple"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "スクロールで要素 · Tabで切り替え · ⇧クリックで複数選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "滚轮选元素 · Tab 切换 · ⇧ 点按多选"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "捲動選取元素 · Tab 循環切換 · ⇧ 點按多選"
+          }
+        }
+      }
+    },
+    "Select on Screen": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Seleccionar en pantalla"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sélectionner à l’écran"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "画面上で選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在屏幕上选择"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "在螢幕上選取"
+          }
+        }
+      }
+    },
+    "Selection cleared. Drag over an area, or press Space to choose a window.": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Selección borrada. Arrastra sobre un área o pulsa Espacio para elegir una ventana."
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Sélection effacée. Faites glisser sur une zone ou appuyez sur Espace pour choisir une fenêtre."
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "選択範囲をクリアしました。ドラッグして範囲を選ぶか、スペースキーでウインドウを選択します。"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清除选区。拖移选择区域，或按下空格键选择窗口。"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "已清除選取範圍。拖移選取區域，或按空白鍵選擇視窗。"
+          }
+        }
+      }
+    },
+    "Self-Timer delay": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retardo del temporizador"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Délai du retardateur"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セルフタイマーの待ち時間"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定时器延迟"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定時器延遲時間"
+          }
+        }
+      }
+    },
+    "Self-Timer: %lld seconds": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Temporizador: %lld segundos"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Retardateur : %lld secondes"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "セルフタイマー：%lld秒"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定时器：%lld 秒"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "定時器：%lld 秒"
+          }
+        }
+      }
+    },
+    "Tab Cycle": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab: alternar"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab Parcourir"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabで切り替え"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab 切换"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab 循環切換"
+          }
+        }
+      }
+    },
+    "Tab Cycle · ⇧ Click Multi-select": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab: alternar · ⇧ Clic: selección múltiple"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab Parcourir · ⇧ Clic Sélection multiple"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabで切り替え · ⇧クリックで複数選択"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab 切换 · ⇧ 点按多选"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab 循環切換 · ⇧ 點按多選"
+          }
+        }
+      }
+    },
+    "Tab Unit · ⌘C Copy · T Tolerance: %@": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab: unidad · ⌘C: copiar · T Tolerancia: %@"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab Unité · ⌘C Copier · T Tolérance : %@"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tabで単位 · ⌘Cでコピー · Tで許容範囲：%@"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab 切换单位 · ⌘C 拷贝 · T 容差：%@"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Tab 切換單位 · ⌘C 拷貝 · T 容差：%@"
+          }
+        }
+      }
+    },
+    "Up": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Arriba"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Haut"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "上"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向上"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "向上"
+          }
+        }
+      }
+    },
+    "⌥ Click for details · Tab Format": {
+      "localizations": {
+        "es": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌥ Clic para detalles · Tab: formato"
+          }
+        },
+        "fr": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌥ Clic pour les détails · Tab Format"
+          }
+        },
+        "ja": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌥クリックで詳細 · Tabで形式"
+          }
+        },
+        "zh-Hans": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌥ 点按查看详情 · Tab 切换格式"
+          }
+        },
+        "zh-Hant": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "⌥ 點按查看詳情 · Tab 切換格式"
           }
         }
       }

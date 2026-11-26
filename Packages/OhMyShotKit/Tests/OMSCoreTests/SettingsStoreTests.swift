@@ -32,6 +32,61 @@ struct SettingsStoreTests {
         defaults.set(RecordingOutput.studio.rawValue, forKey: "recordingOutput")
         #expect(SettingsStore(defaults: defaults).recordingOutput == .video)
     }
+
+    @Test func watermarkStyleFileCounterAndExtendedPreferencesPersistAndClamp() throws {
+        let suite = "OMSCoreTests-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let settings = SettingsStore(defaults: defaults)
+
+        #expect(settings.watermarkTone == .dark)
+        #expect(settings.watermarkOpacity == 0.15)
+        #expect(settings.watermarkSize == 0.035)
+        #expect(settings.usesSecondReadingInCaptureText)
+        #expect(settings.scrollingAutoSpeed == 1.0)
+        #expect(settings.formulaDelimiter == .raw)
+        #expect(settings.modelPackMirrorURL.isEmpty)
+        #expect(!settings.hidesDesktopIconsWhileCapturing)
+        #expect(settings.ocrLanguages.isEmpty)
+        #expect(settings.isModelPackEnabled("ppocr-v6-small"))
+
+        settings.addsWatermark = true
+        settings.watermarkText = "Draft"
+        settings.watermarkTone = .light
+        settings.watermarkOpacity = 0.4
+        settings.watermarkSize = 0.07
+        settings.ocrLanguages = ["en-US", "zh-Hans"]
+        settings.setModelPackEnabled(false, for: "ppocr-v6-small")
+        settings.usesSecondReadingInCaptureText = false
+        settings.scrollingAutoSpeed = 2.25
+        settings.formulaDelimiter = .displayDollar
+        settings.modelPackMirrorURL = "https://hf-mirror.com"
+        settings.hidesDesktopIconsWhileCapturing = true
+        settings.nextFileNumber = 9
+        settings.resetFileCounter()
+        #expect(settings.nextFileNumber == 1)
+
+        let reopened = SettingsStore(defaults: defaults)
+        #expect(reopened.screenshotOutput.watermark == Watermark(text: "Draft", tone: .light, opacity: 0.4, size: 0.07))
+        #expect(reopened.ocrLanguages == ["en-US", "zh-Hans"])
+        #expect(!reopened.isModelPackEnabled("ppocr-v6-small"))
+        reopened.setModelPackEnabled(true, for: "ppocr-v6-small")
+        #expect(reopened.isModelPackEnabled("ppocr-v6-small"))
+        #expect(!reopened.usesSecondReadingInCaptureText)
+        #expect(reopened.scrollingAutoSpeed == 2.25)
+        #expect(reopened.formulaDelimiter == .displayDollar)
+        #expect(reopened.modelPackMirrorURL == "https://hf-mirror.com")
+        #expect(reopened.hidesDesktopIconsWhileCapturing)
+
+        // Out-of-range persisted values clamp back into valid bounds.
+        defaults.set(9.0, forKey: "scrollingAutoSpeed")
+        defaults.set(9.0, forKey: "watermarkOpacity")
+        defaults.set(0.0, forKey: "watermarkSize")
+        let clamped = SettingsStore(defaults: defaults)
+        #expect(clamped.scrollingAutoSpeed == 3.0)
+        #expect(clamped.watermarkOpacity == Watermark.opacityRange.upperBound)
+        #expect(clamped.watermarkSize == Watermark.sizeRange.lowerBound)
+    }
 }
 
 @MainActor

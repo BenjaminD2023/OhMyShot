@@ -4,9 +4,18 @@ import OMSOCR
 import SwiftUI
 
 /// A recognized table as a grid, the first row as its header, figures right-aligned.
+/// Double-clicking any cell edits its text inline.
 struct TablePreview: View {
+    private struct CellID: Hashable {
+        let row: Int
+        let column: Int
+    }
+
     @Bindable var model: TextRecognitionModel
     let table: OCRTable
+    @State private var editingCell: CellID?
+    @State private var draftText = ""
+    @FocusState private var cellFocused: Bool
     @Environment(\.displayScale) private var displayScale
     @Environment(\.colorScheme) private var colorScheme
 
@@ -34,23 +43,18 @@ struct TablePreview: View {
                     ForEach(Array(table.rows.enumerated()), id: \.offset) { row, cells in
                         GridRow {
                             ForEach(0..<width, id: \.self) { column in
-                                Text(verbatim: column < cells.count ? cells[column] : "")
-                                    .font(row == 0 ? .body.weight(.semibold) : .body)
-                                    .monospacedDigit()
-                                    .textSelection(.enabled)
-                                    .multilineTextAlignment(figures[column] ? .trailing : .leading)
-                                    .frame(maxWidth: 260, alignment: figures[column] ? .trailing : .leading)
-                                    .padding(.horizontal, 10)
-                                    .padding(.vertical, 7)
-                                    // Every cell fills its column, so the rules line up from row to row.
-                                    .frame(minWidth: 56, maxWidth: .infinity, maxHeight: .infinity, alignment: figures[column] ? .topTrailing : .topLeading)
-                                    .background(row == 0 ? (colorScheme == .dark ? Color.white : Color.black).opacity(Theme.ChipFill.hover(dark: colorScheme == .dark)) : Color.clear)
-                                    .overlay(alignment: .trailing) {
-                                        if column < width - 1 { separator.frame(width: hairline) }
-                                    }
-                                    .overlay(alignment: .bottom) {
-                                        if row < table.rows.count - 1 { separator.frame(height: hairline) }
-                                    }
+                                let cellID = CellID(row: row, column: column)
+                                let value = column < cells.count ? cells[column] : ""
+                                cellView(
+                                    cellID: cellID,
+                                    value: value,
+                                    isHeader: row == 0,
+                                    isFigures: figures[column],
+                                    hairline: hairline,
+                                    separator: separator,
+                                    isLastColumn: column == width - 1,
+                                    isLastRow: row == table.rows.count - 1
+                                )
                             }
                         }
                     }
@@ -59,16 +63,100 @@ struct TablePreview: View {
                 .overlay { shape.strokeBorder(separator, lineWidth: hairline) }
                 .padding(1)
             }
-            .fixedSize(horizontal: false, vertical: true)
             HStack(spacing: 8) {
-                Button { model.copyTable(as: .markdown) } label: { Text("Copy as Markdown", bundle: .module) }
-                Button { model.copyTable(as: .csv) } label: { Text("Copy as CSV", bundle: .module) }
+                Button { commitEdit(); model.copyTable(as: .markdown) } label: { Text("Copy as Markdown", bundle: .module) }
+                Button { commitEdit(); model.copyTable(as: .tsv) } label: { Text("Copy TSV", bundle: .module) }
+                Button { commitEdit(); model.copyTable(as: .csv) } label: { Text("Copy as CSV", bundle: .module) }
+                Button { commitEdit(); model.exportTableCSV() } label: { Text("Export CSV…", bundle: .module) }
             }
             .controlSize(.small)
-            Spacer(minLength: 0)
+            .layoutPriority(1)
         }
         .padding(16)
         .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+        .onChange(of: model.tableIndex) { _, _ in
+            commitEdit()
+        }
+        .onChange(of: cellFocused) { _, focused in
+            if !focused { commitEdit() }
+        }
+    }
+
+    @ViewBuilder
+    private func cellView(
+        cellID: CellID,
+        value: String,
+        isHeader: Bool,
+        isFigures: Bool,
+        hairline: CGFloat,
+        separator: Color,
+        isLastColumn: Bool,
+        isLastRow: Bool
+    ) -> some View {
+        let isEditing = editingCell == cellID
+        Group {
+            if isEditing {
+                TextField(text: $draftText) { EmptyView() }
+                    .textFieldStyle(.plain)
+                    .font(isHeader ? .body.weight(.semibold) : .body)
+                    .monospacedDigit()
+                    .multilineTextAlignment(isFigures ? .trailing : .leading)
+                    .focused($cellFocused)
+                    .onSubmit { commitEdit() }
+                    .onExitCommand { cancelEdit() }
+                    .frame(maxWidth: 260, alignment: isFigures ? .trailing : .leading)
+                    .accessibilityLabel(Text("Edit cell", bundle: .module))
+            } else {
+                Text(verbatim: value)
+                    .font(isHeader ? .body.weight(.semibold) : .body)
+                    .monospacedDigit()
+                    .textSelection(.enabled)
+                    .multilineTextAlignment(isFigures ? .trailing : .leading)
+                    .frame(maxWidth: 260, alignment: isFigures ? .trailing : .leading)
+            }
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 7)
+        // Every cell fills its column, so the rules line up from row to row.
+        .frame(minWidth: 56, maxWidth: .infinity, maxHeight: .infinity, alignment: isFigures ? .topTrailing : .topLeading)
+        .background(isHeader ? (colorScheme == .dark ? Color.white : Color.black).opacity(Theme.ChipFill.hover(dark: colorScheme == .dark)) : Color.clear)
+        .overlay {
+            if isEditing {
+                Rectangle().strokeBorder(Color.accentColor, lineWidth: 1.5)
+            }
+        }
+        .overlay(alignment: .trailing) {
+            if !isLastColumn { separator.frame(width: hairline) }
+        }
+        .overlay(alignment: .bottom) {
+            if !isLastRow { separator.frame(height: hairline) }
+        }
+        .contentShape(Rectangle())
+        .onTapGesture(count: 2) {
+            beginEdit(cellID, currentValue: value)
+        }
+        .help(isEditing ? Text(verbatim: "") : Text("Double-click to edit", bundle: .module))
+    }
+
+    private func beginEdit(_ cellID: CellID, currentValue: String) {
+        if editingCell != nil, editingCell != cellID {
+            commitEdit()
+        }
+        editingCell = cellID
+        draftText = currentValue
+        cellFocused = true
+    }
+
+    private func commitEdit() {
+        guard let editingCell else { return }
+        let updated = draftText
+        self.editingCell = nil
+        model.updateTableCell(row: editingCell.row, column: editingCell.column, value: updated)
+    }
+
+    private func cancelEdit() {
+        editingCell = nil
+        draftText = ""
     }
 
     /// A column of figures (`TableTabStops.holdsFigures`).
@@ -77,7 +165,7 @@ struct TablePreview: View {
     }
 }
 
-/// Links, contacts, dates, and codes found in the image, each one click from being used.
+/// Links, contacts, dates, formulas, and codes found in the image, each one click from being used.
 struct FoundList: View {
     let model: TextRecognitionModel
 
@@ -91,15 +179,28 @@ struct FoundList: View {
                     .padding(.bottom, 4)
                     .accessibilityAddTraits(.isHeader)
                 ForEach(Array(model.codes.enumerated()), id: \.offset) { index, code in
+                    let found = FoundCode(payload: code.payload, isMatrix: code.kind.isMatrix, box: code.box)
                     FoundRow(
-                        symbol: code.kind.isMatrix ? "qrcode" : "barcode",
+                        symbol: Self.symbol(for: code, structured: found.structured),
                         kind: Self.name(of: code.kind),
-                        value: code.payload,
+                        value: found.displaySummary,
+                        copyValue: found.primaryCopyValue,
                         action: model.action(for: code),
                         model: model,
                         onHover: { inside in
                             if inside { model.hoveredCode = index } else if model.hoveredCode == index { model.hoveredCode = nil }
                         }
+                    )
+                }
+                ForEach(Array(model.formulas.enumerated()), id: \.offset) { _, formula in
+                    let formatted = model.formulaDelimiter().wrap(formula.latex)
+                    FoundRow(
+                        symbol: "function",
+                        kind: Text("Formula", bundle: .module),
+                        value: formatted,
+                        copyValue: formatted,
+                        action: nil,
+                        model: model
                     )
                 }
                 ForEach(Array(model.items.enumerated()), id: \.offset) { _, item in
@@ -111,6 +212,16 @@ struct FoundList: View {
         }
         .frame(maxHeight: 176)
         .fixedSize(horizontal: false, vertical: true)
+    }
+
+    static func symbol(for code: OCRCode, structured: FoundCode.StructuredPayload?) -> String {
+        switch structured {
+        case .wifi: "wifi"
+        case .mailto: "envelope"
+        case .phone: "phone"
+        case .contact: "person.crop.rectangle"
+        case .web, nil: code.kind.isMatrix ? "qrcode" : "barcode"
+        }
     }
 
     static func name(of kind: OCRCode.Kind) -> Text {
@@ -155,6 +266,7 @@ struct FoundRow: View {
     let symbol: String
     let kind: Text
     let value: String
+    var copyValue: String? = nil
     let action: TextRecognitionModel.Action?
     let model: TextRecognitionModel
     var onHover: (Bool) -> Void = { _ in }
@@ -211,7 +323,7 @@ struct FoundRow: View {
     }
 
     private func copy() {
-        model.copy(value)
+        model.copy(copyValue ?? value)
         copied = true
         Task {
             try? await Task.sleep(for: .seconds(1.2))

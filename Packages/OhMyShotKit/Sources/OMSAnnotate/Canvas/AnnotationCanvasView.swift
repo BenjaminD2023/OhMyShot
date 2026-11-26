@@ -25,6 +25,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public var isEditingText: Bool { editing != nil }
     /// After any change to where the picture or the selection is on screen.
     public var onViewportChange: (() -> Void)?
+    /// After undo/redo availability changes (including inline text editing undo state).
+    public var onUndoStateChange: (() -> Void)?
     /// Drawing in place over the capture overlay: the picture at the screen's own size under the frozen
     /// screen's pixels, no zoom, no window chrome, the drawing tools only. Set by `configureInPlace`.
     public private(set) var isInPlace = false
@@ -144,6 +146,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var markElements: [Annotation.ID: MarkElement] = [:]
 
     private var displayOptions: NSObjectProtocol?
+    private var windowResignObserver: NSObjectProtocol?
+    private var lastPasteChangeCount: Int?
+    private var pasteRepeatCount = 0
     private var userZoom: CGFloat?
     /// The capture point at the middle of the free area while zoomed in.
     private var focus: CGPoint?
@@ -157,13 +162,24 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private var cropRect: CGRect? {
         didSet {
             cropLayer.isHidden = cropRect == nil
-            if let cropRect { cropLayer.frameRect = viewRect(cropRect) }
+            if let cropRect {
+                cropLayer.frameRect = viewRect(cropRect)
+                let size = cropRect.standardized.integral.size
+                cropLayer.dimensionText = String(localized: "\(Int(size.width)) × \(Int(size.height)) px", bundle: .module)
+            } else {
+                cropLayer.dimensionText = nil
+            }
         }
     }
+
+    /// The live pixel dimension pill text currently displayed on the crop overlay.
+    var cropDimensionText: String? { cropLayer.dimensionText }
     /// Whether Space is held down: pans a zoomed-in canvas, or in place moves the capture selection.
     public private(set) var isSpaceHeld = false
     /// Whether the canvas color eyedropper (shortcut I) is currently active.
     public private(set) var isPickingColor = false
+    /// Cached composite snapshot while the eyedropper is active, so sampling covers combined images, backdrop, and marks without re-rendering on every mouse move.
+    private var eyedropperSnapshot: (image: CGImage, origin: CGPoint)?
     /// Called when `isPickingColor` toggles so the style capsule can update its Eyedropper chip.
     var onColorPickerChange: (() -> Void)?
 
@@ -344,22 +360,48 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     isolated deinit {
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
+        if let windowResignObserver { NotificationCenter.default.removeObserver(windowResignObserver) }
     }
 
     public override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
-        if newWindow == nil, window != nil { session.cancelReading() }
+        if newWindow == nil, window != nil {
+            clearSpaceHeld()
+            session.cancelReading()
+        }
     }
 
     public override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
         displayOptions = nil
-        guard window != nil else { return }
+        if let windowResignObserver { NotificationCenter.default.removeObserver(windowResignObserver) }
+        windowResignObserver = nil
+        guard let window else { return }
         displayOptions = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
             MainActor.assumeIsolated { self?.applyAppearance() }
+        }
+        windowResignObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.didResignKeyNotification, object: window, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.clearSpaceHeld() }
+        }
+    }
+
+    public override func resignFirstResponder() -> Bool {
+        clearSpaceHeld()
+        return super.resignFirstResponder()
+    }
+
+    private func clearSpaceHeld() {
+        guard isSpaceHeld else { return }
+        isSpaceHeld = false
+        if case .panning = drag { drag = nil }
+        if let window {
+            let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
+            if bounds.contains(location) { updateCursor(at: location) }
         }
     }
 
@@ -392,6 +434,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let pixel = 1 / (window?.backingScaleFactor ?? 2)
         canvasFrame = CGRect(x: (origin.x / pixel).rounded() * pixel, y: (origin.y / pixel).rounded() * pixel, width: size.width, height: size.height)
         layoutLayers()
+        if editing != nil { positionTextView(notifying: false) }
     }
 
     private func layoutLayers() {
@@ -465,12 +508,18 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     // MARK: Redaction suggestions
 
-    /// Outlines the open suggestions while the redaction tool is in hand and nothing is being drawn, with
-    /// each one's kind as its tooltip.
+    /// Whether the redaction tool's open suggestions should be shown: while Redact is in hand, or while
+    /// a redaction mark is selected so the remaining suggestions stay visible beside it.
+    private var showsRedactionSuggestions: Bool {
+        session.tool == .redact || session.currentKind == .redact
+    }
+
+    /// Outlines the open suggestions while the redaction tool is in hand (or a redaction is selected)
+    /// and nothing is being drawn, with each one's kind as its tooltip.
     /// - Parameter fadingIn: the outlines arrive with a short fade (a reading that just finished), or at once
     ///   with Reduce Motion.
     private func updateSuggestions(fadingIn: Bool = false) {
-        let open = session.tool == .redact && drag?.hidesSuggestions != true ? session.openRedactionSuggestions : []
+        let open = showsRedactionSuggestions && drag?.hidesSuggestions != true ? session.openRedactionSuggestions : []
         suggestions.show(open, in: host.bounds, fadingIn: fadingIn) { viewRect(session.coveringRect(of: $0)) }
     }
 
@@ -637,6 +686,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     // MARK: Zoom
 
+    /// Standard display zoom stops relative to actual size (25% through 400%).
+    public static let zoomSteps: [CGFloat] = [0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0]
+
     public func zoomToFit() {
         userZoom = nil
         focus = nil
@@ -649,11 +701,17 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public func zoomIn() {
-        setZoom(zoom * 1.5, around: nil)
+        let scale = session.document.scale
+        let current = zoom * scale
+        let next = Self.zoomSteps.first { $0 > current + 0.001 } ?? Self.zoomSteps.last!
+        setZoom(next / scale, around: nil)
     }
 
     public func zoomOut() {
-        setZoom(zoom / 1.5, around: nil)
+        let scale = session.document.scale
+        let current = zoom * scale
+        let previous = Self.zoomSteps.last { $0 < current - 0.001 } ?? Self.zoomSteps.first!
+        setZoom(previous / scale, around: nil)
     }
 
     /// Zooms keeping the capture point under `anchor` (view points) in place, or the middle.
@@ -817,6 +875,20 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     private func sessionChanged(_ event: AnnotationSession.Event) {
         switch event {
         case .document:
+            eyedropperSnapshot = nil
+            if let editing {
+                if let item = session.document.item(editing.id), case .text(let block) = item.shape {
+                    if editing.view.string != block.string {
+                        editing.view.string = block.string
+                        styleTextView(for: item)
+                    }
+                } else {
+                    self.editing = nil
+                    editing.view.delegate = nil
+                    editing.view.removeFromSuperview()
+                    onUndoStateChange?()
+                }
+            }
             CATransaction.begin()
             CATransaction.setDisableActions(true)
             let picture = showCurrentPicture()
@@ -845,6 +917,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             updateAccessibility()
             onViewportChange?()
         case .selection:
+            if isPickingColor, !canPickColor { cancelColorPicker() }
             updateSelectionOutlines()
             onViewportChange?()
             if let focusedMarkElement { NSAccessibility.post(element: focusedMarkElement, notification: .focusedUIElementChanged) }
@@ -855,13 +928,13 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             refreshRedactionsIfNeeded()
             updateLenses()
         case .settings:
-            break
+            if isPickingColor, !canPickColor { cancelColorPicker() }
         case .suggestions:
             let finished = !session.isFindingRedactions
             updateSuggestions(fadingIn: finished)
             updateAccessibility()
             let count = session.openRedactionSuggestions.count
-            if finished, session.tool == .redact {
+            if finished, showsRedactionSuggestions {
                 // VoiceOver hears the end of the reading even when it found nothing, or failed.
                 VoiceOver.announce(
                     session.couldNotFindRedactions
@@ -894,9 +967,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 )
             }
         }
-        // Covered suggestions go, and the tool's own come and go with it.
-        if event == .document || event == .tool { updateSuggestions() }
-        if event == .tool { updateAccessibility() }
+        // Covered suggestions go, and the tool's (or a selected redaction's) own come and go with it.
+        if event == .document || event == .tool || event == .selection { updateSuggestions() }
+        if event == .tool || event == .selection { updateAccessibility() }
     }
 
     /// Shows the picture the session has now, fitted to the view, when a turn, a flip, or a resize (or its
@@ -1080,13 +1153,32 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
+    private static func handleKind(of handle: Handle, for item: Annotation) -> SelectionLayer.HandleKind {
+        switch handle {
+        case .topLeft, .topRight, .bottomRight, .bottomLeft:
+            return .corner
+        case .top, .right, .bottom, .left:
+            return .edge
+        case .start:
+            if case .magnifier = item.shape { return .control }
+            return .tail
+        case .end:
+            if case .arrow = item.shape { return .arrowHead }
+            return .tail
+        case .bend, .tail:
+            return .control
+        }
+    }
+
     private func updateSelectionOutlines() {
         let scale = session.document.scale
         let single = session.selection.count == 1 && editing == nil
         let knob = rotationKnob()
         // The text being typed shows its own field instead of a selection.
         var outlines = session.selectedItems.filter { $0.id != editing?.id }.map { item in
-            let handles = single ? item.handles(scale: scale).map { viewPoint($0.point) } : []
+            let handles = single ? item.handles(scale: scale).map {
+                SelectionLayer.HandleMarker(point: viewPoint($0.point), kind: Self.handleKind(of: $0.handle, for: item))
+            } : []
             if item.isTurned {
                 // Its own frame, turned, rather than the upright box around it.
                 let frame = viewRect(item.upright(scale: scale).bounds(scale: scale))
@@ -1110,7 +1202,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         // Several marks: a box around them all as well, its corners resizing them together.
         if let box = groupBox, editing == nil {
             outlines.append(SelectionLayer.Outline(
-                box: viewRect(box).integral, handles: Self.groupHandles(of: box).map { viewPoint($0.point) }
+                box: viewRect(box).integral,
+                handles: Self.groupHandles(of: box).map { SelectionLayer.HandleMarker(point: viewPoint($0.point), kind: .corner) }
             ))
         }
         selectionLayer.outlines = outlines
@@ -1118,6 +1211,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     private func toolChanged() {
         endEditing()
+        cancelColorPicker()
         if session.tool != .select { session.select([]) }
         if session.tool == .crop {
             cropRect = session.document.canvas
@@ -1146,6 +1240,16 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public func commitCrop() {
         guard let cropRect else { return }
         applyCrop(cropRect)
+    }
+
+    /// Discards any uncommitted crop draft and exits Crop mode without changing the canvas.
+    public func cancelCrop() {
+        guard session.tool == .crop else { return }
+        drag = nil
+        cropLayer.showsThirds = false
+        session.setCropRatio(.free)
+        cropRect = session.document.canvas
+        session.leavePictureMode()
     }
 
     /// The crop frame with `handle` dragged to `point`: held to the chosen ratio, whatever the keys; with
@@ -1183,12 +1287,23 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if session.tool == .crop { cropRect = session.document.canvas }
     }
 
+    /// Whether the active tool or selection accepts a color sampled from the canvas.
+    public var canPickColor: Bool {
+        if session.tool == .background { return true }
+        return session.selectionSupportsColor
+    }
+
     /// Toggles the canvas color eyedropper (shortcut I).
     public func toggleColorPicker() {
         if isPickingColor {
             cancelColorPicker()
         } else {
+            guard canPickColor else {
+                NSSound.beep()
+                return
+            }
             endEditing()
+            eyedropperSnapshot = nil
             isPickingColor = true
             if let window {
                 let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
@@ -1204,6 +1319,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public func cancelColorPicker() {
         guard isPickingColor else { return }
         isPickingColor = false
+        eyedropperSnapshot = nil
         selectionLayer.eyedropperPreview = nil
         if let window {
             let location = convert(window.mouseLocationOutsideOfEventStream, from: nil)
@@ -1212,9 +1328,34 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         onColorPickerChange?()
     }
 
-    /// Samples the capture's pixel color at `documentPoint` (in document pixels).
+    /// Samples the visible canvas pixel color at `documentPoint` (in document pixels), including combined images and backdrop.
     public func sampleColor(at documentPoint: CGPoint) -> RGBA? {
-        PixelProbe.color(at: documentPoint, in: session.picture)
+        if let backdrop = session.document.backdrop, backdrop.fill == .clear, session.tool != .crop,
+           let layout = session.backdropLayout, !layout.card.contains(documentPoint) {
+            return nil
+        }
+        if isPickingColor {
+            if eyedropperSnapshot == nil, let image = AnnotationRenderer.flatten(session.document, base: session.base) {
+                let origin = (session.tool != .crop ? session.backdropLayout?.output : nil)?.integral.origin
+                    ?? session.document.canvas.standardized.integral.origin
+                eyedropperSnapshot = (image, origin)
+            }
+            if let snapshot = eyedropperSnapshot {
+                let local = CGPoint(x: documentPoint.x - snapshot.origin.x, y: documentPoint.y - snapshot.origin.y)
+                if let color = PixelProbe.color(at: local, in: snapshot.image) { return color }
+            }
+        }
+        if let source = session.redactionSource {
+            let local = CGPoint(x: documentPoint.x - source.origin.x, y: documentPoint.y - source.origin.y)
+            if let color = PixelProbe.color(at: local, in: source.image) { return color }
+        }
+        if session.document.backdrop != nil, session.tool != .crop, let layout = session.backdropLayout,
+           let image = AnnotationRenderer.flatten(session.document, base: session.base) {
+            let origin = layout.output.integral.origin
+            let local = CGPoint(x: documentPoint.x - origin.x, y: documentPoint.y - origin.y)
+            if let color = PixelProbe.color(at: local, in: image) { return color }
+        }
+        return PixelProbe.color(at: documentPoint, in: session.picture)
     }
 
     private func updateEyedropperPreview(at viewLocation: CGPoint) {
@@ -1380,8 +1521,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let location = convert(event.locationInWindow, from: nil)
         if isPickingColor {
             if let sampled = sampleColor(at: documentPoint(location)) {
-                session.changeSettings(String(localized: "Color", bundle: .module)) { $0.color = sampled }
-                refreshEditingStyle()
+                if session.tool == .background {
+                    session.changeBackdrop(String(localized: "Background", bundle: .module)) { $0.fill = .color(sampled.withAlpha(1)) }
+                } else {
+                    session.changeSettings(String(localized: "Color", bundle: .module)) { $0.color = sampled }
+                    refreshEditingStyle()
+                }
             }
             cancelColorPicker()
             return
@@ -1411,6 +1556,20 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
 
+        // Double-clicking a selected text mark's right width handle resets it to auto-fit width.
+        if event.clickCount == 2, session.selection.count == 1,
+           let item = session.selectedItems.first,
+           case .text(var block) = item.shape,
+           handle(at: location, of: item) == .right {
+            if block.width != nil, let index = session.document.index(of: item.id) {
+                block.width = nil
+                var document = session.document
+                document.items[index].shape = .text(block)
+                session.commit(session.fitted(document, holding: [item.id]), actionName: String(localized: "Auto-Fit Text Width", bundle: .module))
+            }
+            return
+        }
+
         // Double-clicking any existing text mark from any tool enters inline editing immediately.
         if event.clickCount == 2, let textItem = hitTextItem(at: point) {
             beginEditing(textItem.id, isNew: false)
@@ -1437,7 +1596,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             return
         }
 
-        if let item = hitItem(at: point, pressing: true, includingInterior: command) {
+        // Only Select mode (or holding ⌘ temporarily) grabs/drags existing marks on press; drawing tools
+        // start a new mark right where the user presses (handles of the selected mark and double-click text
+        // edit were already checked above).
+        if (session.tool == .select || command), let item = hitItem(at: point, pressing: true, includingInterior: command) {
             if event.clickCount == 2, case .text = item.shape {
                 beginEditing(item.id, isNew: false)
                 return
@@ -1469,8 +1631,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
         let tool = session.tool
         if tool == .select {
-            if isInPlace, event.clickCount == 2 {
+            if isInPlace, event.clickCount == 2, session.document.items.isEmpty {
                 onCopy?()
+                return
+            }
+            if !shift, session.currentKind == .redact, session.acceptRedactionSuggestion(at: point) {
                 return
             }
             if !shift { session.select([]) }
@@ -1516,12 +1681,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             beginEditing(item.id, isNew: true)
         case .counter:
             let numbering = settings.numbering
-            let item = Annotation(shape: .counter(Counter(center: point, value: session.document.nextCounterValue(for: numbering), numbering: numbering)), style: settings.style)
+            let value = session.nextCounterValue(for: numbering)
+            let item = Annotation(shape: .counter(Counter(center: point, value: value, numbering: numbering)), style: settings.style)
             var document = session.document
             document.items.append(item)
             // Not selected: counters go down one click after another, and the capsule stays with the
             // tool, so a change of numbering applies to the next counters rather than the last one.
             session.commit(session.fitted(document, holding: [item.id]), selecting: [], actionName: String(localized: "Add Counter", bundle: .module))
+            session.didPlaceCounter(value: value, numbering: numbering)
         default:
             // Select, the crop, and the background draw nothing; the shapes were dragged out above.
             break
@@ -1753,6 +1920,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     public override func flagsChanged(with event: NSEvent) {
         super.flagsChanged(with: event)
+        if drag == nil, isSpaceHeld {
+            clearSpaceHeld()
+        }
         let freely = event.modifierFlags.contains(.command)
         if case .highlighting(let id, let points, let snapping) = drag, snapping != nil, let index = session.document.index(of: id) {
             // ⌘ frees the stroke from the text while it is held, mid-drag too.
@@ -1789,20 +1959,26 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     public override func menu(for event: NSEvent) -> NSMenu? {
         guard !session.selection.isEmpty else { return isInPlace ? nil : pictureMenu(at: documentPoint(convert(event.locationInWindow, from: nil))) }
         let menu = NSMenu()
-        func add(_ title: String, _ action: Selector, _ symbol: String) {
-            let item = NSMenuItem(title: title, action: action, keyEquivalent: "")
+        func add(_ title: String, _ action: Selector, _ symbol: String, key: String = "", modifiers: NSEvent.ModifierFlags = []) {
+            let item = NSMenuItem(title: title, action: action, keyEquivalent: key)
+            item.keyEquivalentModifierMask = modifiers
             item.image = NSImage(systemSymbolName: symbol, accessibilityDescription: nil)
             item.target = self
             menu.addItem(item)
         }
-        add(String(localized: "Duplicate", bundle: .module), #selector(duplicateSelection(_:)), "plus.square.on.square")
-        add(String(localized: "Bring to Front", bundle: .module), #selector(bringToFront(_:)), "square.3.layers.3d.top.filled")
-        add(String(localized: "Send to Back", bundle: .module), #selector(sendToBack(_:)), "square.3.layers.3d.bottom.filled")
+        add(String(localized: "Cut", bundle: .module), #selector(cut(_:)), "scissors", key: "x", modifiers: .command)
+        add(String(localized: "Copy", bundle: .module), #selector(copy(_:)), "doc.on.doc", key: "c", modifiers: .command)
+        add(String(localized: "Duplicate", bundle: .module), #selector(duplicateSelection(_:)), "plus.square.on.square", key: "d", modifiers: .command)
+        menu.addItem(.separator())
+        add(String(localized: "Bring to Front", bundle: .module), #selector(bringToFront(_:)), "square.3.layers.3d.top.filled", key: "]", modifiers: [.command, .shift])
+        add(String(localized: "Bring Forward", bundle: .module), #selector(bringForward(_:)), "square.2.layers.3d.top.filled", key: "]", modifiers: .command)
+        add(String(localized: "Send Backward", bundle: .module), #selector(sendBackward(_:)), "square.2.layers.3d.bottom.filled", key: "[", modifiers: .command)
+        add(String(localized: "Send to Back", bundle: .module), #selector(sendToBack(_:)), "square.3.layers.3d.bottom.filled", key: "[", modifiers: [.command, .shift])
         if session.selectedItems.contains(where: \.isTurned) {
             add(String(localized: "Straighten", bundle: .module), #selector(straightenSelection(_:)), "arrow.uturn.backward")
         }
         menu.addItem(.separator())
-        add(String(localized: "Delete", bundle: .module), #selector(delete(_:)), "trash")
+        add(String(localized: "Delete", bundle: .module), #selector(delete(_:)), "trash", key: "\u{8}")
         return menu
     }
 
@@ -1843,6 +2019,42 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         window?.makeFirstResponder(self)
     }
 
+    /// Copies selected marks to `pasteboard` under `app.ohmyshot.annotations`; false when nothing is selected.
+    @discardableResult
+    public func copySelectedAnnotations(to pasteboard: NSPasteboard = .general) -> Bool {
+        let items = session.selectedItems
+        guard !items.isEmpty else { return false }
+        return AnnotationPasteboard.write(items, to: pasteboard)
+    }
+
+    /// Cuts selected marks to `pasteboard` under `app.ohmyshot.annotations` and removes them in one undo step.
+    @discardableResult
+    public func cutSelectedAnnotations(to pasteboard: NSPasteboard = .general) -> Bool {
+        guard copySelectedAnnotations(to: pasteboard) else { return false }
+        session.cutSelection()
+        return true
+    }
+
+    /// Pastes marks from `pasteboard` (`app.ohmyshot.annotations`) with fresh IDs and canvas-clamped offsets.
+    @discardableResult
+    public func pasteAnnotations(from pasteboard: NSPasteboard = .general) -> Bool {
+        guard let marks = AnnotationPasteboard.read(from: pasteboard) else { return false }
+        endEditing()
+        if session.tool.isPictureMode { session.leavePictureMode() }
+        let changeCount = pasteboard.changeCount
+        if lastPasteChangeCount == changeCount {
+            pasteRepeatCount += 1
+        } else {
+            lastPasteChangeCount = changeCount
+            pasteRepeatCount = 1
+        }
+        let step = AnnotationPasteboard.pasteOffset * CGFloat(pasteRepeatCount)
+        let ids = session.pasteAnnotations(marks, offset: CGSize(width: step, height: step))
+        guard !ids.isEmpty else { return false }
+        window?.makeFirstResponder(self)
+        return true
+    }
+
     /// Pastes pictures from `pasteboard` into the middle of what is on screen; false when it has none.
     @discardableResult
     func pastePictures(from pasteboard: NSPasteboard) -> Bool {
@@ -1852,8 +2064,9 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         return true
     }
 
-    /// ⌘V: pictures on the clipboard are combined into the capture.
+    /// ⌘V: pastes copied annotations first (within or across editor windows); otherwise combines clipboard images.
     @objc public func paste(_ sender: Any?) {
+        if pasteAnnotations(from: .general) { return }
         // In place the canvas is the selection; a picture combined in would grow it past the screen.
         guard !isInPlace else {
             NSSound.beep()
@@ -1877,11 +2090,12 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
     }
 
-    /// The menu for the empty canvas: combine a picture into the capture.
+    /// The menu for the empty canvas: paste marks or pictures, or combine a picture into the capture.
     private func pictureMenu(at point: CGPoint) -> NSMenu? {
         let menu = NSMenu()
-        if IncomingPicture.isOffered(by: .general) {
-            let paste = NSMenuItem(title: String(localized: "Paste", bundle: .module), action: #selector(paste(_:)), keyEquivalent: "")
+        if AnnotationPasteboard.hasAnnotations(on: .general) || IncomingPicture.isOffered(by: .general) {
+            let paste = NSMenuItem(title: String(localized: "Paste", bundle: .module), action: #selector(paste(_:)), keyEquivalent: "v")
+            paste.keyEquivalentModifierMask = .command
             paste.target = self
             paste.image = NSImage(systemSymbolName: "doc.on.clipboard", accessibilityDescription: nil)
             menu.addItem(paste)
@@ -1971,9 +2185,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
                 ? .crosshair : Self.resizeCursor(for: handle.turned(by: item.angle))
         } else if let (handle, _) = groupHandle(at: location) {
             cursor = Self.resizeCursor(for: handle)
-        } else if hitItem(at: documentPoint(location), pressing: true) != nil {
+        } else if (session.tool == .select || NSEvent.modifierFlags.contains(.command)),
+                  hitItem(at: documentPoint(location), pressing: true, includingInterior: NSEvent.modifierFlags.contains(.command)) != nil {
             cursor = .openHand
-        } else if session.tool == .redact, session.redactionSuggestion(at: documentPoint(location)) != nil {
+        } else if showsRedactionSuggestions, session.redactionSuggestion(at: documentPoint(location)) != nil {
             cursor = .pointingHand
         } else {
             cursor = switch session.tool {
@@ -2092,6 +2307,10 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             }
             return true
         case 36, 76:
+            if isPickingColor {
+                cancelColorPicker()
+                return true
+            }
             if session.tool == .crop {
                 commitCrop()
                 session.leavePictureMode()
@@ -2214,20 +2433,43 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     public override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard window?.firstResponder === self else { return super.performKeyEquivalent(with: event) }
+        let isCanvas = window?.firstResponder === self
+        let isTextEditor = editing != nil && window?.firstResponder === editing?.view
+        guard isCanvas || isTextEditor else { return super.performKeyEquivalent(with: event) }
         let flags = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        // ⌘Return commits text editing cleanly without inserting a newline.
+        if isTextEditor, editing?.view.hasMarkedText() == false, (event.keyCode == 36 || event.keyCode == 76), flags == .command {
+            endEditing()
+            return true
+        }
         guard flags == .command || flags == [.command, .shift] else { return super.performKeyEquivalent(with: event) }
-        // In place nothing zooms: ⌘+, ⌘−, and ⌘0 pass on.
-        if isInPlace, ["=", "+", "-", "0"].contains(event.charactersIgnoringModifiers ?? "") { return super.performKeyEquivalent(with: event) }
-        switch event.charactersIgnoringModifiers {
+        let key = event.charactersIgnoringModifiers
+        let isZoomKey = key == "=" || key == "+" || key == "-" || key == "0" || key == "1"
+        if isZoomKey {
+            // In place nothing zooms: ⌘+, ⌘−, ⌘0, and ⌘1 pass on.
+            if isInPlace { return super.performKeyEquivalent(with: event) }
+            switch key {
+            case "=", "+":
+                zoomIn()
+            case "-":
+                zoomOut()
+            case "0" where flags == .command:
+                zoomToFit()
+            case "1" where flags == .command:
+                zoomToActualSize()
+            default:
+                return super.performKeyEquivalent(with: event)
+            }
+            return true
+        }
+        guard isCanvas else { return super.performKeyEquivalent(with: event) }
+        switch key {
         case "d" where flags == .command:
             session.duplicateSelection()
-        case "=", "+":
-            zoomIn()
-        case "-":
-            zoomOut()
-        case "0":
-            zoomToFit()
+        case "]" where flags == .command:
+            session.bringForward()
+        case "[" where flags == .command:
+            session.sendBackward()
         case "]" where flags == [.command, .shift]:
             session.bringSelectionToFront()
         case "[" where flags == [.command, .shift]:
@@ -2263,10 +2505,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     }
 
     /// ⌘Z. Answered here, ahead of the window: the window's own undo manager belongs to the SwiftUI
-    /// hosting it, not to the marks. While text is typed, Undo undoes typing.
+    /// hosting it, not to the marks. While text is typed, Undo undoes typing and stays synced with the model.
     @objc public func undo(_ sender: Any?) {
         if let editing {
-            if editing.undo.canUndo { editing.undo.undo() }
+            if editing.undo.canUndo {
+                editing.undo.undo()
+                syncEditingText()
+            }
+            onUndoStateChange?()
         } else {
             session.undo()
         }
@@ -2275,7 +2521,11 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// ⇧⌘Z.
     @objc public func redo(_ sender: Any?) {
         if let editing {
-            if editing.undo.canRedo { editing.undo.redo() }
+            if editing.undo.canRedo {
+                editing.undo.redo()
+                syncEditingText()
+            }
+            onUndoStateChange?()
         } else {
             session.redo()
         }
@@ -2286,7 +2536,21 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         editing?.undo ?? session.undoManager
     }
 
+    @objc public func cut(_ sender: Any?) {
+        if !cutSelectedAnnotations(to: .general) {
+            NSSound.beep()
+        }
+    }
+
     @objc public func copy(_ sender: Any?) {
+        if !session.selection.isEmpty, !isEditingText {
+            if copySelectedAnnotations(to: .general) {
+                VoiceOver.announce(String(localized: "Copied", bundle: .module), from: self)
+            } else {
+                NSSound.beep()
+            }
+            return
+        }
         onCopy?()
     }
 
@@ -2341,6 +2605,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     @objc public func toggleCanvasLock(_ sender: Any?) {
         guard !isInPlace else { return }
         session.locksCanvas.toggle()
+    }
+
+    /// Undoably resets the capture back to its original state, removing all marks, crop, backdrop, and transforms.
+    @objc public func revertToOriginal(_ sender: Any?) {
+        guard !isInPlace, session.canRevertToOriginal else { return }
+        endEditing()
+        if session.tool.isPictureMode { session.leavePictureMode() }
+        session.revertToOriginal()
+        VoiceOver.announce(String(localized: "Reverted to original", bundle: .module), from: self, priority: .medium)
     }
 
     /// Whether the picture can be turned or resized: not in place, where the canvas is the selection, and
@@ -2409,6 +2682,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         session.bringSelectionToFront()
     }
 
+    @objc func bringForward(_ sender: Any?) {
+        session.bringForward()
+    }
+
+    @objc func sendBackward(_ sender: Any?) {
+        session.sendBackward()
+    }
+
     @objc func sendToBack(_ sender: Any?) {
         session.sendSelectionToBack()
     }
@@ -2421,12 +2702,15 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case #selector(redo(_:)):
             menuItem.title = activeUndoManager.redoMenuItemTitle
             return activeUndoManager.canRedo
-        case #selector(delete(_:)), #selector(duplicateSelection(_:)), #selector(bringToFront(_:)), #selector(sendToBack(_:)):
+        case #selector(cut(_:)), #selector(delete(_:)), #selector(duplicateSelection(_:)),
+             #selector(bringToFront(_:)), #selector(bringForward(_:)), #selector(sendBackward(_:)), #selector(sendToBack(_:)):
             return !session.selection.isEmpty
+        case #selector(copy(_:)):
+            return !session.selection.isEmpty || onCopy != nil
         case #selector(selectAll(_:)):
             return !session.document.items.isEmpty
         case #selector(paste(_:)):
-            return !isInPlace && IncomingPicture.isOffered(by: .general)
+            return AnnotationPasteboard.hasAnnotations(on: .general) || (!isInPlace && IncomingPicture.isOffered(by: .general))
         case #selector(printCapture(_:)):
             return onPrint != nil
         case #selector(saveScreenshotAs(_:)):
@@ -2438,6 +2722,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         case #selector(toggleCanvasLock(_:)):
             menuItem.state = session.locksCanvas ? .on : .off
             return !isInPlace
+        case #selector(revertToOriginal(_:)):
+            return !isInPlace && session.canRevertToOriginal
         case #selector(selectNextMark(_:)), #selector(selectPreviousMark(_:)):
             return editing == nil && !session.document.items.isEmpty && !session.tool.isPictureMode
         case #selector(chooseKeyedColor(_:)):
@@ -2466,12 +2752,14 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         if case .text(let block) = item.shape {
             view.string = block.string
         }
+        editing.undo.removeAllActions()
         styleTextView(for: item)
         addSubview(view)
         markLayers[id]?.isHidden = true
         updateSelectionOutlines()
         window?.makeFirstResponder(view)
         view.selectAll(nil)
+        onUndoStateChange?()
     }
 
     /// Matches the editing field to the mark: same face, size, line height, and color. The field sets its
@@ -2544,7 +2832,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     /// Frames the field over the mark: laid out in the capture's pixels (its bounds) and scaled to the
     /// zoom (its frame).
-    private func positionTextView() {
+    private func positionTextView(notifying: Bool = true) {
         guard let editing, let item = session.document.item(editing.id), case .text(let block) = item.shape else { return }
         let scale = session.document.scale
         let layout = Self.fieldLayout(of: block, scale: scale)
@@ -2560,7 +2848,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         let origin = viewPoint(block.origin)
         view.frame = CGRect(x: origin.x, y: origin.y, width: size.width * zoom, height: size.height * zoom)
         view.bounds = CGRect(origin: .zero, size: size)
-        onViewportChange?()
+        if notifying { onViewportChange?() }
     }
 
     /// The layout a text mark's field follows: an empty one is laid out as a space, so its field keeps a
@@ -2569,19 +2857,33 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         TextLayout(block.string.isEmpty ? TextBlock(origin: block.origin, string: " ", fontSize: block.fontSize, look: block.look, width: block.width) : block, scale: scale)
     }
 
-    public func textDidChange(_ notification: Notification) {
+    private func syncEditingText() {
         guard let editing, let index = session.document.index(of: editing.id), case .text(var block) = session.document.items[index].shape else { return }
-        block.string = editing.view.string
-        var document = session.document
-        document.items[index].shape = .text(block)
-        session.updateLive(document)
+        if block.string != editing.view.string {
+            block.string = editing.view.string
+            var document = session.document
+            document.items[index].shape = .text(block)
+            session.updateLive(document)
+        }
         positionTextView()
         editing.view.needsDisplay = true
+    }
+
+    public func textDidChange(_ notification: Notification) {
+        syncEditingText()
+        onUndoStateChange?()
     }
 
     public func textView(_ textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
         // Escape finishes the text, unless an input method is composing (it takes Escape itself).
         if commandSelector == #selector(NSResponder.cancelOperation(_:)), !textView.hasMarkedText() {
+            endEditing()
+            return true
+        }
+        // ⌘Return commits text editing cleanly instead of inserting a newline.
+        if commandSelector == #selector(NSResponder.insertNewline(_:)),
+           !textView.hasMarkedText(),
+           NSApp.currentEvent?.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
             endEditing()
             return true
         }
@@ -2600,6 +2902,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// was written puts the Text tool down, so the click that ended it does not start another.
     func endEditing() {
         guard let editing else { return }
+        syncEditingText()
         self.editing = nil
         editing.view.delegate = nil
         editing.view.removeFromSuperview()
@@ -2641,6 +2944,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
             if session.tool == .text { session.putToolDown() }
         }
         updateSelectionOutlines()
+        onUndoStateChange?()
         if window?.firstResponder == nil || window?.firstResponder === window {
             window?.makeFirstResponder(self)
         }
@@ -2663,8 +2967,8 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
     /// Increase Contrast thickens the picture's edge, the selection, and the crop frame.
     private func applyAppearance() {
         let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
+        let dark = effectiveAppearance.isDark
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            let dark = effectiveAppearance.isDark
             pictureLayer.borderWidth = Theme.PictureBorder.width(contrast: contrast)
             pictureLayer.borderColor = Theme.PictureBorder.color(dark: dark, contrast: contrast)
             selectionLayer.accent = NSColor.controlAccentColor.cgColor
@@ -2676,6 +2980,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
         }
         selectionLayer.increasedContrast = contrast
         cropLayer.increasedContrast = contrast
+        cropLayer.isDark = dark
         if let editing, let item = session.document.item(editing.id) {
             styleTextView(for: item)
         }
@@ -2683,7 +2988,7 @@ public final class AnnotationCanvasView: NSView, NSTextViewDelegate, NSMenuItemV
 
     private func updateAccessibility() {
         let count = session.document.items.count
-        let suggestions = session.tool == .redact ? session.openRedactionSuggestions.count : 0
+        let suggestions = showsRedactionSuggestions ? session.openRedactionSuggestions.count : 0
         // One count to a string, so each takes its language's plural: the marks in the label, the suggestions as its
         // value, which VoiceOver reads after it.
         setAccessibilityLabel(String(localized: "Capture, \(count) marks", bundle: .module))

@@ -82,14 +82,35 @@ public final class UploadDestinationStore {
         defaultDestinationID = id
     }
 
+    public enum MoveDirection: Sendable {
+        case up
+        case down
+    }
+
     public func move(fromOffsets source: IndexSet, toOffset target: Int) {
+        let valid = IndexSet(source.filter { destinations.indices.contains($0) })
+        guard !valid.isEmpty else { return }
         var list = destinations
-        let moving = source.sorted().map { list[$0] }
-        for index in source.sorted(by: >) { list.remove(at: index) }
-        let shift = source.filter { $0 < target }.count
+        let moving = valid.sorted().map { list[$0] }
+        for index in valid.sorted(by: >) { list.remove(at: index) }
+        let shift = valid.filter { $0 < target }.count
         list.insert(contentsOf: moving, at: max(0, min(list.count, target - shift)))
         destinations = list
         persist()
+    }
+
+    /// Moves a single destination one step up or down and persists the new order.
+    @discardableResult
+    public func move(id: UUID, direction: MoveDirection) -> Bool {
+        guard let index = destinations.firstIndex(where: { $0.id == id }) else { return false }
+        let target: Int = switch direction {
+        case .up: index - 1
+        case .down: index + 1
+        }
+        guard destinations.indices.contains(target) else { return false }
+        destinations.swapAt(index, target)
+        persist()
+        return true
     }
 
     /// Whether a secret is saved, without reading its value into the interface.

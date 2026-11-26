@@ -129,12 +129,14 @@ public actor StudioDraftCheckpointer {
         let openPause: Bool
         let cameraStart: Double?
         let cameraFills: Int
+        let cameraBubble: StudioProject.Camera?
 
         /// Whether the movie's timeline (its start, pauses, and camera) is as in `other`, so only new pointer
         /// readings, clicks, or keys are left to write.
         func hasTimeline(of other: Version) -> Bool {
             movieStart == other.movieStart && pauses == other.pauses && openPause == other.openPause
                 && cameraStart == other.cameraStart && cameraFills == other.cameraFills
+                && cameraBubble == other.cameraBubble
         }
     }
 
@@ -173,7 +175,8 @@ public actor StudioDraftCheckpointer {
             pauses: draft.pauses.count,
             openPause: draft.pauses.last?.end == nil && !draft.pauses.isEmpty,
             cameraStart: draft.cameraStart,
-            cameraFills: draft.cameraFills.count
+            cameraFills: draft.cameraFills.count,
+            cameraBubble: draft.cameraBubble
         )
         guard version != lastVersion else { return }
         let current = now()

@@ -14,3 +14,45 @@ export function commandURL(
     .join("&");
   return `${scheme}://${command}${query ? `?${query}` : ""}`;
 }
+
+export interface RegionParameters {
+  x?: string;
+  y?: string;
+  width?: string;
+  height?: string;
+  display?: string;
+}
+
+function regionQuery(region: RegionParameters): Record<string, string | undefined> {
+  return {
+    x: region.x,
+    y: region.y,
+    width: region.width,
+    height: region.height,
+    display: region.display,
+  };
+}
+
+export function annotateAreaURL(scheme: string, region: RegionParameters = {}): string {
+  return commandURL(scheme, "annotate-area", regionQuery(region));
+}
+
+export function translateAreaURL(scheme: string, region: RegionParameters = {}): string {
+  return commandURL(scheme, "translate-area", regionQuery(region));
+}
+
+export function pickColorURL(scheme: string): string {
+  return commandURL(scheme, "pick-color");
+}
+
+export function measureURL(scheme: string): string {
+  return commandURL(scheme, "measure");
+}
+
+export function drawOnScreenURL(scheme: string): string {
+  return commandURL(scheme, "draw-on-screen");
+}
+
+export function saveReplayURL(scheme: string): string {
+  return commandURL(scheme, "save-replay");
+}

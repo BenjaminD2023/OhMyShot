@@ -33,7 +33,7 @@ public enum UploadError: Error, LocalizedError, Equatable, Sendable {
         case .invalidConfiguration(let reason):
             String(localized: "This destination isn’t set up correctly: \(reason)", bundle: .module)
         case .secretMissing(let field):
-            String(localized: "A saved secret (\(field)) is missing from the Keychain. Open the destination and enter it again.", bundle: .module)
+            String(localized: "A saved secret (\(Self.localizedSecretField(field))) is missing from the Keychain. Open the destination and enter it again.", bundle: .module)
         case .fileUnreadable:
             String(localized: "Couldn’t read the file.", bundle: .module)
         case .fileTooLarge(let limit):
@@ -62,6 +62,32 @@ public enum UploadError: Error, LocalizedError, Equatable, Sendable {
             String(localized: "The file was uploaded, but the server’s answer has no link to it.", bundle: .module)
         case .clockSkew:
             String(localized: "The server says this Mac’s clock is too far off. Check Date & Time in System Settings.", bundle: .module)
+        }
+    }
+
+    /// Maps internal Keychain field identifiers to user-facing localized labels.
+    static func localizedSecretField(_ field: String) -> String {
+        switch field {
+        case SecretField.s3AccessKeyID:
+            return String(localized: "Access key ID", bundle: .module)
+        case SecretField.s3SecretAccessKey:
+            return String(localized: "Secret key", bundle: .module)
+        case SecretField.webDAVPassword:
+            return String(localized: "Password", bundle: .module)
+        default:
+            if field.hasPrefix("header:") {
+                let name = String(field.dropFirst("header:".count))
+                return String(localized: "header \(name)", bundle: .module)
+            }
+            if field.hasPrefix("parameter:") {
+                let name = String(field.dropFirst("parameter:".count))
+                return String(localized: "query parameter \(name)", bundle: .module)
+            }
+            if field.hasPrefix("argument:") {
+                let name = String(field.dropFirst("argument:".count))
+                return String(localized: "form field \(name)", bundle: .module)
+            }
+            return field
         }
     }
 

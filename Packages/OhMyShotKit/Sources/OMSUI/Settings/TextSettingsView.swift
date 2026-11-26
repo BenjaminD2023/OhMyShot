@@ -49,6 +49,7 @@ struct TextSettingsView: View {
                 }
                 .labelsHidden()
                 .fixedSize()
+                .disabled(!settings.showTextResult)
             }
 
             SettingsDivider()
@@ -56,6 +57,7 @@ struct TextSettingsView: View {
             SettingsRow(String(localized: "Image line breaks", bundle: .module), help: [
                 HelpTopic(String(localized: "Image line breaks", bundle: .module), Text("Keep the detected lines from the image, or join wrapped lines within each paragraph. Sets the default for Capture Text and new Recognized Text windows; the window’s Line Breaks menu changes only that window.", bundle: .module)),
                 HelpTopic(String(localized: "Wrap text to window", bundle: .module), Text("Sets the default for new Recognized Text windows. You can change wrapping in each window without changing this setting. Wrapping only changes the display.", bundle: .module)),
+                HelpTopic(String(localized: "Recognition languages", bundle: .module), Text("Automatic uses your macOS preferred languages. Choose a language preset or enter comma-separated BCP-47 tags (such as ko-KR, ru-RU, ar-SA, fr-FR) to read scripts Vision does not run by default.", bundle: .module)),
                 AppTextSetting.help,
                 HelpTopic(String(localized: "Translate into", bundle: .module), Text("Automatic picks the first of your preferred languages that the text isn’t already in. Translation runs on this Mac; a language is downloaded the first time it’s needed.", bundle: .module)),
             ]) {
@@ -73,6 +75,9 @@ struct TextSettingsView: View {
                     Text("Wrap text to window", bundle: .module)
                 }
             }
+            SettingsRow(String(localized: "Recognition languages", bundle: .module)) {
+                OCRLanguagesSetting(settings: settings)
+            }
             SettingsRow(String(localized: "Text from apps", bundle: .module)) {
                 AppTextSetting(settings: settings, permissions: permissions)
             }
@@ -89,7 +94,28 @@ struct TextSettingsView: View {
             // The last group is headed by whichever of its rows the build shows first.
             if let modelPacks, !modelPacks.isEmpty {
                 SettingsDivider()
-                ModelPacksRow(center: modelPacks, help: [ModelPacksRow.help(center: modelPacks)] + (cloudModels.map(CloudReadingRow.help(store:)) ?? []))
+                ModelPacksRow(
+                    center: modelPacks,
+                    settings: settings,
+                    help: [
+                        ModelPacksRow.help(center: modelPacks),
+                        ModelPackMirrorRow.help,
+                        HelpTopic(String(localized: "Formula format", bundle: .module), Text("How recognized LaTeX formulas are wrapped when copied by Capture Formula or the Recognized Text window.", bundle: .module)),
+                    ] + (cloudModels.map(CloudReadingRow.help(store:)) ?? [])
+                )
+                ModelPackMirrorRow(settings: settings)
+                SettingsRow(String(localized: "Formula format", bundle: .module)) {
+                    Picker(selection: $settings.formulaDelimiter) {
+                        Text("Plain LaTeX", bundle: .module).tag(FormulaDelimiter.raw)
+                        Text(verbatim: "$…$").tag(FormulaDelimiter.inlineDollar)
+                        Text(verbatim: "$$…$$").tag(FormulaDelimiter.displayDollar)
+                        Text(verbatim: #"\(…\)"#).tag(FormulaDelimiter.inlineParen)
+                    } label: {
+                        Text("Formula format", bundle: .module)
+                    }
+                    .labelsHidden()
+                    .fixedSize()
+                }
                 if let cloudModels {
                     CloudReadingRow(store: cloudModels)
                 }
@@ -98,6 +124,144 @@ struct TextSettingsView: View {
                 CloudReadingRow(store: cloudModels, help: CloudReadingRow.help(store: cloudModels))
             }
         }
+    }
+}
+
+/// Settings › Text › Recognition languages: automatic (macOS preferred languages), common script presets, or
+/// custom comma-separated BCP-47 language tags.
+private struct OCRLanguagesSetting: View {
+    @Bindable var settings: SettingsStore
+    @State private var customMode = false
+    @State private var customText = ""
+
+    enum Preset: String, CaseIterable, Identifiable {
+        case automatic
+        case english
+        case chineseSimplified
+        case chineseTraditional
+        case japanese
+        case korean
+        case russian
+        case arabic
+        case french
+        case german
+        case spanish
+        case portuguese
+        case italian
+        case thai
+        case vietnamese
+        case ukrainian
+        case custom
+
+        var id: String { rawValue }
+
+        var languages: [String]? {
+            switch self {
+            case .automatic: []
+            case .english: ["en-US"]
+            case .chineseSimplified: ["zh-Hans", "en-US"]
+            case .chineseTraditional: ["zh-Hant", "en-US"]
+            case .japanese: ["ja-JP", "en-US"]
+            case .korean: ["ko-KR", "en-US"]
+            case .russian: ["ru-RU", "en-US"]
+            case .arabic: ["ar-SA", "en-US"]
+            case .french: ["fr-FR", "en-US"]
+            case .german: ["de-DE", "en-US"]
+            case .spanish: ["es-ES", "en-US"]
+            case .portuguese: ["pt-BR", "en-US"]
+            case .italian: ["it-IT", "en-US"]
+            case .thai: ["th-TH", "en-US"]
+            case .vietnamese: ["vi-VN", "en-US"]
+            case .ukrainian: ["uk-UA", "en-US"]
+            case .custom: nil
+            }
+        }
+
+        var title: String {
+            switch self {
+            case .automatic: String(localized: "Automatic", bundle: .module)
+            case .english: String(localized: "English", bundle: .module)
+            case .chineseSimplified: String(localized: "Chinese (Simplified) & English", bundle: .module)
+            case .chineseTraditional: String(localized: "Chinese (Traditional) & English", bundle: .module)
+            case .japanese: String(localized: "Japanese & English", bundle: .module)
+            case .korean: String(localized: "Korean & English", bundle: .module)
+            case .russian: String(localized: "Russian & English", bundle: .module)
+            case .arabic: String(localized: "Arabic & English", bundle: .module)
+            case .french: String(localized: "French & English", bundle: .module)
+            case .german: String(localized: "German & English", bundle: .module)
+            case .spanish: String(localized: "Spanish & English", bundle: .module)
+            case .portuguese: String(localized: "Portuguese & English", bundle: .module)
+            case .italian: String(localized: "Italian & English", bundle: .module)
+            case .thai: String(localized: "Thai & English", bundle: .module)
+            case .vietnamese: String(localized: "Vietnamese & English", bundle: .module)
+            case .ukrainian: String(localized: "Ukrainian & English", bundle: .module)
+            case .custom: String(localized: "Custom…", bundle: .module)
+            }
+        }
+
+        static func matching(_ languages: [String]) -> Preset {
+            allCases.first { $0.languages == languages } ?? .custom
+        }
+    }
+
+    private var selectedPreset: Preset {
+        if customMode { return .custom }
+        return Preset.matching(settings.ocrLanguages)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 6) {
+            Picker(selection: Binding(get: { selectedPreset }, set: choose)) {
+                Text(verbatim: Preset.automatic.title).tag(Preset.automatic)
+                Divider()
+                ForEach(Preset.allCases.filter { $0 != .automatic && $0 != .custom }) { preset in
+                    Text(verbatim: preset.title).tag(preset)
+                }
+                Divider()
+                Text(verbatim: Preset.custom.title).tag(Preset.custom)
+            } label: {
+                Text("Recognition languages", bundle: .module)
+            }
+            .labelsHidden()
+            .fixedSize()
+
+            if selectedPreset == .custom {
+                TextField(text: $customText, prompt: Text(verbatim: "ko-KR, ru-RU, en-US")) {
+                    Text("Custom recognition languages", bundle: .module)
+                }
+                .labelsHidden()
+                .frame(width: 250)
+                .onSubmit(commitCustom)
+                .onChange(of: customText) { _, _ in commitCustom() }
+                Text("Comma-separated BCP-47 language tags, most preferred first.", bundle: .module)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+        }
+        .onAppear {
+            if Preset.matching(settings.ocrLanguages) == .custom {
+                customMode = true
+                customText = settings.ocrLanguages.joined(separator: ", ")
+            }
+        }
+    }
+
+    private func choose(_ preset: Preset) {
+        if let languages = preset.languages {
+            customMode = false
+            settings.ocrLanguages = languages
+        } else {
+            customMode = true
+            customText = settings.ocrLanguages.joined(separator: ", ")
+        }
+    }
+
+    private func commitCustom() {
+        let tags = customText
+            .split(separator: ",")
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+            .filter { !$0.isEmpty }
+        settings.ocrLanguages = tags
     }
 }
 

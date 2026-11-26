@@ -1,5 +1,6 @@
 import AppKit
 import Foundation
+import KeyboardShortcuts
 import OMSCore
 import SwiftUI
 
@@ -205,9 +206,9 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         let navigator = SettingsNavigator()
         let retention = RetentionSelection(settings: dependencies.settings, preview: dependencies.retentionPreview)
         self.retention = retention
-        // Sharing draws Recent uploads only once an upload has finished.
-        navigator.hiddenRows = { [records = dependencies.uploadRecords] in
-            records.records.isEmpty ? [String(localized: "Recent uploads", bundle: .module)] : []
+        // Omit conditional rows that the current build or state does not render.
+        navigator.hiddenRows = {
+            Self.hiddenRowTitles(for: dependencies)
         }
         var panes: [SettingsTab: NSViewController] = [:]
         let root = SettingsRootView(navigator: navigator) { tab in
@@ -283,7 +284,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
     #if DEBUG
     /// Opens the first pane the search found, as Return in the search field does, for scripted checks.
     public func debugOpenFirstResult() {
-        guard let first = SettingsTab.found(navigator.query).first else { return }
+        guard let first = SettingsTab.found(navigator.query, hiding: navigator.hiddenRows()).first else { return }
         navigator.open(first.tab, searchedFor: navigator.query)
     }
 
@@ -322,6 +323,38 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         }
     }
 
+    static func hiddenRowTitles(for dependencies: SettingsDependencies) -> Set<String> {
+        var hidden = Set<String>()
+        if dependencies.updates == nil {
+            hidden.insert(String(localized: "Updates", bundle: .module))
+        }
+        if dependencies.uploadRecords.records.isEmpty {
+            hidden.insert(String(localized: "Recent uploads", bundle: .module))
+        }
+        let hasModelPacks = dependencies.modelPacks.map { !$0.isEmpty } ?? false
+        if !hasModelPacks {
+            hidden.insert(String(localized: "Model packs", bundle: .module))
+            hidden.insert(String(localized: "Download mirror", bundle: .module))
+            hidden.insert(String(localized: "Formula format", bundle: .module))
+        }
+        if dependencies.cloudModels == nil {
+            hidden.insert(String(localized: "Cloud reading", bundle: .module))
+        }
+        if dependencies.acknowledgments == nil {
+            hidden.insert(String(localized: "Acknowledgments", bundle: .module))
+        }
+        let hasDestination = !dependencies.destinations.destinations.isEmpty
+        let hasFormulaPack = dependencies.modelPacks?.installedFolder(of: ModelPackCatalog.ppFormulaNetPlusL) != nil
+        for shortcut in CaptureShortcut.allCases where shortcut.isAvailable {
+            let shown = (!shortcut.needsUploadDestination || hasDestination || KeyboardShortcuts.getShortcut(for: shortcut.name) != nil)
+                && (!shortcut.needsFormulaPack || hasFormulaPack || KeyboardShortcuts.getShortcut(for: shortcut.name) != nil)
+            if !shown {
+                hidden.insert(shortcut.title)
+            }
+        }
+        return hidden
+    }
+
     private static func makeContent(
         for tab: SettingsTab, dependencies: SettingsDependencies, retention: RetentionSelection, target: SettingsSearchTarget
     ) -> NSViewController {
@@ -334,7 +367,8 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
                 openHistory: dependencies.openHistory,
                 showOnboarding: dependencies.showOnboarding,
                 retention: retention,
-                updates: dependencies.updates
+                updates: dependencies.updates,
+                onReset: { dependencies.backgrounds.setAutomatic(nil) }
             ))
         case .capture:
             host(CaptureSettingsView(settings: dependencies.settings))
@@ -347,7 +381,7 @@ public final class SettingsWindowController: NSWindowController, NSWindowDelegat
         case .quickAccess:
             host(QuickAccessSettingsView(settings: dependencies.settings))
         case .recording:
-            host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations))
+            host(RecordingSettingsView(settings: dependencies.settings, destinations: dependencies.destinations, permissions: dependencies.permissions))
         case .text:
             host(TextSettingsView(settings: dependencies.settings, permissions: dependencies.permissions, modelPacks: dependencies.modelPacks, cloudModels: dependencies.cloudModels))
         case .tools:

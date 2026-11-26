@@ -366,6 +366,76 @@
       ]
     },
     {
+      "name": "annotate-area",
+      "title": "Annotate Area",
+      "description": "Choose an area of the screen and annotate it right in place.",
+      "mode": "no-view",
+      "keywords": [
+        "screenshot",
+        "markup",
+        "edit"
+      ]
+    },
+    {
+      "name": "translate-area",
+      "title": "Translate Area",
+      "description": "Drag over text on screen to translate it on this Mac.",
+      "mode": "no-view",
+      "keywords": [
+        "translate",
+        "ocr",
+        "language"
+      ]
+    },
+    {
+      "name": "pick-color",
+      "title": "Pick Color",
+      "description": "Pick a color from the screen and copy it to the clipboard.",
+      "mode": "no-view",
+      "keywords": [
+        "color",
+        "eyedropper",
+        "hex",
+        "pipette"
+      ]
+    },
+    {
+      "name": "measure",
+      "title": "Measure",
+      "description": "Measure distances and element sizes on screen.",
+      "mode": "no-view",
+      "keywords": [
+        "ruler",
+        "pixels",
+        "distance",
+        "size"
+      ]
+    },
+    {
+      "name": "draw-on-screen",
+      "title": "Draw on Screen",
+      "description": "Draw over the screen, or stop drawing while active.",
+      "mode": "no-view",
+      "keywords": [
+        "sketch",
+        "annotate",
+        "whiteboard",
+        "laser"
+      ]
+    },
+    {
+      "name": "save-replay",
+      "title": "Save Replay",
+      "description": "Save the last 15 seconds buffered by Replay.",
+      "mode": "no-view",
+      "keywords": [
+        "replay",
+        "clip",
+        "recording",
+        "video"
+      ]
+    },
+    {
       "name": "open-settings",
       "title": "Open OhMyShot Settings",
       "description": "Open OhMyShot’s settings.",

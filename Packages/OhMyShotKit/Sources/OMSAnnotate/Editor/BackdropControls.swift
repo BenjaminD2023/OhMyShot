@@ -111,19 +111,39 @@ public final class BackdropPresets {
 @Observable
 final class BackdropAdjustments {
     private(set) var backdrop: Backdrop
+    /// Whether the document currently has an active background fill (false when "No Background" is selected).
+    private(set) var hasBackdrop: Bool
     /// Whether the capture's edge is one color, which inset and balance need.
     private(set) var hasEvenEdge: Bool
     /// The picture's watermark; nil while it has none.
     private(set) var watermark: Watermark?
+    /// Incremented whenever the popover should scroll to and focus the Watermark section.
+    private(set) var focusWatermarkToken = 0
+    /// Briefly tints the Watermark title in the system accent when opened from Picture › Watermark….
+    private(set) var highlightWatermark = false
     @ObservationIgnored private let session: AnnotationSession
     /// The slider being dragged: its changes make one undo step.
     @ObservationIgnored private var dragging: String?
+    @ObservationIgnored private var highlightReset: Task<Void, Never>?
 
-    init(session: AnnotationSession) {
+    init(session: AnnotationSession, focusingWatermark: Bool = false) {
         self.session = session
+        hasBackdrop = session.document.backdrop != nil
         backdrop = session.document.backdrop ?? session.lastBackdrop
         hasEvenEdge = session.edges.opaque && session.edges.edgeColor != nil
         watermark = session.document.watermark
+        if focusingWatermark { focusWatermark() }
+    }
+
+    func focusWatermark() {
+        focusWatermarkToken += 1
+        highlightWatermark = true
+        highlightReset?.cancel()
+        highlightReset = Task { [weak self] in
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            self?.highlightWatermark = false
+        }
     }
 
     /// The watermark a picture without one is given: the last one set.
@@ -136,6 +156,8 @@ final class BackdropAdjustments {
 
     /// After the session changed some other way, such as Undo.
     func refresh() {
+        let active = session.document.backdrop != nil
+        if active != hasBackdrop { hasBackdrop = active }
         let current = session.document.backdrop ?? session.lastBackdrop
         if current != backdrop { backdrop = current }
         if session.document.watermark != watermark { watermark = session.document.watermark }
@@ -145,6 +167,7 @@ final class BackdropAdjustments {
 
     func set(_ name: String, _ change: (inout Backdrop) -> Void) {
         session.changeBackdrop(name, change)
+        hasBackdrop = session.document.backdrop != nil
         backdrop = session.document.backdrop ?? session.lastBackdrop
     }
 
@@ -162,77 +185,128 @@ final class BackdropAdjustments {
 
     /// Ends a drag the popover closed in the middle of.
     func finish() {
+        highlightReset?.cancel()
+        highlightReset = nil
+        highlightWatermark = false
         dragChanged(dragging ?? "", editing: false)
     }
 }
 
 /// The background's adjustments: room, corners, shadow, and the picture's shape; and the picture's watermark.
 struct BackdropAdjustView: View {
+    private enum FocusField: Hashable {
+        case watermarkToggle
+        case watermarkText
+    }
+
     @Bindable var model: BackdropAdjustments
     /// Typing the watermark's text is one undo step, from the field taking the keys to its letting them go.
-    @FocusState private var typingWatermark: Bool
+    @FocusState private var focus: FocusField?
 
     var body: some View {
-        Form {
-            Section {
-                slider(String(localized: "Padding", bundle: .module), \.padding, in: Backdrop.paddingRange, reading: percent)
-                slider(String(localized: "Inset", bundle: .module), \.inset, in: Backdrop.insetRange, reading: percent)
-                    .disabled(!model.hasEvenEdge)
-                Toggle(isOn: Binding(
-                    get: { model.backdrop.balanced },
-                    set: { value in model.set(String(localized: "Auto Balance", bundle: .module)) { $0.balanced = value } }
-                )) {
-                    Text("Auto Balance", bundle: .module)
-                    Text("Evens out the room around what the capture shows.", bundle: .module)
-                }
-                .disabled(!model.hasEvenEdge)
-            } footer: {
-                if !model.hasEvenEdge {
-                    Text("Inset and Auto Balance need a capture whose edge is one color.", bundle: .module)
-                        .font(.footnote)
-                        .foregroundStyle(.secondary)
-                }
-            }
-            Section {
-                slider(String(localized: "Corners", bundle: .module), \.cornerRadius, in: Backdrop.cornerRadiusRange) { "\(Int($0.rounded())) pt" }
-                slider(String(localized: "Shadow", bundle: .module), \.shadow, in: Backdrop.shadowRange, reading: percent)
-            }
-            Section {
-                Picker(selection: Binding(
-                    get: { model.backdrop.ratio },
-                    set: { value in model.set(String(localized: "Picture Shape", bundle: .module)) { $0.ratio = value } }
-                )) {
-                    Text("Automatic", bundle: .module).tag(Backdrop.Ratio?.none)
-                    Divider()
-                    ForEach(Backdrop.Ratio.presets, id: \.self) { ratio in
-                        Text(verbatim: "\(ratio.width):\(ratio.height)").monospacedDigit().tag(Optional(ratio))
+        ScrollViewReader { proxy in
+            Form {
+                if !model.hasBackdrop {
+                    Section {
+                        Label {
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text("No Background", bundle: .module)
+                                    .font(.headline)
+                                Text("Choose a background fill to adjust padding, corners, and shadow.", bundle: .module)
+                                    .font(.footnote)
+                                    .foregroundStyle(.secondary)
+                            }
+                        } icon: {
+                            Image(systemName: "photo.artframe")
+                                .foregroundStyle(.secondary)
+                        }
                     }
-                } label: {
-                    Text("Shape", bundle: .module)
                 }
-                LabeledContent {
-                    AlignmentGrid(selection: Binding(
-                        get: { model.backdrop.alignment },
-                        set: { value in model.set(String(localized: "Position", bundle: .module)) { $0.alignment = value } }
-                    ))
-                } label: {
-                    // Dimmed with its grid while the shape is automatic and leaves no room to place.
-                    Group {
-                        Text("Position", bundle: .module)
-                        Text("Where the capture sits when the shape leaves room.", bundle: .module)
+                Section {
+                    slider(String(localized: "Padding", bundle: .module), \.padding, in: Backdrop.paddingRange, reading: percent)
+                    slider(String(localized: "Inset", bundle: .module), \.inset, in: Backdrop.insetRange, reading: percent)
+                        .disabled(!model.hasBackdrop || !model.hasEvenEdge)
+                    Toggle(isOn: Binding(
+                        get: { model.backdrop.balanced },
+                        set: { value in model.set(String(localized: "Auto Balance", bundle: .module)) { $0.balanced = value } }
+                    )) {
+                        Text("Auto Balance", bundle: .module)
+                        Text("Evens out the room around what the capture shows.", bundle: .module)
                     }
-                    .foregroundStyle(model.backdrop.ratio == nil ? .tertiary : .primary)
+                    .disabled(!model.hasBackdrop || !model.hasEvenEdge)
+                } footer: {
+                    if model.hasBackdrop && !model.hasEvenEdge {
+                        Text("Inset and Auto Balance need a capture whose edge is one color.", bundle: .module)
+                            .font(.footnote)
+                            .foregroundStyle(.secondary)
+                    }
                 }
-                .disabled(model.backdrop.ratio == nil)
+                .disabled(!model.hasBackdrop)
+                Section {
+                    slider(String(localized: "Corners", bundle: .module), \.cornerRadius, in: Backdrop.cornerRadiusRange) { "\(Int($0.rounded())) pt" }
+                    slider(String(localized: "Shadow", bundle: .module), \.shadow, in: Backdrop.shadowRange, reading: percent)
+                }
+                .disabled(!model.hasBackdrop)
+                Section {
+                    Picker(selection: Binding(
+                        get: { model.backdrop.ratio },
+                        set: { value in model.set(String(localized: "Picture Shape", bundle: .module)) { $0.ratio = value } }
+                    )) {
+                        Text("Automatic", bundle: .module).tag(Backdrop.Ratio?.none)
+                        Divider()
+                        ForEach(Backdrop.Ratio.presets, id: \.self) { ratio in
+                            Text(verbatim: "\(ratio.width):\(ratio.height)").monospacedDigit().tag(Optional(ratio))
+                        }
+                    } label: {
+                        Text("Shape", bundle: .module)
+                    }
+                    LabeledContent {
+                        AlignmentGrid(selection: Binding(
+                            get: { model.backdrop.alignment },
+                            set: { value in model.set(String(localized: "Position", bundle: .module)) { $0.alignment = value } }
+                        ))
+                    } label: {
+                        // Dimmed with its grid while the shape is automatic and leaves no room to place.
+                        Group {
+                            Text("Position", bundle: .module)
+                            Text("Where the capture sits when the shape leaves room.", bundle: .module)
+                        }
+                        .foregroundStyle(!model.hasBackdrop || model.backdrop.ratio == nil ? .tertiary : .primary)
+                    }
+                    .disabled(!model.hasBackdrop || model.backdrop.ratio == nil)
+                }
+                .disabled(!model.hasBackdrop)
+                watermarkSection
+                    .id("watermark")
             }
-            watermarkSection
+            .formStyle(.grouped)
+            // Opaque under the text: the popover's glass is its rim, never what the capture shows through.
+            .scrollContentBackground(.hidden)
+            .background(Color(nsColor: .windowBackgroundColor))
+            .frame(width: 320)
+            .fixedSize(horizontal: false, vertical: true)
+            .onAppear { applyWatermarkFocus(using: proxy) }
+            .onChange(of: model.focusWatermarkToken) { _, _ in applyWatermarkFocus(using: proxy) }
+            .onChange(of: focus) { old, new in
+                let wasTyping = old == .watermarkText
+                let isTyping = new == .watermarkText
+                if wasTyping != isTyping {
+                    model.dragChanged(String(localized: "Watermark Text", bundle: .module), editing: isTyping)
+                }
+            }
         }
-        .formStyle(.grouped)
-        // Opaque under the text: the popover's glass is its rim, never what the capture shows through.
-        .scrollContentBackground(.hidden)
-        .background(Color(nsColor: .windowBackgroundColor))
-        .frame(width: 320)
-        .fixedSize(horizontal: false, vertical: true)
+    }
+
+    private func applyWatermarkFocus(using proxy: ScrollViewProxy) {
+        guard model.focusWatermarkToken > 0 else { return }
+        if NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            proxy.scrollTo("watermark", anchor: .bottom)
+        } else {
+            withAnimation(.easeOut(duration: 0.18)) {
+                proxy.scrollTo("watermark", anchor: .bottom)
+            }
+        }
+        focus = model.watermark != nil ? .watermarkText : .watermarkToggle
     }
 
     private func percent(_ value: CGFloat) -> String {
@@ -247,8 +321,10 @@ struct BackdropAdjustView: View {
                 set: { on in model.setWatermark(String(localized: "Watermark", bundle: .module)) { $0 = on ? model.lastWatermark : nil } }
             )) {
                 Text("Watermark", bundle: .module)
+                    .foregroundStyle(model.highlightWatermark ? Color.accentColor : Color.primary)
                 Text("Text tiled faintly across the picture, over the marks.", bundle: .module)
             }
+            .focused($focus, equals: .watermarkToggle)
             if let watermark = model.watermark {
                 TextField(text: Binding(
                     get: { watermark.text },
@@ -256,10 +332,7 @@ struct BackdropAdjustView: View {
                 ), prompt: Text("Watermark text", bundle: .module)) {
                     Text("Text", bundle: .module)
                 }
-                .focused($typingWatermark)
-                .onChange(of: typingWatermark) { _, typing in
-                    model.dragChanged(String(localized: "Watermark Text", bundle: .module), editing: typing)
-                }
+                .focused($focus, equals: .watermarkText)
                 watermarkSlider(String(localized: "Opacity", bundle: .module), \.opacity, in: Watermark.opacityRange)
                 watermarkSlider(String(localized: "Size", bundle: .module), \.size, in: Watermark.sizeRange)
                 Picker(selection: Binding(

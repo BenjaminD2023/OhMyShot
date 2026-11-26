@@ -1,4 +1,7 @@
 import AppKit
+import CoreGraphics
+import Foundation
+import ImageIO
 import OMSCore
 import Testing
 @testable import OMSUI
@@ -144,17 +147,39 @@ extension PinViewTests {
         }
     }
 
-    @Test func aLongCardStopsAtThirtyLinesWithAnEllipsis() throws {
+    @Test func aLongCardCapsWindowHeightAtThirtyLinesAndScrollsAllLines() throws {
         let text = (1...45).map { "Line \($0) of the log" }.joined(separator: "\n")
-        let (_, textView) = try card(text)
+        let (view, textView) = try card(text)
+        let scrollView = try #require(view.textScrollView)
         let layout = try #require(textView.layoutManager), container = try #require(textView.textContainer)
         var lines = 0
         layout.enumerateLineFragments(forGlyphRange: layout.glyphRange(for: container)) { _, _, _, _, _ in lines += 1 }
-        #expect(lines == PinText.maxLines)
-        // The last line shown ends in an ellipsis in place of what follows.
-        let last = layout.characterRange(forGlyphRange: layout.glyphRange(for: container), actualGlyphRange: nil)
-        #expect(last.length < (textView.string as NSString).length)
-        #expect(ceil(layout.usedRect(for: container).height) == PinText.textSize(for: text).height)
+        // Initial card height stays capped at 30 lines, while all 45 lines lay out and scroll smoothly inside.
+        #expect(lines == 45)
+        #expect(view.bounds.height == PinText.cardSize(for: text).height)
+        #expect(scrollView.canScrollVertically)
+        #expect(textView.frame.height > scrollView.contentView.bounds.height)
+    }
+
+    @Test func textPinDetectsClickableHTTPLinksWhilePreservingCommandDrag() throws {
+        let text = "Visit https://example.com/docs for help."
+        let (view, textView) = try card(text)
+        let layout = try #require(textView.layoutManager), container = try #require(textView.textContainer)
+        let linkRange = (text as NSString).range(of: "https://example.com/docs")
+        let glyphRange = layout.glyphRange(forCharacterRange: linkRange, actualCharacterRange: nil)
+        let linkRect = layout.boundingRect(forGlyphRange: glyphRange, in: container)
+        let linkCenter = CGPoint(x: linkRect.midX, y: linkRect.midY)
+        #expect(textView.linkURL(at: linkCenter)?.absoluteString == "https://example.com/docs")
+
+        let plainRange = (text as NSString).range(of: "Visit")
+        let plainGlyphs = layout.glyphRange(forCharacterRange: plainRange, actualCharacterRange: nil)
+        let plainRect = layout.boundingRect(forGlyphRange: plainGlyphs, in: container)
+        #expect(textView.linkURL(at: CGPoint(x: plainRect.midX, y: plainRect.midY)) == nil)
+
+        // Holding Command over a link lets the pin take the drag instead of opening the link.
+        let inPin = view.convert(linkCenter, from: textView)
+        #expect(view.takesTextPress(at: inPin, modifiers: []))
+        #expect(!view.takesTextPress(at: inPin, modifiers: .command))
     }
 
     @Test func aCardsTextTakesPressesOnlyOnItsLines() throws {
@@ -228,12 +253,15 @@ extension PinViewTests {
         view.mouseUp(with: up)
         #expect(abs(pin.zoom - 1.5) < 0.01)
 
-        // Locking sets ignoresMouseEvents on main window, creates lockBadgePanel, and clicking badge unlocks this pin alone.
+        // Locking sets ignoresMouseEvents on main window, keeps PinView.lockMark hidden (sole badge is lockBadgePanel),
+        // and clicking the badge panel button unlocks this pin alone.
         pin.setLocked(true)
         #expect(pin.isLocked && pin.ignoresMouseEvents)
+        #expect(view.lockMark.isHidden)
         let badgePanel = try #require(pin.lockBadgePanel)
         #expect(!badgePanel.ignoresMouseEvents)
-        view.lockMark.sendAction(view.lockMark.action, to: view.lockMark.target)
+        let badgeButton = try #require(badgePanel.contentView as? CardButton)
+        badgeButton.sendAction(badgeButton.action, to: badgeButton.target)
         #expect(!pin.isLocked && !pin.ignoresMouseEvents && pin.lockBadgePanel == nil)
 
         // Double-clicking on non-text area toggles between 100% and previous zoom (1.5x).
@@ -269,5 +297,178 @@ extension PinViewTests {
         ))
         pin.sendEvent(down)
         #expect(raised.count == 1 && raised.first === pin)
+    }
+
+    @Test func optionAndCommandSuppressTextPressForDragging() throws {
+        let (view, _) = try card("Quick Access keeps every capture one click away.")
+        let onText = CGPoint(x: PinText.padding.width + 30, y: view.bounds.midY)
+        #expect(view.takesTextPress(at: onText, modifiers: []))
+        #expect(!view.takesTextPress(at: onText, modifiers: .option))
+        #expect(!view.takesTextPress(at: onText, modifiers: .command))
+    }
+
+    @Test func pinMenuIncludesShortcutsAndHintsAndSupportsInAppDrag() throws {
+        let image = try #require(Self.picture(size: CGSize(width: 200, height: 120)) {})
+        let content = PinController.Content.image(image, scale: 2)
+        let size = PinWindow.baseSize(of: content)
+        let actions = PinController.Actions(copy: { _ in }, save: { _ in }, saveAs: { _ in }, annotate: { _ in }, recognizeText: { _ in })
+        let window = PinWindow(
+            pin: PinController.Pin(id: UUID(), content: content, origin: .clipboard),
+            frame: CGRect(origin: .zero, size: size), zoom: 1, appearance: Self.appearance, actions: actions
+        )
+        defer { window.tearDown() }
+        let view = try #require(window.contentView as? PinView)
+        let menu = view.makeMenu()
+        #expect(menu.items.last?.title == "Close All Pins")
+        #expect(menu.items.first { $0.title == "Annotate…" }?.keyEquivalent == "e")
+        #expect(menu.items.first { $0.title == "Recognize Text…" }?.keyEquivalent == "t")
+        #expect(menu.items.first { $0.title == "Lock" }?.keyEquivalent == "l")
+        #expect(menu.items.first { $0.title == "Close All Pins" }?.keyEquivalentModifierMask == [.command, .option])
+
+        // Dragging a picture pin writes a Retina-DPI file under ExportedFiles and cleans it up on tearDown.
+        let dragURL = try #require(window.fileForDrag())
+        #expect(FileManager.default.fileExists(atPath: dragURL.path(percentEncoded: false)))
+        let source = try #require(CGImageSourceCreateWithURL(dragURL as CFURL, nil))
+        let props = try #require(CGImageSourceCopyPropertiesAtIndex(source, 0, nil) as? [CFString: Any])
+        #expect((props[kCGImagePropertyDPIWidth] as? NSNumber)?.doubleValue == 144)
+
+        // Updating image refreshes baseSize and removes stale drag file.
+        let wider = try #require(Self.picture(size: CGSize(width: 400, height: 120)) {})
+        window.updateImage(wider, scale: 2)
+        #expect(window.baseSize == CGSize(width: CGFloat(wider.width) / 2, height: CGFloat(wider.height) / 2))
+        #expect(!FileManager.default.fileExists(atPath: dragURL.path(percentEncoded: false)))
+
+        // Locking and tearing down removes lockBadgePanel cleanly.
+        window.setLocked(true)
+        #expect(window.lockBadgePanel != nil)
+        window.tearDown()
+        #expect(window.lockBadgePanel == nil)
+    }
+
+    @Test func pinGeometryClampsCascadeAndRescuesDisconnectedPins() {
+        let visible = CGRect(x: 0, y: 0, width: 300, height: 200)
+        let first = CGRect(x: 240, y: 10, width: 50, height: 50)
+        let second = PinGeometry.cascaded(first, avoiding: [first], in: visible)
+        #expect(visible.contains(second))
+
+        // Pin on a disconnected display is relocated onto the fallback visible frame.
+        let offscreen = CGRect(x: 2500, y: 400, width: 120, height: 80)
+        let rescued = PinGeometry.rescuedFrame(for: offscreen, screens: [visible], fallback: visible)
+        #expect(rescued != nil)
+        if let rescued { #expect(visible.contains(rescued)) }
+        // Pin already intersecting a connected screen stays put.
+        #expect(PinGeometry.rescuedFrame(for: first, screens: [visible], fallback: visible) == nil)
+    }
+
+    @Test func pinControllerRestoresUpToFiveRecentlyClosedPinsLIFOWithState() throws {
+        let suite = "OMSUITests-PinUndo-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let actions = PinController.Actions(copy: { _ in }, save: { _ in }, saveAs: { _ in }, annotate: { _ in }, recognizeText: { _ in })
+        let controller = PinController(settings: SettingsStore(defaults: defaults), actions: actions)
+        defer { controller.closeAll() }
+
+        #expect(!controller.canRestoreClosedPin)
+        #expect(!controller.restoreLastClosedPin())
+
+        // Open and close 6 pins; only the 5 most recently closed are retained.
+        for index in 1...6 {
+            let id = controller.pin(text: "Pin \(index)")
+            let window = try #require(controller.window(for: id))
+            window.setOpacity(CGFloat(index) * 0.1 + 0.3)
+            if index == 6 {
+                window.toggleShadow()
+                window.toggleBorder()
+            }
+            #expect(controller.close(id: id))
+        }
+        #expect(controller.isEmpty)
+        #expect(controller.canRestoreClosedPin)
+
+        // First restore returns pin 6 with its opacity and shadow/border overrides preserved.
+        #expect(controller.restoreLastClosedPin())
+        let restored6 = try #require(controller.newestWindow)
+        if case .text(let value) = restored6.pin.content {
+            #expect(value == "Pin 6")
+        } else {
+            Issue.record("Expected text pin")
+        }
+        #expect(abs(restored6.opacity - 0.9) < 0.01)
+        #expect(restored6.shadowOverride != nil)
+        #expect(restored6.borderOverride != nil)
+
+        // Remaining 4 restores return pins 5, 4, 3, 2 in LIFO order; pin 1 was evicted past the cap of 5.
+        for expected in [5, 4, 3, 2] {
+            #expect(controller.restoreLastClosedPin())
+            let restored = try #require(controller.newestWindow)
+            if case .text(let value) = restored.pin.content {
+                #expect(value == "Pin \(expected)")
+            } else {
+                Issue.record("Expected text pin \(expected)")
+            }
+        }
+        #expect(!controller.canRestoreClosedPin)
+        #expect(!controller.restoreLastClosedPin())
+    }
+
+    @Test func imagePinTransformsShadowBorderOverridesTranslateAndColorCopyFormats() throws {
+        let image = try #require(Self.picture(size: CGSize(width: 200, height: 120)) {})
+        let content = PinController.Content.image(image, scale: 2)
+        var translatedPins: [UUID] = []
+        let actions = PinController.Actions(
+            copy: { _ in }, save: { _ in }, saveAs: { _ in }, annotate: { _ in }, recognizeText: { _ in },
+            translate: { translatedPins.append($0.id) }
+        )
+        let pin = PinController.Pin(id: UUID(), content: content, origin: .clipboard)
+        let window = PinWindow(
+            pin: pin, frame: CGRect(origin: .zero, size: PinWindow.baseSize(of: content)),
+            zoom: 1, appearance: Self.appearance, actions: actions
+        )
+        defer { window.tearDown() }
+        let view = try #require(window.contentView as? PinView)
+
+        let menu = view.makeMenu()
+        #expect(menu.items.contains { $0.title == "Translate…" })
+        let transformSubmenu = try #require(menu.items.first { $0.title == "Transform" }?.submenu)
+        #expect(transformSubmenu.items.compactMap { $0.isSeparatorItem ? nil : $0.title } == [
+            "Rotate Right (90°)", "Rotate Left (90°)", "Flip Horizontal", "Flip Vertical",
+        ])
+        let shadowItem = try #require(menu.items.first { $0.title == "Shadow" })
+        let borderItem = try #require(menu.items.first { $0.title == "Border" })
+        #expect(shadowItem.state == .on && borderItem.state == .on)
+
+        // Translate invokes action.
+        window.translatePin()
+        #expect(translatedPins == [pin.id])
+
+        // Rotating 90° swaps width & height and marks transformed; flips toggle flags cleanly.
+        let beforeSize = window.baseSize
+        window.transformImage(.rotateRight)
+        #expect(window.baseSize == CGSize(width: beforeSize.height, height: beforeSize.width))
+        #expect(window.rotationSteps == 1 && window.isTransformed)
+        window.transformImage(.flipHorizontal)
+        window.transformImage(.flipVertical)
+        #expect(window.flippedHorizontal && window.flippedVertical)
+
+        // Per-pin Shadow and Border overrides survive global appearance updates.
+        window.toggleShadow()
+        window.toggleBorder()
+        #expect(!window.showsShadow && !window.showsBorder)
+        window.apply(PinAppearance(cornerRadius: 8, shadow: true, border: true))
+        #expect(!window.showsShadow && !window.showsBorder)
+        #expect(window.resolvedAppearance.cornerRadius == 8)
+
+        // Color pin exposes Copy Format submenu with all ColorFormat options.
+        let color = try #require(PinColor.parse("#3366FF"))
+        let colorContent = PinController.Content.color(color)
+        let colorWindow = PinWindow(
+            pin: PinController.Pin(id: UUID(), content: colorContent, origin: .clipboard),
+            frame: CGRect(origin: .zero, size: PinWindow.baseSize(of: colorContent)),
+            zoom: 1, appearance: Self.appearance, actions: actions
+        )
+        defer { colorWindow.tearDown() }
+        let colorView = try #require(colorWindow.contentView as? PinView)
+        let copyFormatMenu = try #require(colorView.makeMenu().items.first { $0.title == "Copy Format" }?.submenu)
+        #expect(copyFormatMenu.items.map(\.title) == ColorFormat.allCases.map(\.title))
     }
 }

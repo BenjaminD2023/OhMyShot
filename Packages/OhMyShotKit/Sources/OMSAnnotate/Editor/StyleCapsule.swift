@@ -8,12 +8,18 @@ import OMSDesign
 final class StyleCapsule: NSView {
     /// A settings change and its undo name.
     var onChange: ((String, (inout ToolSettings) -> Void) -> Void)?
+    /// Begins/ends a continuous color-panel drag so it coalesces into a single Undo step.
+    var onBeginLiveChange: (() -> Void)?
+    var onEndLiveChange: ((String) -> Void)?
+    /// Steps the next counter badge number by the given delta (`-1` or `+1`).
+    var onStepCounterNext: ((Int) -> Void)?
     var onDelete: (() -> Void)?
     /// Redact All: covers every open redaction suggestion.
     var onRedactAll: (() -> Void)?
     /// Try Again: reads the capture again for the tool, after a reading that failed.
     var onRetry: (() -> Void)?
     var onCropReset: (() -> Void)?
+    var onCropCancel: (() -> Void)?
     var onCropDone: (() -> Void)?
     /// A background fill was picked; nil takes the background away.
     var onBackdropFill: ((Backdrop.Fill?) -> Void)?
@@ -44,6 +50,11 @@ final class StyleCapsule: NSView {
     private var kind: AnnotationTool = .arrow
     private var settings = ToolSettings()
     private var hasSelection = false
+    /// Distinct kinds in the current selection; when `count > 1`, the capsule shows the shared union.
+    private var selectedKinds: Set<AnnotationTool> = []
+    private var mixedCapabilities: (color: Bool, lineWidth: Bool, shadow: Bool)?
+    /// Next badge number displayed by the counter stepper when `.counter` tool is active.
+    private var nextCounterValue = 1
     /// The redaction tool's open suggestions.
     private var suggestions = 0
     /// Where the capture's reading for the tool stands: under way, or failed.
@@ -53,6 +64,10 @@ final class StyleCapsule: NSView {
     /// The shape the crop frame keeps, while the crop is in hand.
     private var cropRatio = CropRatio.free
     private var chips: [CapsuleChip] = []
+    /// Active continuous color-panel drag action name, while the user drags in `NSColorPanel`.
+    private var colorDragAction: String?
+    private var colorDragMonitor: Any?
+    private var colorPanelCloseObserver: NSObjectProtocol?
     /// What the background controls show, when the background is in hand.
     private var background: BackgroundState?
     /// The chip that opens the background's adjustments, while it is shown.
@@ -64,10 +79,13 @@ final class StyleCapsule: NSView {
         var lastPicture: String?
         /// The blurred capture a blur background would show.
         var blur: CGImage?
+        /// Whether the canvas color eyedropper is currently active.
+        var isPickingColor = false
 
         static func == (lhs: BackgroundState, rhs: BackgroundState) -> Bool {
             lhs.backdrop?.fill == rhs.backdrop?.fill && (lhs.backdrop == nil) == (rhs.backdrop == nil)
                 && lhs.lastPicture == rhs.lastPicture && lhs.blur === rhs.blur
+                && lhs.isPickingColor == rhs.isPickingColor
         }
     }
 
@@ -117,27 +135,106 @@ final class StyleCapsule: NSView {
     isolated deinit {
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
         if let savedColorsObserver { NotificationCenter.default.removeObserver(savedColorsObserver) }
+        if let colorDragMonitor { NSEvent.removeMonitor(colorDragMonitor) }
+        if let colorPanelCloseObserver { NotificationCenter.default.removeObserver(colorPanelCloseObserver) }
         releaseColorPanel()
     }
 
-    /// Lets go of the shared color panel, which does not retain its target: a panel left pointing at a
-    /// freed capsule would send its next color there.
-    func releaseColorPanel() {
-        guard Self.colorPanelOwner === self, NSColorPanel.sharedColorPanelExists else { return }
-        Self.colorPanelOwner = nil
-        NSColorPanel.shared.setTarget(nil)
-        NSColorPanel.shared.setAction(nil)
-        NSColorPanel.shared.orderOut(nil)
+    /// The shared color panel's original window level and deactivation hiding, saved while a capsule in an
+    /// elevated host window (such as the in-place capture overlay) lifts the panel above its host.
+    private struct SavedColorPanelState {
+        let level: NSWindow.Level
+        let hidesOnDeactivate: Bool
     }
 
+    private static var savedColorPanelState: SavedColorPanelState?
     /// The capsule the shared color panel reports to; it cannot be asked for its target.
     private static weak var colorPanelOwner: StyleCapsule?
+
+    /// Lets go of the shared color panel, which does not retain its target: a panel left pointing at a
+    /// freed capsule would send its next color there, and one lifted over an overlay would stay above
+    /// every other window.
+    func releaseColorPanel() {
+        finishColorPanelDrag()
+        if let colorPanelCloseObserver { NotificationCenter.default.removeObserver(colorPanelCloseObserver) }
+        colorPanelCloseObserver = nil
+        guard Self.colorPanelOwner === self, NSColorPanel.sharedColorPanelExists else { return }
+        Self.colorPanelOwner = nil
+        let panel = NSColorPanel.shared
+        panel.setTarget(nil)
+        panel.setAction(nil)
+        panel.orderOut(nil)
+        Self.restoreColorPanelStateIfNeeded()
+    }
+
+    private func beginColorPanelDrag(actionName: String) {
+        guard colorDragAction == nil else { return }
+        colorDragAction = actionName
+        onBeginLiveChange?()
+        colorDragMonitor = NSEvent.addLocalMonitorForEvents(matching: .leftMouseUp) { [weak self] event in
+            self?.finishColorPanelDrag()
+            return event
+        }
+    }
+
+    func finishColorPanelDrag() {
+        if let colorDragMonitor { NSEvent.removeMonitor(colorDragMonitor) }
+        colorDragMonitor = nil
+        guard let actionName = colorDragAction else { return }
+        colorDragAction = nil
+        onEndLiveChange?(actionName)
+    }
+
+    private static func restoreColorPanelStateIfNeeded() {
+        guard let saved = savedColorPanelState, NSColorPanel.sharedColorPanelExists else {
+            savedColorPanelState = nil
+            return
+        }
+        let panel = NSColorPanel.shared
+        panel.level = saved.level
+        panel.hidesOnDeactivate = saved.hidesOnDeactivate
+        savedColorPanelState = nil
+    }
+
+    private func presentColorPanel(color: NSColor, action: Selector) {
+        let panel = NSColorPanel.shared
+        panel.showsAlpha = false
+        panel.isContinuous = true
+        // Setting the panel's color sends its action: aimed at nothing first, so this color never reaches the
+        // Studio or the other editor that used the panel last.
+        panel.setTarget(nil)
+        panel.setAction(nil)
+        panel.color = color
+        panel.setTarget(self)
+        panel.setAction(action)
+        Self.colorPanelOwner = self
+        if let colorPanelCloseObserver { NotificationCenter.default.removeObserver(colorPanelCloseObserver) }
+        colorPanelCloseObserver = NotificationCenter.default.addObserver(
+            forName: NSWindow.willCloseNotification, object: panel, queue: .main
+        ) { [weak self] _ in
+            MainActor.assumeIsolated { self?.finishColorPanelDrag() }
+        }
+        if let hostLevel = window?.level, hostLevel > .floating {
+            if Self.savedColorPanelState == nil {
+                Self.savedColorPanelState = SavedColorPanelState(level: panel.level, hidesOnDeactivate: panel.hidesOnDeactivate)
+            }
+            panel.level = NSWindow.Level(rawValue: hostLevel.rawValue + 1)
+            panel.hidesOnDeactivate = false
+            panel.orderFrontRegardless()
+        } else {
+            Self.restoreColorPanelStateIfNeeded()
+            panel.orderFront(nil)
+        }
+    }
 
     override func viewDidMoveToWindow() {
         super.viewDidMoveToWindow()
         if let displayOptions { NSWorkspace.shared.notificationCenter.removeObserver(displayOptions) }
         displayOptions = nil
-        guard window != nil else { return }
+        guard window != nil else {
+            releaseColorPanel()
+            return
+        }
         displayOptions = NSWorkspace.shared.notificationCenter.addObserver(
             forName: NSWorkspace.accessibilityDisplayOptionsDidChangeNotification, object: nil, queue: .main
         ) { [weak self] _ in
@@ -166,11 +263,23 @@ final class StyleCapsule: NSView {
     ///     of text the highlighter snaps to): under way, or failed and offered again with Try Again.
     ///   - sized: false leaves out the sizes, for highlights snapped to text.
     ///   - cropRatio: the shape the crop frame keeps, shown while the crop is in hand.
-    func show(kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0, reading: ReadingStatus = .resting, sized: Bool = true, cropRatio: CropRatio = .free) {
+    ///   - selectedKinds: distinct tool kinds in the selection (when > 1, shows the shared union of controls).
+    ///   - mixedCapabilities: applicable property flags for a mixed multi-selection.
+    ///   - nextCounterValue: next counter badge number shown when `.counter` is active.
+    func show(
+        kind: AnnotationTool, settings: ToolSettings, hasSelection: Bool, suggestions: Int = 0,
+        reading: ReadingStatus = .resting, sized: Bool = true, cropRatio: CropRatio = .free,
+        selectedKinds: Set<AnnotationTool> = [],
+        mixedCapabilities: (color: Bool, lineWidth: Bool, shadow: Bool)? = nil,
+        nextCounterValue: Int = 1
+    ) {
         self.cropRatio = cropRatio
         self.kind = kind
         self.settings = settings
         self.hasSelection = hasSelection
+        self.selectedKinds = selectedKinds
+        self.mixedCapabilities = mixedCapabilities
+        self.nextCounterValue = nextCounterValue
         self.suggestions = suggestions
         self.reading = reading
         self.sized = sized
@@ -184,9 +293,26 @@ final class StyleCapsule: NSView {
     /// called when the eyedropper is picked up or put down, and when a color is kept or let go of in any
     /// capsule, so colors kept in one editor show in every other.
     func bind(to session: AnnotationSession, canvas: AnnotationCanvasView, refresh: @escaping @MainActor () -> Void) {
+        var ownsLiveChange = false
+        onBeginLiveChange = { [weak session] in
+            guard let session, !session.isInLiveChange else { return }
+            ownsLiveChange = true
+            session.beginLiveChange()
+        }
+        onEndLiveChange = { [weak session] name in
+            guard ownsLiveChange else { return }
+            ownsLiveChange = false
+            session?.endLiveChange(actionName: name)
+        }
         onChange = { [weak session, weak canvas] name, change in
             session?.changeSettings(name, change)
             canvas?.refreshEditingStyle()
+        }
+        onStepCounterNext = { [weak session] delta in
+            guard let session else { return }
+            let numbering = session.settings(for: .counter).numbering
+            let current = session.nextCounterValue(for: numbering)
+            session.setNextCounterValue(max(1, current + delta), for: numbering)
         }
         onDelete = { [weak session] in session?.deleteSelection() }
         onRedactAll = { [weak session] in session?.acceptAllRedactionSuggestions() }
@@ -204,17 +330,25 @@ final class StyleCapsule: NSView {
     /// `canvas`'s eyedropper is in hand, which its chip is built showing.
     func refresh(from session: AnnotationSession, canvas: AnnotationCanvasView) {
         isPickingCanvasColor = canvas.isPickingColor
+        let mixed = session.hasMixedSelection
+        let showsSuggestions = !mixed && (session.tool == .redact || session.currentKind == .redact)
+        let current = session.currentSettings
         show(
-            kind: session.currentKind, settings: session.currentSettings, hasSelection: !session.selection.isEmpty,
-            suggestions: session.tool == .redact ? session.openRedactionSuggestions.count : 0,
-            reading: session.readingStatusForTool, sized: session.sizeApplies, cropRatio: session.cropRatio
+            kind: session.currentKind, settings: current, hasSelection: !session.selection.isEmpty,
+            suggestions: showsSuggestions ? session.openRedactionSuggestions.count : 0,
+            reading: mixed ? .resting : session.readingStatusForTool,
+            sized: session.sizeApplies,
+            cropRatio: session.cropRatio,
+            selectedKinds: session.selectedKinds,
+            mixedCapabilities: mixed ? (session.selectionSupportsColor, session.selectionSupportsLineWidth, session.selectionSupportsShadow) : nil,
+            nextCounterValue: session.nextCounterValue(for: current.numbering)
         )
     }
 
     /// Whether Redact All's count is out of date for `session`: the capsule is shown again for it, not for
     /// every frame of a drag.
     func countsStaleSuggestions(of session: AnnotationSession) -> Bool {
-        session.tool == .redact && session.openRedactionSuggestions.count != suggestions
+        (session.tool == .redact || session.currentKind == .redact) && session.openRedactionSuggestions.count != suggestions
     }
 
     /// Shows the background's fills, its adjustments, and its presets. Rebuilt only when what the chips
@@ -232,24 +366,33 @@ final class StyleCapsule: NSView {
         needsLayout = true
     }
 
+    private var isMixedSelection: Bool {
+        selectedKinds.count > 1
+    }
+
     private func rebuildChips() {
         stack.arrangedSubviews.forEach { $0.removeFromSuperview() }
         chips.removeAll()
-        setAccessibilityLabel(String(localized: "\(kind.name) Style", bundle: .module))
+        if isMixedSelection {
+            setAccessibilityLabel(String(localized: "Selection Style", bundle: .module))
+        } else {
+            setAccessibilityLabel(String(localized: "\(kind.name) Style", bundle: .module))
+        }
 
         // The crop's text chips are capsules concentric with this one, 4 pt in at both ends.
-        if kind == .crop {
+        if kind == .crop, !isMixedSelection {
             stack.edgeInsets.left = Self.inset
             stack.edgeInsets.right = Self.inset
             add(ratioChip())
             addDivider()
             add(textChip(String(localized: "Reset", bundle: .module)) { [weak self] in self?.onCropReset?() })
+            add(textChip(String(localized: "Cancel", bundle: .module)) { [weak self] in self?.onCropCancel?() })
             add(textChip(String(localized: "Done", bundle: .module), prominent: true) { [weak self] in self?.onCropDone?() })
             return
         }
         stack.edgeInsets.left = Self.endInset
         stack.edgeInsets.right = Self.endInset
-        if kind == .background, let background {
+        if kind == .background, !isMixedSelection, let background {
             buildBackground(background)
             return
         }
@@ -280,8 +423,9 @@ final class StyleCapsule: NSView {
         }
         let sizes = sizeChips()
         if !sizes.isEmpty { sections.append(sizes) }
-        let variants = variantChips()
-        if !variants.isEmpty { sections.append(variants) }
+        for section in variantSections() where !section.isEmpty {
+            sections.append(section)
+        }
         if castsShadow {
             let name = String(localized: "Shadow", bundle: .module)
             let chip = CapsuleChip(image: Self.shadowIcon()) { [weak self] in
@@ -297,14 +441,14 @@ final class StyleCapsule: NSView {
             sections.append([symbolChip("trash", name: String(localized: "Delete", bundle: .module), selected: false) { [weak self] in self?.onDelete?() }])
         }
         // Kept beside Delete too: a redaction drawn by hand is selected, and the rest still wait.
-        if kind == .redact || kind == .highlighter, reading == .finding {
+        if !isMixedSelection, kind == .redact || kind == .highlighter, reading == .finding {
             sections.append([CapsuleStatus(String(localized: "Finding text…", bundle: .module))])
-        } else if kind == .redact || kind == .highlighter, reading == .failed {
+        } else if !isMixedSelection, kind == .redact || kind == .highlighter, reading == .failed {
             sections.append([
                 CapsuleStatus(String(localized: "Couldn’t read text", bundle: .module), busy: false),
                 textChip(String(localized: "Try Again", bundle: .module)) { [weak self] in self?.onRetry?() },
             ])
-        } else if kind == .redact, suggestions > 0 {
+        } else if !isMixedSelection, kind == .redact, suggestions > 0 {
             sections.append([textChip(String(localized: "Redact All (\(suggestions))", bundle: .module)) { [weak self] in self?.onRedactAll?() }])
         }
         for (index, section) in sections.enumerated() {
@@ -313,7 +457,13 @@ final class StyleCapsule: NSView {
         }
     }
 
-    private var usesColor: Bool { Self.usesColor(kind, settings: settings) }
+    private var usesColor: Bool {
+        if isMixedSelection {
+            if let mixedCapabilities { return mixedCapabilities.color }
+            return selectedKinds.contains { Self.usesColor($0, settings: settings) }
+        }
+        return Self.usesColor(kind, settings: settings)
+    }
 
     static func usesColor(_ kind: AnnotationTool, settings: ToolSettings) -> Bool {
         switch kind {
@@ -324,7 +474,16 @@ final class StyleCapsule: NSView {
     }
 
     private var castsShadow: Bool {
-        switch kind {
+        if isMixedSelection {
+            if let mixedCapabilities { return mixedCapabilities.shadow }
+            return selectedKinds.contains {
+                switch $0 {
+                case .arrow, .line, .rectangle, .ellipse, .pen, .text, .counter, .select: true
+                case .highlighter, .highlightBox, .redact, .spotlight, .magnifier, .crop, .background: false
+                }
+            }
+        }
+        return switch kind {
         case .arrow, .line, .rectangle, .ellipse, .pen, .text, .counter: true
         // Selected marks show the select kind only when they belong to no tool: combined images.
         case .select: hasSelection
@@ -344,7 +503,15 @@ final class StyleCapsule: NSView {
 
     private func add(_ view: NSView) {
         stack.addArrangedSubview(view)
-        if let chip = view as? CapsuleChip { chips.append(chip) }
+        collectChips(in: view)
+    }
+
+    private func collectChips(in view: NSView) {
+        if let chip = view as? CapsuleChip {
+            chips.append(chip)
+        } else {
+            for subview in view.subviews { collectChips(in: subview) }
+        }
     }
 
     private func addDivider() {
@@ -468,23 +635,20 @@ final class StyleCapsule: NSView {
     }
 
     private func pickColor() {
-        let panel = NSColorPanel.shared
-        panel.showsAlpha = false
-        panel.isContinuous = false
-        // Setting the panel's color sends its action: aimed at nothing first, so this color never reaches the
-        // Studio or the other editor that used the panel last.
-        panel.setTarget(nil)
-        panel.setAction(nil)
-        panel.color = NSColor(cgColor: settings.color.cgColor) ?? .systemRed
-        panel.setTarget(self)
-        panel.setAction(#selector(colorPicked(_:)))
-        Self.colorPanelOwner = self
-        panel.orderFront(nil)
+        presentColorPanel(color: NSColor(cgColor: settings.color.cgColor) ?? .systemRed, action: #selector(colorPicked(_:)))
     }
 
     @objc private func colorPicked(_ sender: NSColorPanel) {
         guard let color = RGBA(sender.color.cgColor) else { return }
-        change(String(localized: "Color", bundle: .module)) { $0.color = color.withAlpha(1) }
+        let actionName = String(localized: "Color", bundle: .module)
+        let dragging = (NSEvent.pressedMouseButtons & 1) != 0
+        if dragging {
+            beginColorPanelDrag(actionName: actionName)
+        }
+        change(actionName) { $0.color = color.withAlpha(1) }
+        if !dragging, colorDragAction != nil {
+            finishColorPanelDrag()
+        }
     }
 
     /// The steps the size chips offer for `kind`, which [ and ] step through: type sizes for Text, widths for the
@@ -502,6 +666,27 @@ final class StyleCapsule: NSView {
     private func sizeChips() -> [NSView] {
         guard sized else { return [] }
         let keys = String(localized: "[ and ] go a size down or up.", bundle: .module)
+        if isMixedSelection {
+            let supportsLineWidth = mixedCapabilities?.lineWidth ?? selectedKinds.contains {
+                switch $0 {
+                case .arrow, .line, .rectangle, .ellipse, .pen, .highlighter, .counter: true
+                case .text, .redact, .spotlight, .magnifier, .highlightBox, .crop, .select, .background: false
+                }
+            }
+            guard supportsLineWidth else { return [] }
+            let widths: [CGFloat] = [2, 4, 6, 10]
+            let nearest = Self.nearest(settings.lineWidth, in: widths)
+            return widths.enumerated().map { index, width in
+                let selected = width == nearest
+                let chip = CapsuleChip(image: Self.sizeDot(diameter: 4 + CGFloat(index) * 3)) { [weak self] in
+                    self?.change(String(localized: "Size", bundle: .module)) { $0.lineWidth = width }
+                }
+                chip.isSelected = selected
+                chip.setAccessibilityLabel(String(localized: "\(Int(width)) points", bundle: .module))
+                chip.toolTip = String(localized: "\(Int(width)) pt", bundle: .module) + "\n" + keys
+                return chip
+            }
+        }
         switch kind {
         case .text:
             let sizes = Self.sizes(for: kind)
@@ -540,10 +725,11 @@ final class StyleCapsule: NSView {
         }
     }
 
-    private func variantChips() -> [NSView] {
+    private func variantSections() -> [[NSView]] {
+        guard !isMixedSelection else { return [] }
         switch kind {
         case .arrow:
-            return Arrow.Head.allCases.map { head in
+            return [Arrow.Head.allCases.map { head in
                 let chip = CapsuleChip(image: Self.arrowIcon(head)) { [weak self] in
                     self?.change(String(localized: "Arrow Style", bundle: .module)) { $0.arrowHead = head }
                 }
@@ -551,9 +737,9 @@ final class StyleCapsule: NSView {
                 chip.setAccessibilityLabel(Self.name(of: head))
                 chip.toolTip = Self.name(of: head)
                 return chip
-            }
+            }]
         case .line:
-            return [false, true].map { dashed in
+            return [[false, true].map { dashed in
                 let chip = CapsuleChip(image: Self.lineIcon(dashed: dashed)) { [weak self] in
                     self?.change(String(localized: "Line Style", bundle: .module)) { $0.dashed = dashed }
                 }
@@ -562,16 +748,24 @@ final class StyleCapsule: NSView {
                 chip.setAccessibilityLabel(name)
                 chip.toolTip = name
                 return chip
-            }
-        case .rectangle, .ellipse:
-            let outline = kind == .rectangle ? "rectangle" : "circle"
-            return [false, true].map { filled in
-                symbolChip(filled ? outline + ".fill" : outline, name: filled ? String(localized: "Filled", bundle: .module) : String(localized: "Outline", bundle: .module), selected: settings.filled == filled) { [weak self] in
+            }]
+        case .rectangle:
+            let fills: [NSView] = [false, true].map { filled in
+                symbolChip(filled ? "rectangle.fill" : "rectangle", name: filled ? String(localized: "Filled", bundle: .module) : String(localized: "Outline", bundle: .module), selected: settings.filled == filled) { [weak self] in
                     self?.change(String(localized: "Fill", bundle: .module)) { $0.filled = filled }
                 }
             }
+            return [fills + [cornerRadiusChip()]]
+        case .ellipse:
+            return [[false, true].map { filled in
+                symbolChip(filled ? "circle.fill" : "circle", name: filled ? String(localized: "Filled", bundle: .module) : String(localized: "Outline", bundle: .module), selected: settings.filled == filled) { [weak self] in
+                    self?.change(String(localized: "Fill", bundle: .module)) { $0.filled = filled }
+                }
+            }]
+        case .highlightBox:
+            return [[cornerRadiusChip()]]
         case .text:
-            return TextBlock.Look.allCases.map { look in
+            return [TextBlock.Look.allCases.map { look in
                 let chip = CapsuleChip(image: Self.lookIcon(look)) { [weak self] in
                     self?.change(String(localized: "Text Style", bundle: .module)) { $0.textLook = look }
                 }
@@ -579,9 +773,9 @@ final class StyleCapsule: NSView {
                 chip.setAccessibilityLabel(Self.name(of: look))
                 chip.toolTip = Self.name(of: look)
                 return chip
-            }
+            }]
         case .counter:
-            return Counter.Numbering.allCases.map { numbering in
+            let numberingChips: [NSView] = Counter.Numbering.allCases.map { numbering in
                 let label = Counter(center: .zero, value: 1, numbering: numbering).label
                 let chip = CapsuleChip(image: Self.glyph(label)) { [weak self] in
                     self?.change(String(localized: "Numbering", bundle: .module)) { $0.numbering = numbering }
@@ -591,8 +785,12 @@ final class StyleCapsule: NSView {
                 chip.toolTip = Self.name(of: numbering)
                 return chip
             }
+            if !hasSelection {
+                return [numberingChips, [counterNextStepper()]]
+            }
+            return [numberingChips]
         case .redact:
-            return Redaction.Method.allCases.map { method in
+            let methodChips: [NSView] = Redaction.Method.allCases.map { method in
                 let symbol = switch method {
                 case .solid: "rectangle.fill"
                 case .blur: "aqi.medium"
@@ -603,14 +801,39 @@ final class StyleCapsule: NSView {
                     self?.change(String(localized: "Redaction", bundle: .module)) { $0.redaction = method }
                 }
             }
+            if settings.redaction == .blur || settings.redaction == .pixelate {
+                let nearest = Self.nearest(settings.redactionStrength, in: Redaction.Strength.allCases.map(\.rawValue))
+                let strengthChips: [NSView] = Redaction.Strength.allCases.map { level in
+                    let title = Self.name(of: level)
+                    let chip = textChip(title) { [weak self] in
+                        self?.change(String(localized: "Redaction Strength", bundle: .module)) { $0.redactionStrength = level.rawValue }
+                    }
+                    chip.isSelected = abs(level.rawValue - nearest) < 0.01
+                    chip.toolTip = title
+                    return chip
+                }
+                return [methodChips, strengthChips]
+            }
+            return [methodChips]
         case .spotlight:
-            return [false, true].map { oval in
+            let shapes: [NSView] = [false, true].map { oval in
                 symbolChip(oval ? "oval" : "rectangle", name: oval ? String(localized: "Oval", bundle: .module) : String(localized: "Rectangle", bundle: .module), selected: settings.oval == oval) { [weak self] in
                     self?.change(String(localized: "Spotlight Shape", bundle: .module)) { $0.oval = oval }
                 }
             }
+            let nearest = Self.nearest(settings.spotlightDimming, in: Spot.Dimming.allCases.map(\.rawValue))
+            let dimmings: [NSView] = Spot.Dimming.allCases.map { level in
+                let title = Self.name(of: level)
+                let chip = textChip(title) { [weak self] in
+                    self?.change(String(localized: "Spotlight Dimming", bundle: .module)) { $0.spotlightDimming = level.rawValue }
+                }
+                chip.isSelected = abs(level.rawValue - nearest) < 0.01
+                chip.toolTip = title
+                return chip
+            }
+            return [shapes, dimmings]
         case .magnifier:
-            return Magnifier.Zoom.allCases.map { zoom in
+            return [Magnifier.Zoom.allCases.map { zoom in
                 let chip = CapsuleChip(image: Self.glyph("\(zoom.rawValue)×")) { [weak self] in
                     self?.change(String(localized: "Magnification", bundle: .module)) { $0.zoom = zoom }
                 }
@@ -619,9 +842,107 @@ final class StyleCapsule: NSView {
                 chip.setAccessibilityLabel(name)
                 chip.toolTip = name
                 return chip
-            }
-        case .select, .pen, .highlighter, .highlightBox, .crop, .background:
+            }]
+        case .select, .pen, .highlighter, .crop, .background:
             return []
+        }
+    }
+
+    // MARK: Corner Radius & Counter Stepper
+
+    /// Corner radius preset selector menu chip (0, 4, 10, 18 pt) for `.rectangle` and `.highlightBox`.
+    private func cornerRadiusChip() -> CapsuleChip {
+        let value = Int(settings.cornerRadius.rounded())
+        let chip = textChip("\(value) pt ▾") {}
+        chip.setAccessibilityLabel(String(localized: "Corner Radius, \(value) points", bundle: .module))
+        chip.toolTip = String(localized: "Corner Radius", bundle: .module)
+        chip.handlerOverride = { [weak self, weak chip] in
+            guard let chip else { return }
+            self?.showCornerRadii(from: chip)
+        }
+        return chip
+    }
+
+    private func showCornerRadii(from chip: NSView) {
+        let menu = NSMenu()
+        let current = settings.cornerRadius
+        for radius in Box.cornerRadiusPresets {
+            let value = Int(radius.rounded())
+            let title = value == 0
+                ? String(localized: "0 pt (Sharp)", bundle: .module)
+                : String(localized: "\(value) pt", bundle: .module)
+            let item = NSMenuItem(title: title, action: #selector(cornerRadiusChosen(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = radius
+            item.state = abs(radius - current) < 0.5 ? .on : .off
+            menu.addItem(item)
+        }
+        let point = CGPoint(x: 0, y: chip.isFlipped ? chip.bounds.maxY + 4 : -4)
+        if let window = chip.window, window.level >= .popUpMenu {
+            let level = window.level
+            window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
+            menu.popUp(positioning: nil, at: point, in: chip)
+            window.level = level
+        } else {
+            menu.popUp(positioning: nil, at: point, in: chip)
+        }
+    }
+
+    @objc private func cornerRadiusChosen(_ sender: NSMenuItem) {
+        guard let radius = sender.representedObject as? CGFloat else { return }
+        change(String(localized: "Corner Radius", bundle: .module)) { $0.cornerRadius = radius }
+    }
+
+    /// Compact `−` / next badge / `+` stepper shown when the Counter tool is active.
+    private func counterNextStepper() -> NSView {
+        let container = NSStackView()
+        container.orientation = .horizontal
+        container.spacing = 2
+        container.alignment = .centerY
+        container.edgeInsets = NSEdgeInsetsZero
+
+        let decrement = symbolChip("minus", name: String(localized: "Decrease Next Counter", bundle: .module), selected: false) { [weak self] in
+            self?.onStepCounterNext?(-1)
+        }
+        decrement.isEnabled = nextCounterValue > 1
+
+        let formatted = Counter(center: .zero, value: nextCounterValue, numbering: settings.numbering).label
+        let reading = NSTextField(labelWithString: formatted)
+        reading.font = NSFont.monospacedDigitSystemFont(ofSize: 12, weight: .semibold)
+        reading.textColor = .labelColor
+        reading.alignment = .center
+        reading.translatesAutoresizingMaskIntoConstraints = false
+        reading.widthAnchor.constraint(greaterThanOrEqualToConstant: 20).isActive = true
+        reading.setAccessibilityLabel(String(localized: "Next Counter, \(formatted)", bundle: .module))
+        reading.toolTip = String(localized: "Next counter number", bundle: .module)
+
+        let increment = symbolChip("plus", name: String(localized: "Increase Next Counter", bundle: .module), selected: false) { [weak self] in
+            self?.onStepCounterNext?(1)
+        }
+
+        container.addArrangedSubview(decrement)
+        container.addArrangedSubview(reading)
+        container.addArrangedSubview(increment)
+        return container
+    }
+
+    private static func nearest(_ value: Double, in steps: [Double]) -> Double {
+        steps.min { abs($0 - value) < abs($1 - value) } ?? value
+    }
+
+    static func name(of strength: Redaction.Strength) -> String {
+        switch strength {
+        case .low: String(localized: "Low", bundle: .module)
+        case .medium: String(localized: "Medium", bundle: .module)
+        case .high: String(localized: "High", bundle: .module)
+        }
+    }
+
+    static func name(of dimming: Spot.Dimming) -> String {
+        switch dimming {
+        case .light: String(localized: "Light", bundle: .module)
+        case .medium: String(localized: "Medium", bundle: .module)
+        case .dark: String(localized: "Dark", bundle: .module)
         }
     }
 
@@ -651,7 +972,15 @@ final class StyleCapsule: NSView {
             // Free and the picture's own shape, then the fixed ones.
             if ratio == .original { menu.addItem(.separator()) }
         }
-        menu.popUp(positioning: nil, at: CGPoint(x: 0, y: chip.isFlipped ? chip.bounds.maxY + 4 : -4), in: chip)
+        let point = CGPoint(x: 0, y: chip.isFlipped ? chip.bounds.maxY + 4 : -4)
+        if let window = chip.window, window.level >= .popUpMenu {
+            let level = window.level
+            window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
+            menu.popUp(positioning: nil, at: point, in: chip)
+            window.level = level
+        } else {
+            menu.popUp(positioning: nil, at: point, in: chip)
+        }
     }
 
     @objc private func ratioChosen(_ sender: NSMenuItem) {
@@ -698,6 +1027,12 @@ final class StyleCapsule: NSView {
                 self?.pickBackdropColor(nil)
             })
         }
+        if onPickCanvasColor != nil {
+            let label = String(localized: "Pick Color from Canvas (I)", bundle: .module)
+            fills.append(symbolChip("eyedropper", name: label, selected: state.isPickingColor) { [weak self] in
+                self?.onPickCanvasColor?()
+            })
+        }
         // A picture: the one in use (choosing again opens the panel), the last one used, or a new one.
         if case .picture(let name) = fill {
             let image = PictureStore.shared.image(named: name, fitting: 64, limit: PictureStore.backgroundLimit)
@@ -739,19 +1074,20 @@ final class StyleCapsule: NSView {
     }
 
     private func pickBackdropColor(_ current: RGBA?) {
-        let panel = NSColorPanel.shared
-        panel.showsAlpha = false
-        panel.isContinuous = false
-        panel.color = current.flatMap { NSColor(cgColor: $0.cgColor) } ?? .white
-        panel.setTarget(self)
-        panel.setAction(#selector(backdropColorPicked(_:)))
-        Self.colorPanelOwner = self
-        panel.orderFront(nil)
+        presentColorPanel(color: current.flatMap { NSColor(cgColor: $0.cgColor) } ?? .white, action: #selector(backdropColorPicked(_:)))
     }
 
     @objc private func backdropColorPicked(_ sender: NSColorPanel) {
         guard let color = RGBA(sender.color.cgColor) else { return }
+        let actionName = String(localized: "Background", bundle: .module)
+        let dragging = (NSEvent.pressedMouseButtons & 1) != 0
+        if dragging {
+            beginColorPanelDrag(actionName: actionName)
+        }
         onBackdropFill?(.color(color.withAlpha(1)))
+        if !dragging, colorDragAction != nil {
+            finishColorPanelDrag()
+        }
     }
 
     static func name(of gradient: BackdropGradient) -> String {
@@ -1172,8 +1508,15 @@ final class CapsuleChip: HoverTagButton {
     var isSelected = false {
         didSet { applyAppearance() }
     }
+    override var isEnabled: Bool {
+        didSet { applyAppearance() }
+    }
     /// Replaces the action given at creation, for chips that hand themselves to it.
     var handlerOverride: (() -> Void)?
+    /// Tracks a context menu for `event`; overridable in tests so menu tracking does not block the run loop.
+    var popUpMenu: (NSMenu, NSEvent, NSView) -> Void = { menu, event, view in
+        NSMenu.popUpContextMenu(menu, with: event, for: view)
+    }
     private let handler: () -> Void
     private var isHovered = false
     private let prominent: Bool
@@ -1264,6 +1607,36 @@ final class CapsuleChip: HoverTagButton {
         applyAppearance()
     }
 
+    override func mouseDown(with event: NSEvent) {
+        if event.modifierFlags.contains(.control), let menu = menu(for: event) {
+            popUpContextMenu(menu, with: event)
+            return
+        }
+        super.mouseDown(with: event)
+    }
+
+    override func rightMouseDown(with event: NSEvent) {
+        guard let menu = menu(for: event) else {
+            super.rightMouseDown(with: event)
+            return
+        }
+        popUpContextMenu(menu, with: event)
+    }
+
+    private func popUpContextMenu(_ menu: NSMenu, with event: NSEvent) {
+        HoverTag.shared.withdraw(from: self)
+        guard let window, window.level >= .popUpMenu else {
+            popUpMenu(menu, event, self)
+            return
+        }
+        // The overlay's panel floats above the pop-up menu level; it steps just below while the menu is open,
+        // or the menu would open under it.
+        let level = window.level
+        window.level = NSWindow.Level(rawValue: NSWindow.Level.popUpMenu.rawValue - 1)
+        popUpMenu(menu, event, self)
+        window.level = level
+    }
+
     override func viewDidChangeEffectiveAppearance() {
         super.viewDidChangeEffectiveAppearance()
         applyAppearance()
@@ -1272,18 +1645,19 @@ final class CapsuleChip: HoverTagButton {
     func applyAppearance() {
         effectiveAppearance.performAsCurrentDrawingAppearance {
             let dark = effectiveAppearance.isDark
-            if imagePosition == .noImage {
-                attributedTitle = NSAttributedString(string: title, attributes: [.font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: NSColor.labelColor])
-            }
             // A prominent chip (Done) carries the selected fill: the accent is never a fill behind text.
             let selected = (isSelected || prominent) && !isSwatch
+            let ink: NSColor = !isEnabled ? .tertiaryLabelColor : (selected && !prominent ? .controlAccentColor : .labelColor)
+            if imagePosition == .noImage {
+                attributedTitle = NSAttributedString(string: title, attributes: [.font: font ?? NSFont.systemFont(ofSize: 12), .foregroundColor: ink])
+            }
             let contrast = NSWorkspace.shared.accessibilityDisplayShouldIncreaseContrast
             let fill: CGColor = isSwatch ? .clear
                 : selected ? Theme.ChipFill.selectedColor(dark: dark, contrast: contrast)
-                : isHovered ? Theme.ChipFill.hoverColor(dark: dark, contrast: contrast)
+                : isEnabled && isHovered ? Theme.ChipFill.hoverColor(dark: dark, contrast: contrast)
                 : .clear
             layer?.backgroundColor = fill
-            contentTintColor = selected && !prominent ? .controlAccentColor : .labelColor
+            contentTintColor = ink
         }
         setAccessibilityValue(isSelected ? String(localized: "Selected", bundle: .module) : nil)
     }

@@ -11,12 +11,13 @@ import VisionKit
 final class PinView: NSView, NSDraggingSource {
     weak var pinWindow: PinWindow?
 
-    private let content: PinController.Content
+    private var content: PinController.Content
     /// The picture, the card's fill, or the swatch's checkerboard: what corners, edge, and opacity apply to.
     private let contentLayer = CALayer()
     private let swatch = CALayer()
     private let checker = PinCheckerLayer()
-    /// A text card's text, which selects.
+    /// A text card's scrollable container and text view, which selects and opens links.
+    let textScrollView: PinTextScrollView?
     let textView: PinTextView?
     /// What the reading shows when nothing else is: a color's hex.
     private var restingReading: String?
@@ -53,7 +54,9 @@ final class PinView: NSView, NSDraggingSource {
                 liveText?.resetSelection()
                 textView?.clearSelection()
             }
-            lockMark.isHidden = !isLocked
+            // PinWindow.lockBadgePanel draws the interactive unlock badge above the locked pin;
+            // keeping lockMark hidden avoids compositing two dark discs on top of each other.
+            lockMark.isHidden = true
             setControlsVisible(false)
             updateRing()
             needsLayout = true
@@ -65,9 +68,14 @@ final class PinView: NSView, NSDraggingSource {
         look = appearance
         if case .image = content { self.textReader = textReader } else { self.textReader = nil }
         if case .text(let text) = content {
-            textView = PinTextView(text: text)
+            let textView = PinTextView(text: text)
+            let scrollView = PinTextScrollView(frame: .zero)
+            scrollView.documentView = textView
+            self.textView = textView
+            self.textScrollView = scrollView
         } else {
-            textView = nil
+            self.textView = nil
+            self.textScrollView = nil
         }
         super.init(frame: .zero)
         wantsLayer = true
@@ -84,8 +92,9 @@ final class PinView: NSView, NSDraggingSource {
             contentLayer.contentsGravity = .resize
             contentLayer.minificationFilter = .trilinear
         case .text:
-            if let textView {
-                addSubview(textView)
+            if let textScrollView, let textView {
+                textScrollView.onForwardScroll = { [weak self] event in self?.scrollWheel(with: event) }
+                addSubview(textScrollView)
                 textView.delegate = self
                 textView.onCopy = { [weak self] text in self?.pinWindow?.copySelectedText(text) }
             }
@@ -144,8 +153,9 @@ final class PinView: NSView, NSDraggingSource {
         case .color(let color):
             setAccessibilityRole(.image)
             setAccessibilityLabel(String(localized: "Color pin, \(color.hex)", bundle: .module))
-            action(String(localized: "Copy Hex", bundle: .module)) { $0.copyPin() }
-            action(String(localized: "Copy RGB", bundle: .module)) { $0.copyRGB() }
+            for format in ColorFormat.allCases {
+                action(String(localized: "Copy \(format.title)", bundle: .module)) { $0.copyColor(format: format) }
+            }
         }
         action(String(localized: "Lock", bundle: .module)) { $0.setLocked(true) }
         action(String(localized: "Close", bundle: .module)) { $0.closePin() }
@@ -258,10 +268,14 @@ final class PinView: NSView, NSDraggingSource {
         if let more = buttons.more { moreButton.frame = more }
         lockMark.frame = buttons.trailing
         liveText?.setContentsRectNeedsUpdate()
-        if let textView {
+        if let textScrollView, let textView {
             let zoom = pinWindow?.zoom ?? 1
+            let insetBounds = bounds.insetBy(dx: PinText.padding.width * zoom, dy: PinText.padding.height * zoom)
+            textScrollView.frame = insetBounds
+            let docWidth = max(insetBounds.width, 1)
+            let docHeight = max(insetBounds.height, ceil(textView.contentHeight * zoom))
             textView.zoom = zoom
-            textView.frame = bounds.insetBy(dx: PinText.padding.width * zoom, dy: PinText.padding.height * zoom)
+            textView.frame = CGRect(x: 0, y: 0, width: docWidth, height: docHeight)
         }
     }
 
@@ -307,8 +321,30 @@ final class PinView: NSView, NSDraggingSource {
         CATransaction.setDisableActions(true)
         contentLayer.opacity = Float(opacity)
         CATransaction.commit()
-        textView?.alphaValue = opacity
+        textScrollView?.alphaValue = opacity
         liveText?.alphaValue = opacity
+    }
+
+    /// Replaces a picture pin's image and scale in place, refreshing Live Text if it was already read.
+    func updateImage(_ image: CGImage, scale: CGFloat) {
+        guard case .image = content else { return }
+        content = .image(image, scale: scale)
+        CATransaction.begin()
+        CATransaction.setDisableActions(true)
+        contentLayer.contents = image
+        contentLayer.contentsScale = scale
+        CATransaction.commit()
+        reading.setScale(scale)
+        let hadTextReading = textReading != nil || liveText != nil
+        textReading?.cancel()
+        textReading = nil
+        liveText?.removeFromSuperview()
+        liveText = nil
+        setAccessibilityLabel(String(localized: "Pin, \(Int(CGFloat(image.width) / scale)) by \(Int(CGFloat(image.height) / scale)) points", bundle: .module))
+        needsLayout = true
+        if hadTextReading {
+            readTextIfNeeded()
+        }
     }
 
     // MARK: Hover
@@ -364,15 +400,24 @@ final class PinView: NSView, NSDraggingSource {
         }
     }
 
-    /// The resize cursor at the corners, the I-beam where a press would go to the picture's or the card's text,
-    /// the arrow everywhere else: by the border, with ⌘ held, over the corner buttons.
+    /// The resize cursor at the corners, the pointing hand over links, the I-beam where a press would go to
+    /// the picture's or the card's text, the arrow everywhere else: by the border, with ⌘ held, over the corner buttons.
     private func updateCursor(at windowPoint: CGPoint) {
         let local = convert(windowPoint, from: nil)
         if let corner = resizeCorner(at: local) {
             Self.cursor(for: corner).set()
             return
         }
-        guard let text: NSView = liveText ?? textView else {
+        if let textView, takesTextPress(at: local) {
+            let textPoint = textView.convert(local, from: self)
+            if textView.linkURL(at: textPoint) != nil {
+                NSCursor.pointingHand.set()
+            } else {
+                NSCursor.iBeam.set()
+            }
+            return
+        }
+        guard let text: NSView = liveText else {
             NSCursor.arrow.set()
             return
         }
@@ -423,7 +468,11 @@ final class PinView: NSView, NSDraggingSource {
         if isLocked, !lockMark.isHidden, lockMark.frame.contains(local) { return lockMark }
         let hit = super.hitTest(point)
         if !controlsShown, let hit, hit === closeButton || hit === moreButton { return self }
-        if let text: NSView = liveText ?? textView, let hit, hit === text || hit.isDescendant(of: text) {
+        if let textScrollView, let textView, let hit, hit === textScrollView || hit.isDescendant(of: textScrollView) {
+            if hit is NSScroller { return hit }
+            return takesTextPress(at: local) ? textView : self
+        }
+        if let liveText, let hit, hit === liveText || hit.isDescendant(of: liveText) {
             return takesTextPress(at: local) ? hit : self
         }
         return hit
@@ -480,10 +529,11 @@ final class PinView: NSView, NSDraggingSource {
 
     /// Whether a press at `point` (in the pin's coordinates) goes to the picture's or the card's text, as in
     /// Preview: a press on text; on a picture, a right press also on a detected item (a link's or a code's
-    /// menu), so a drag across a QR code still moves the pin. Never by the border, and never with ⌘ held,
-    /// which drags from anywhere.
-    private func takesTextPress(at point: CGPoint) -> Bool {
-        guard !NSEvent.modifierFlags.contains(.command), bounds.insetBy(dx: Self.grabBorder, dy: Self.grabBorder).contains(point) else { return false }
+    /// menu), so a drag across a QR code still moves the pin. Never by the border, and never with ⌘ (move) or
+    /// ⌥ (drag out as file) held.
+    func takesTextPress(at point: CGPoint, modifiers: NSEvent.ModifierFlags = NSEvent.modifierFlags) -> Bool {
+        guard !modifiers.contains(.command), !modifiers.contains(.option),
+              bounds.insetBy(dx: Self.grabBorder, dy: Self.grabBorder).contains(point) else { return false }
         if let textView { return textView.isOnText(textView.convert(point, from: self)) }
         guard let liveText else { return false }
         let location = liveText.analysisPoint(point, from: self)
@@ -501,7 +551,7 @@ final class PinView: NSView, NSDraggingSource {
             return
         }
         resizingCorner = nil
-        if event.clickCount == 2, !isLocked, !takesTextPress(at: point) {
+        if event.clickCount == 2, !isLocked, !takesTextPress(at: point, modifiers: event.modifierFlags) {
             optionDragStart = nil
             window?.makeKey()
             let screenPoint = window?.convertPoint(toScreen: event.locationInWindow) ?? event.locationInWindow
@@ -555,7 +605,7 @@ final class PinView: NSView, NSDraggingSource {
     }
 
     func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        context == .outsideApplication ? [.copy] : []
+        [.copy]
     }
 
     /// A middle click closes the pin.
@@ -607,19 +657,37 @@ final class PinView: NSView, NSDraggingSource {
     /// An accessory app's menu bar is not there to route ⌘ keys, so the pin answers its own.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard let pin = pinWindow, pin.isKeyWindow, event.modifierFlags.contains(.command) else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .shift, .option, .control])
         switch event.charactersIgnoringModifiers?.lowercased() {
-        case "c":
+        case "c" where modifiers == .command:
             if liveText?.hasActiveTextSelection == true || textView?.selectionToCopy != nil { copySelectedText() } else { pin.copyPin() }
-        case "a":
+        case "a" where modifiers == .command:
             guard liveText != nil || textView != nil else { return false }
             selectAllText()
-        case "s" where pin.isPicture: event.modifierFlags.contains(.shift) ? pin.savePinAs() : pin.savePin()
-        case "p" where pin.isPicture && event.modifierFlags.isDisjoint(with: [.shift, .option, .control]): pin.printPin()
-        case "w": pin.closePin()
-        case "=", "+": pin.setZoom(pin.zoom * 1.25)
-        case "-": pin.setZoom(pin.zoom / 1.25)
-        case "0": pin.setZoom(1)
-        default: return false
+        case "s" where pin.isPicture && modifiers == [.command, .shift]:
+            pin.savePinAs()
+        case "s" where pin.isPicture && modifiers == .command:
+            pin.savePin()
+        case "p" where pin.isPicture && modifiers == .command:
+            pin.printPin()
+        case "e" where pin.isPicture && modifiers == .command:
+            pin.annotatePin()
+        case "t" where pin.isPicture && modifiers == [.command, .shift]:
+            pin.recognizePinText()
+        case "l" where modifiers == .command:
+            pin.setLocked(!pin.isLocked)
+        case "w" where modifiers == [.command, .option]:
+            pin.closeAllPins()
+        case "w" where modifiers == .command:
+            pin.closePin()
+        case "=", "+":
+            pin.setZoom(pin.zoom * 1.25)
+        case "-":
+            pin.setZoom(pin.zoom / 1.25)
+        case "0" where modifiers == .command:
+            pin.setZoom(1)
+        default:
+            return false
         }
         return true
     }
@@ -695,8 +763,21 @@ final class PinView: NSView, NSDraggingSource {
             menu.addItem(item(String(localized: "Save As…", bundle: .module), "square.and.arrow.down.on.square", key: "s", modifiers: [.command, .shift]) { pin.savePinAs() })
             menu.addItem(item(String(localized: "Print…", bundle: .module), "printer", key: "p") { pin.printPin() })
             menu.addItem(.separator())
-            menu.addItem(item(String(localized: "Annotate…", bundle: .module), "pencil.and.scribble") { pin.annotatePin() })
-            menu.addItem(item(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder") { pin.recognizePinText() })
+            menu.addItem(item(String(localized: "Annotate…", bundle: .module), "pencil.and.scribble", key: "e") { pin.annotatePin() })
+            menu.addItem(item(String(localized: "Recognize Text…", bundle: .module), "text.viewfinder", key: "t", modifiers: [.command, .shift]) { pin.recognizePinText() })
+            if pin.canTranslate {
+                menu.addItem(item(String(localized: "Translate…", bundle: .module), "translate") { pin.translatePin() })
+            }
+            let transform = NSMenu()
+            transform.addItem(item(String(localized: "Rotate Right (90°)", bundle: .module), "rotate.right") { pin.transformImage(.rotateRight) })
+            transform.addItem(item(String(localized: "Rotate Left (90°)", bundle: .module), "rotate.left") { pin.transformImage(.rotateLeft) })
+            transform.addItem(.separator())
+            transform.addItem(item(String(localized: "Flip Horizontal", bundle: .module), "arrow.left.and.right.righttriangle.left.righttriangle.right") { pin.transformImage(.flipHorizontal) })
+            transform.addItem(item(String(localized: "Flip Vertical", bundle: .module), "arrow.up.and.down.righttriangle.up.righttriangle.down") { pin.transformImage(.flipVertical) })
+            let transformItem = NSMenuItem(title: String(localized: "Transform", bundle: .module), action: nil, keyEquivalent: "")
+            transformItem.image = NSImage(systemSymbolName: "rotate.right", accessibilityDescription: nil)
+            transformItem.submenu = transform
+            menu.addItem(transformItem)
         case .text:
             let selection = textView?.selectionToCopy != nil
             if afterLiveText {
@@ -710,9 +791,19 @@ final class PinView: NSView, NSDraggingSource {
             if !afterLiveText {
                 menu.addItem(item(String(localized: "Select All Text", bundle: .module), "character.cursor.ibeam", key: "a") { [weak self] in self?.selectAllText() })
             }
-        case .color:
+        case .color(let color):
             menu.addItem(item(String(localized: "Copy Hex", bundle: .module), "number", key: "c") { pin.copyPin() })
-            menu.addItem(item(String(localized: "Copy RGB", bundle: .module), "eyedropper") { pin.copyRGB() })
+            let formatMenu = NSMenu()
+            for format in ColorFormat.allCases {
+                let formatted = color.string(in: format)
+                let formatItem = item(format.title, nil) { pin.copyColor(format: format) }
+                formatItem.toolTip = formatted
+                formatMenu.addItem(formatItem)
+            }
+            let copyFormatItem = NSMenuItem(title: String(localized: "Copy Format", bundle: .module), action: nil, keyEquivalent: "")
+            copyFormatItem.image = NSImage(systemSymbolName: "eyedropper", accessibilityDescription: nil)
+            copyFormatItem.submenu = formatMenu
+            menu.addItem(copyFormatItem)
         }
         menu.addItem(.separator())
         let zoom = NSMenu()
@@ -729,16 +820,29 @@ final class PinView: NSView, NSDraggingSource {
             stepItem.state = abs(pin.opacity - step) < 0.01 ? .on : .off
             opacity.addItem(stepItem)
         }
+        opacity.addItem(.separator())
+        let opacityTip = NSMenuItem(title: String(localized: "Tip: ⌥ + Scroll to Adjust Opacity", bundle: .module), action: nil, keyEquivalent: "")
+        opacityTip.isEnabled = false
+        opacity.addItem(opacityTip)
         let opacityItem = NSMenuItem(title: String(localized: "Opacity", bundle: .module), action: nil, keyEquivalent: "")
         opacityItem.image = NSImage(systemSymbolName: "circle.lefthalf.filled", accessibilityDescription: nil)
         opacityItem.submenu = opacity
         menu.addItem(opacityItem)
-        let lock = item(String(localized: "Lock", bundle: .module), "lock") { pin.setLocked(true) }
-        lock.toolTip = String(localized: "Clicks go through the pin to what is under it. Unlock it from the menu bar.", bundle: .module)
+        let shadowItem = item(String(localized: "Shadow", bundle: .module), nil) { pin.toggleShadow() }
+        shadowItem.state = pin.showsShadow ? .on : .off
+        menu.addItem(shadowItem)
+        let borderItem = item(String(localized: "Border", bundle: .module), nil) { pin.toggleBorder() }
+        borderItem.state = pin.showsBorder ? .on : .off
+        menu.addItem(borderItem)
+        let lock = item(String(localized: "Lock", bundle: .module), "lock", key: "l") { pin.setLocked(true) }
+        lock.toolTip = String(localized: "Clicks go through the pin to what is under it. Click the lock icon on the pin or unlock it from the menu bar.", bundle: .module)
         menu.addItem(lock)
+        let dragHint = NSMenuItem(title: String(localized: "⌘ + Drag to Move · ⌥ + Scroll for Opacity", bundle: .module), action: nil, keyEquivalent: "")
+        dragHint.isEnabled = false
+        menu.addItem(dragHint)
         menu.addItem(.separator())
-        menu.addItem(item(String(localized: "Close", bundle: .module), "xmark") { pin.closePin() })
-        menu.addItem(item(String(localized: "Close All Pins", bundle: .module), nil) { pin.closeAllPins() })
+        menu.addItem(item(String(localized: "Close", bundle: .module), "xmark", key: "w") { pin.closePin() })
+        menu.addItem(item(String(localized: "Close All Pins", bundle: .module), nil, key: "w", modifiers: [.command, .option]) { pin.closeAllPins() })
         return menu
     }
 }
@@ -764,6 +868,20 @@ extension PinView: NSTextViewDelegate {
     /// Over a card's text, the text's own menu (Copy, Look Up, Translate, and the like), then the pin's.
     func textView(_ view: NSTextView, menu: NSMenu, for event: NSEvent, at charIndex: Int) -> NSMenu? {
         return appendingPinMenu(to: menu)
+    }
+
+    /// Opens clicked `http`/`https` links inside text pins while rejecting arbitrary URL schemes.
+    func textView(_ textView: NSTextView, clickedOnLink link: Any, at charIndex: Int) -> Bool {
+        let url: URL? = if let direct = link as? URL {
+            direct
+        } else if let string = link as? String {
+            URL(string: string)
+        } else {
+            nil
+        }
+        guard let url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { return false }
+        NSWorkspace.shared.open(url)
+        return true
     }
 }
 

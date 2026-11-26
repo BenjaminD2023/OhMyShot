@@ -45,13 +45,19 @@ extension CompositionRoot {
                 guard case .image(let image, let scale) = pin.content else { return }
                 self?.textCapture.openPanel(image: image, scale: scale, source: String(localized: "Pin"))
             },
+            translate: { [weak self] pin in
+                guard case .image(let image, let scale) = pin.content else { return }
+                self?.textCapture.openPanel(image: image, scale: scale, source: String(localized: "Pin"), translating: true)
+            },
             fileForDrag: { [weak self] pin in
                 guard let self, case .image(let image, let scale) = pin.content else { return nil }
                 if let entry = unchangedCapture(of: pin) {
                     return handedOverOrSaidWhy(files.fileToHandOver(history.fileURL(for: entry), scale: entry.pixelsPerPoint))
                 }
-                // A capture's pin hands over what it shows as its capture would leave; a picture from elsewhere goes as it came.
-                guard case .capture = pin.origin else { return pin.ownFile() }
+                if case .file = pin.origin {
+                    return pin.ownFile()
+                }
+                // A capture's or clipboard pin hands over what it shows as Settings write it; a file pin goes as it came.
                 return handedOverOrSaidWhy(files.fileToHandOver(pin: pin.id, scale: Double(scale)) {
                     try PinController.Pin.pictureForHandOver(
                         image, onBackground: pin.onBackground, requiresBackground: pin.requiresBackground
@@ -132,7 +138,7 @@ extension CompositionRoot {
         chooser.allowsMultipleSelection = true
         chooser.message = String(localized: "Choose pictures to keep on screen.")
         chooser.prompt = String(localized: "Pin")
-        NSApp.activate()
+        NSApp.activate(ignoringOtherApps: true)
         chooser.begin { [weak self] response in
             guard response == .OK else { return }
             for url in chooser.urls { self?.pin(fileAt: url) }

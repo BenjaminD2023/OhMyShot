@@ -9,6 +9,8 @@ import OMSDesign
 /// shows through. With Reduce Transparency it is a solid capsule.
 final class ToolRail: NSView {
     var onSelect: ((AnnotationTool) -> Void)?
+    /// Double-clicking a single-shot tool locks it so it stays in hand across marks.
+    var onLock: ((AnnotationTool) -> Void)?
     /// The colors 1 to 9 choose now, for the menu to list beside their keys.
     var keyedColors: (() -> [RGBA])?
     /// The canvas the menu's mark and style items go to, which is no responder of the rail's own when a chip has the keys.
@@ -41,6 +43,7 @@ final class ToolRail: NSView {
     private let stack = NSStackView()
     private var chips: [AnnotationTool: RailChip] = [:]
     private var selected: AnnotationTool = .arrow
+    private var isLocked = false
     private var displayOptions: NSObjectProtocol?
 
     init() {
@@ -172,11 +175,24 @@ final class ToolRail: NSView {
         layer?.shadowPath = CGPath(roundedRect: bounds, cornerWidth: radius, cornerHeight: radius, transform: nil)
     }
 
-    func select(_ tool: AnnotationTool) {
+    func select(_ tool: AnnotationTool, locked: Bool = false) {
         selected = tool
+        isLocked = locked && tool.isPutDownAfterMark
         for (candidate, chip) in chips {
-            chip.state = candidate == tool ? .on : .off
-            chip.contentTintColor = candidate == tool ? .controlAccentColor : .labelColor
+            let isSelected = candidate == tool
+            let chipLocked = isSelected && isLocked
+            chip.state = isSelected ? .on : .off
+            chip.contentTintColor = isSelected ? .controlAccentColor : .labelColor
+            chip.setAccessibilityValue(chipLocked ? String(localized: "Locked", bundle: .module) : nil)
+            if candidate.isPutDownAfterMark {
+                let actionName = chipLocked
+                    ? String(localized: "Unlock Tool", bundle: .module)
+                    : String(localized: "Lock Tool", bundle: .module)
+                chip.setAccessibilityCustomActions([NSAccessibilityCustomAction(name: actionName) { [weak self] in
+                    self?.onLock?(candidate)
+                    return true
+                }])
+            }
         }
         applyAppearance()
     }
@@ -202,7 +218,10 @@ final class ToolRail: NSView {
             let highlight = Theme.ChipFill.selectedColor(dark: dark, contrast: contrast)
             let hover = Theme.ChipFill.hoverColor(dark: dark, contrast: contrast)
             for (tool, chip) in chips {
+                let locked = tool == selected && isLocked
                 chip.layer?.backgroundColor = tool == selected ? highlight : chip.isHovered ? hover : .clear
+                chip.layer?.borderWidth = locked ? (contrast ? 2 : 1.5) : 0
+                chip.layer?.borderColor = locked ? NSColor.controlAccentColor.cgColor : nil
             }
         }
     }
@@ -213,6 +232,9 @@ final class ToolRail: NSView {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .medium))
         let chip = RailChip(image: image ?? NSImage(), target: self, action: #selector(clicked(_:)))
         chip.onHover = { [weak self] _ in self?.applyAppearance() }
+        if tool.isPutDownAfterMark {
+            chip.onDoubleClick = { [weak self] in self?.onLock?(tool) }
+        }
         chip.isBordered = false
         chip.imagePosition = .imageOnly
         chip.contentTintColor = .labelColor
@@ -281,7 +303,7 @@ final class ToolRail: NSView {
     @objc private func clicked(_ sender: NSButton) {
         guard let tool = chips.first(where: { $0.value === sender })?.key else { return }
         // The chip toggles itself; the session decides what is selected.
-        select(selected)
+        select(selected, locked: isLocked)
         onSelect?(tool)
     }
 }
@@ -289,6 +311,8 @@ final class ToolRail: NSView {
 /// A borderless chip that knows when the pointer is over it, for its hover highlight, and names itself in a hover tag.
 final class RailChip: HoverTagButton {
     var onHover: ((Bool) -> Void)?
+    /// Fired on a double-click without firing a second single-click action (for locking single-shot tools).
+    var onDoubleClick: (() -> Void)?
     private(set) var isHovered = false
     /// Whether the chip answers the pointer in a window that is not key, its hover and its first click, for a toolbar
     /// that never takes the keyboard.
@@ -312,6 +336,15 @@ final class RailChip: HoverTagButton {
 
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         answersInInactiveWindow || super.acceptsFirstMouse(for: event)
+    }
+
+    override func mouseDown(with event: NSEvent) {
+        if event.clickCount == 2, let onDoubleClick {
+            HoverTag.shared.withdraw(from: self)
+            onDoubleClick()
+            return
+        }
+        super.mouseDown(with: event)
     }
 
     override func mouseEntered(with event: NSEvent) {

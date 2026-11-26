@@ -31,12 +31,22 @@ struct QuickAccessOptionsTests {
         let width: CGFloat = 220 + margin * 2
         let left = QuickAccessPlacement.panelFrame(corner: .bottomLeft, visible: visible, panelWidth: width, panelHeight: 300, margin: margin)
         let right = QuickAccessPlacement.panelFrame(corner: .bottomRight, visible: visible, panelWidth: width, panelHeight: 300, margin: margin)
-        // The cards, inside the panel's margin, are 26 pt from the side and from the bottom.
+        let topLeft = QuickAccessPlacement.panelFrame(corner: .topLeft, visible: visible, panelWidth: width, panelHeight: 300, margin: margin)
+        let topRight = QuickAccessPlacement.panelFrame(corner: .topRight, visible: visible, panelWidth: width, panelHeight: 300, margin: margin)
+        // The cards, inside the panel's margin, are 26 pt from the side and from the bottom or top.
         #expect(left.minX + margin == visible.minX + QuickAccessPlacement.edge)
         #expect(right.maxX - margin == visible.maxX - QuickAccessPlacement.edge)
         #expect(left.minY + margin == visible.minY + QuickAccessPlacement.edge)
         #expect(right.minY == left.minY)
+        #expect(topLeft.minX == left.minX)
+        #expect(topRight.maxX == right.maxX)
+        #expect(topLeft.maxY - margin == visible.maxY - QuickAccessPlacement.edge)
+        #expect(topRight.maxY == topLeft.maxY)
         #expect(left.width == width && right.height == 300)
+        #expect(QuickAccessCorner.topLeft.isTop && QuickAccessCorner.topRight.isTop)
+        #expect(!QuickAccessCorner.bottomLeft.isTop && !QuickAccessCorner.bottomRight.isTop)
+        #expect(QuickAccessCorner.topLeft.slidesFromLeft && QuickAccessCorner.bottomLeft.slidesFromLeft)
+        #expect(!QuickAccessCorner.topRight.slidesFromLeft && !QuickAccessCorner.bottomRight.slidesFromLeft)
     }
 
     @Test func aStackIsNoTallerThanTheDisplayLessItsEdges() {
@@ -153,14 +163,18 @@ struct QuickAccessSettingsTests {
         let (defaults, suite) = try makeDefaults()
         defer { defaults.removePersistentDomain(forName: suite) }
         let settings = SettingsStore(defaults: defaults)
-        settings.quickAccessCorner = .bottomRight
+        settings.quickAccessCorner = .topRight
         settings.quickAccessSize = .large
         settings.quickAccessOnPointerDisplay = true
         settings.quickAccessCloseAfter = 20
         settings.quickAccessCloseAction = .saveAndClose
+        settings.quickAccessClosesAfterAction = false
         let kept = SettingsStore(defaults: defaults).quickAccessPreferences
-        #expect(kept == QuickAccessPreferences(corner: .bottomRight, size: .large, onPointerDisplay: true, closeAfter: 20, closeAction: .saveAndClose))
+        #expect(kept == QuickAccessPreferences(
+            corner: .topRight, size: .large, onPointerDisplay: true, closeAfter: 20, closeAction: .saveAndClose, closesAfterAction: false
+        ))
         #expect(kept.closeInterval == 20)
+        #expect(!kept.closesAfterAction)
     }
 
     @Test func theThreeSecondDelayAndAnExplicitNeverChoiceSurviveReloading() throws {

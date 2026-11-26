@@ -69,6 +69,40 @@
         }
       }
     },
+    "Checking shared items…" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Comprobando los elementos compartidos…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Vérification des éléments partagés…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有項目を確認中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在检查共享项目…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在檢查分享的項目…"
+          }
+        }
+      }
+    },
     "Close" : {
       "localizations" : {
         "es" : {
@@ -99,6 +133,154 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "關閉"
+          }
+        }
+      }
+    },
+    "Couldn’t reach %@. Open %@ once, then try again." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Couldn’t reach %1$@. Open %2$@ once, then try again."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha podido conectar con %1$@. Abre %2$@ una vez y vuelve a intentarlo."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Impossible de joindre %1$@. Ouvrez %2$@ une fois, puis réessayez."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%1$@に接続できませんでした。%2$@を一度開いてから、もう一度試してください。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "无法连接 %1$@。请先打开一次 %2$@，然后重试。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "無法連線到 %1$@。請先打開 %2$@ 一次，然後再試一次。"
+          }
+        }
+      }
+    },
+    "No readable pictures were found in the shared items." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se han encontrado imágenes legibles en los elementos compartidos."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune image lisible n’a été trouvée dans les éléments partagés."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "共有項目に読み込める画像が見つかりませんでした。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在共享项目中未找到可读取的图片。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "在分享的項目中找不到可讀取的圖片。"
+          }
+        }
+      }
+    },
+    "No readable pictures were shared. %@ takes pictures to mark up, pin, or recognize text from." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "No se ha compartido ninguna imagen legible. %@ acepta imágenes para marcar, fijar o reconocer su texto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Aucune image lisible n’a été partagée. %@ accepte des images à annoter, à épingler ou pour en reconnaître le texte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "読み込める画像が共有されていません。%@は、注釈を付けたり、ピン留めしたり、テキストを認識したりする画像を受け取ります。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "没有共享可读取的图片。%@ 接收图片用于标注、贴图或识别文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "沒有分享可讀取的圖片。%@ 接收要標註、釘選或辨識文字的圖片。"
+          }
+        }
+      }
+    },
+    "Only the first %lld of %lld pictures can be sent at once." : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Only the first %1$lld of %2$lld pictures can be sent at once."
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Solo se pueden enviar a la vez las primeras %1$lld de %2$lld imágenes."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Seules les %1$lld premières images sur %2$lld peuvent être envoyées en même temps."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld枚の画像のうち、一度に送信できるのは最初の%1$lld枚のみです。"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一次只能发送前 %1$lld 张图片（共 %2$lld 张）。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "一次只能傳送前 %1$lld 張圖片（共 %2$lld 張）。"
           }
         }
       }
@@ -137,6 +319,40 @@
         }
       }
     },
+    "Recognize Text" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconocer texto"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Reconnaître le texte"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "テキストを認識"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "识别文字"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "辨識文字"
+          }
+        }
+      }
+    },
     "Send to %@" : {
       "localizations" : {
         "es" : {
@@ -167,6 +383,80 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "傳送到 %@"
+          }
+        }
+      }
+    },
+    "Sending" : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoi en cours"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "送信中"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在发送"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在傳送"
+          }
+        }
+      }
+    },
+    "Sending the first %lld of %lld pictures…" : {
+      "localizations" : {
+        "en" : {
+          "stringUnit" : {
+            "state" : "new",
+            "value" : "Sending the first %1$lld of %2$lld pictures…"
+          }
+        },
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Enviando las primeras %1$lld de %2$lld imágenes…"
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "Envoi des %1$lld premières images sur %2$lld…"
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%2$lld枚の画像のうち最初の%1$lld枚を送信中…"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在发送前 %1$lld 张图片（共 %2$lld 张）…"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "正在傳送前 %1$lld 張圖片（共 %2$lld 張）…"
           }
         }
       }
@@ -206,6 +496,7 @@
       }
     },
     "The pictures couldn’t be handed to %@. Open %@ once, then try again." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -240,6 +531,7 @@
       }
     },
     "There is no picture here. %@ takes pictures to mark up or pin." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -274,6 +566,7 @@
       }
     },
     "^[%lld picture](inflect: true) to mark up in the editor or keep on screen." : {
+      "extractionState" : "stale",
       "localizations" : {
         "es" : {
           "stringUnit" : {
@@ -303,6 +596,40 @@
           "stringUnit" : {
             "state" : "translated",
             "value" : "%lld 張圖片，可在編輯器中標註或保留在螢幕上。"
+          }
+        }
+      }
+    },
+    "^[%lld picture](inflect: true) to mark up, pin, or recognize text from." : {
+      "localizations" : {
+        "es" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "^[%lld imagen](inflect: true) para marcar, fijar o reconocer su texto."
+          }
+        },
+        "fr" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "^[%lld image](inflect: true) à annoter, à épingler ou pour en reconnaître le texte."
+          }
+        },
+        "ja" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "注釈を付けたり、ピン留めしたり、テキストを認識したりする画像：%lld枚"
+          }
+        },
+        "zh-Hans" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 张图片，可用于标注、贴图或识别文字。"
+          }
+        },
+        "zh-Hant" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "%lld 張圖片，可供標註、釘選或辨識文字。"
           }
         }
       }

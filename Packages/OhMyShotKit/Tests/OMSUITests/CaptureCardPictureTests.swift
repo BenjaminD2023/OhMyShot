@@ -145,4 +145,65 @@ struct CaptureCardPictureTests {
         #expect(CaptureCardView.fingerTravel(-80, invertedFromDevice: true) == -80)
         #expect(CaptureCardView.fingerTravel(80, invertedFromDevice: false) == -80)
     }
+
+    @MainActor
+    @Test func edgeOnlySwipeIgnoresInwardSwipesForLeftAndRightCorners() {
+        let thumb = picture(width: 400, height: 240, splitsAcross: true)
+        let item = QuickAccessItem(
+            id: UUID(), kind: .screenshot, fileURL: URL(filePath: "/tmp/edge-swipe.png"),
+            thumbnail: thumb, pixelWidth: 400, pixelHeight: 240, displayID: 1
+        )
+        let card = CaptureCardView(item: item, size: .medium)
+        card.frame = CGRect(x: 0, y: 0, width: 220, height: 140)
+        card.layout()
+
+        var closed = 0
+        card.onCommand = { if $0 == .close { closed += 1 } }
+
+        // Left-corner card: inward (rightward) swipe is ignored and never dismisses.
+        card.slidesFromLeft = true
+        card.applySwipePhase(.began, deltaX: 0)
+        card.applySwipePhase(.changed, deltaX: 80)
+        #expect(card.swipeTranslation == 0)
+        card.applySwipePhase(.ended, deltaX: 0)
+        #expect(closed == 0)
+
+        // Right-corner card: inward (leftward) swipe is ignored; outward (rightward) dismisses.
+        card.slidesFromLeft = false
+        card.applySwipePhase(.began, deltaX: 0)
+        card.applySwipePhase(.changed, deltaX: -80)
+        #expect(card.swipeTranslation == 0)
+        card.applySwipePhase(.ended, deltaX: 0)
+        #expect(closed == 0)
+
+        card.applySwipePhase(.began, deltaX: 0)
+        card.applySwipePhase(.changed, deltaX: 65)
+        #expect(card.swipeTranslation == 65)
+        card.applySwipePhase(.ended, deltaX: 0)
+        #expect(closed == 1)
+    }
+
+    @MainActor
+    @Test func countdownDisplaySupportsPausedFrozenFraction() {
+        let thumb = picture(width: 400, height: 240, splitsAcross: true)
+        let item = QuickAccessItem(
+            id: UUID(), kind: .screenshot, fileURL: URL(filePath: "/tmp/ring.png"),
+            thumbnail: thumb, pixelWidth: 400, pixelHeight: 240, displayID: 1
+        )
+        let card = CaptureCardView(item: item, size: .medium)
+        card.frame = CGRect(x: 0, y: 0, width: 220, height: 140)
+        card.layout()
+
+        card.setCountdownDisplay(.paused(fraction: 0.62, interval: 10))
+        #expect(card.isCountdownRingVisible)
+        #expect(card.isCountdownRingPaused)
+        #expect(abs(card.countdownRingFraction - 0.62) < 0.001)
+
+        card.setCountdownDisplay(.running(remaining: 6.2, interval: 10, startFraction: 0.62))
+        #expect(card.isCountdownRingVisible)
+        #expect(!card.isCountdownRingPaused)
+
+        card.setCountdownDisplay(nil)
+        #expect(!card.isCountdownRingVisible)
+    }
 }

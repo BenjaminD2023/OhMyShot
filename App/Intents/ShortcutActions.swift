@@ -168,6 +168,44 @@ final class ShortcutActions {
         await openInEditor(loaded, name)
     }
 
+    /// Uploads an image from a shortcut to the default upload destination and returns its public link.
+    func upload(_ data: Data, filename: String, type: UTType?) async throws -> URL {
+        used("uploadImage")
+        guard let destination = uploads.destinations.defaultDestination else {
+            throw ShortcutFailure.noUploadDestination
+        }
+        guard let source = CGImageSourceCreateWithData(data as CFData, nil),
+              CGImageSourceCreateImageAtIndex(source, 0, nil) != nil
+        else {
+            throw ShortcutFailure.unreadableImage
+        }
+        let imageType = CGImageSourceGetType(source).flatMap { UTType($0 as String) } ?? type ?? .png
+        let ext = imageType.preferredFilenameExtension ?? "png"
+        let trimmedName = filename.trimmingCharacters(in: .whitespacesAndNewlines)
+        let originalName: String
+        if trimmedName.isEmpty {
+            originalName = "Shortcut.\(ext)"
+        } else if (trimmedName as NSString).pathExtension.isEmpty {
+            originalName = "\(trimmedName).\(ext)"
+        } else {
+            originalName = trimmedName
+        }
+        let file = FileManager.default.temporaryDirectory
+            .appending(path: "OhMyShot-Shortcut-Upload-\(UUID().uuidString).\(ext)")
+        try data.write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let uploader = Uploader(secrets: uploads.destinations.secrets)
+        let result = try await uploader.upload(fileAt: file, to: destination, originalName: originalName)
+        uploads.records.add(UploadRecord(
+            captureID: nil,
+            date: .now,
+            fileName: result.fileName,
+            destination: destination,
+            result: result
+        ))
+        return result.link
+    }
+
     /// Runs a URL API command for a shortcut.
     func perform(_ command: AutomationCommand) throws(ShortcutFailure) {
         if command.readsScreen { try requireScreenRecording(for: command) }

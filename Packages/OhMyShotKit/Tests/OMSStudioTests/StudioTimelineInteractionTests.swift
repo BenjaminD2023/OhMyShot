@@ -195,4 +195,76 @@ struct StudioTimelineInteractionTests {
         let bypassed = StudioTimeline.snappedTime(2.03, candidates: candidates, duration: 10, width: width, viewport: viewport, enabled: false)
         #expect(!bypassed.snapped && abs(bypassed.time - 2.03) < 0.0001)
     }
+
+    @Test func timelineLaneHitDetectsCutResizeHandlesAndBody() {
+        let viewport = StudioTimelineViewport(duration: 10)
+        let cuts: [ClosedRange<Double>] = [4.5...5.5]
+        let width: CGFloat = 1032 // span = 1000 -> 100 pt/s, inset = 16
+
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 450, y: 80), width: width, viewport: viewport, zooms: [], cuts: cuts) == .cutResize(4.5, start: true))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 446, y: 80), width: width, viewport: viewport, zooms: [], cuts: cuts) == .cutResize(4.5, start: true))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 553, y: 80), width: width, viewport: viewport, zooms: [], cuts: cuts) == .cutResize(4.5, start: false))
+        #expect(StudioTimeline.laneHit(at: CGPoint(x: 16 + 500, y: 80), width: width, viewport: viewport, zooms: [], cuts: cuts) == .cut(4.5))
+    }
+
+    @Test func snappedMoveAlignsBothEdgesForZoomAndLayoutWithinLimits() throws {
+        let viewport = StudioTimelineViewport(duration: 10)
+        let width: CGFloat = 1032 // span = 1000 -> 100 pt/s -> 5 pt = 0.05 s
+
+        // Zoom 1...3 moving right: trailing edge (5.97) snaps to cut boundary at 6.0 -> shift = 3.0.
+        let zoomRightSnap = StudioTimeline.snappedMove(
+            start: 1.0, end: 3.0, rawShift: 2.97, limits: 0...10,
+            candidates: [6.0], duration: 10, width: width, viewport: viewport, enabled: true
+        )
+        #expect(abs(zoomRightSnap.shift - 3.0) < 0.0001)
+        #expect(abs(try #require(zoomRightSnap.snappedTime) - 6.0) < 0.0001)
+
+        // Zoom 1...3 moving left: leading edge (0.03) snaps to 0.0 -> shift = -1.0.
+        let zoomLeftSnap = StudioTimeline.snappedMove(
+            start: 1.0, end: 3.0, rawShift: -0.97, limits: 0...10,
+            candidates: [6.0], duration: 10, width: width, viewport: viewport, enabled: true
+        )
+        #expect(abs(zoomLeftSnap.shift - (-1.0)) < 0.0001)
+        #expect(abs(try #require(zoomLeftSnap.snappedTime) - 0.0) < 0.0001)
+
+        // Command bypass disables dual-edge snapping.
+        let zoomBypassed = StudioTimeline.snappedMove(
+            start: 1.0, end: 3.0, rawShift: 2.97, limits: 0...10,
+            candidates: [6.0], duration: 10, width: width, viewport: viewport, enabled: false
+        )
+        #expect(abs(zoomBypassed.shift - 2.97) < 0.0001 && zoomBypassed.snappedTime == nil)
+
+        // Layout 4...5 bounded by neighbors to 2...7: snaps both leading and trailing edges while ignoring out-of-limits candidates.
+        let layoutLeftSnap = StudioTimeline.snappedMove(
+            start: 4.0, end: 5.0, rawShift: -1.97, limits: 2.0...7.0,
+            candidates: [1.99, 2.0, 6.0, 7.0], duration: 10, width: width, viewport: viewport, enabled: true
+        )
+        #expect(abs(layoutLeftSnap.shift - (-2.0)) < 0.0001)
+        #expect(abs(try #require(layoutLeftSnap.snappedTime) - 2.0) < 0.0001)
+
+        let layoutRightSnap = StudioTimeline.snappedMove(
+            start: 4.0, end: 5.0, rawShift: 0.97, limits: 2.0...7.0,
+            candidates: [2.0, 6.0, 7.0], duration: 10, width: width, viewport: viewport, enabled: true
+        )
+        #expect(abs(layoutRightSnap.shift - 1.0) < 0.0001)
+        #expect(abs(try #require(layoutRightSnap.snappedTime) - 6.0) < 0.0001)
+
+        let layoutRightNeighborSnap = StudioTimeline.snappedMove(
+            start: 4.0, end: 5.0, rawShift: 1.98, limits: 2.0...7.0,
+            candidates: [2.0, 5.5, 7.0], duration: 10, width: width, viewport: viewport, enabled: true
+        )
+        #expect(abs(layoutRightNeighborSnap.shift - 2.0) < 0.0001)
+        #expect(abs(try #require(layoutRightNeighborSnap.snappedTime) - 7.0) < 0.0001)
+    }
+
+    @Test func livePreviewScrubbingDeduplicatesSubFrameDeltas() {
+        #expect(StudioTimeline.shouldSeekPreview(to: 2.0, lastSeeked: nil))
+        #expect(!StudioTimeline.shouldSeekPreview(to: 2.005, lastSeeked: 2.0))
+        #expect(!StudioTimeline.shouldSeekPreview(to: 1.99, lastSeeked: 2.0))
+        #expect(StudioTimeline.shouldSeekPreview(to: 2.02, lastSeeked: 2.0))
+        #expect(StudioTimeline.shouldSeekPreview(to: 1.98, lastSeeked: 2.0))
+        // Forced snap seeks once to the snapped boundary and suppresses duplicate identical seeks.
+        #expect(StudioTimeline.shouldSeekPreview(to: 2.005, lastSeeked: 2.0, force: true))
+        #expect(!StudioTimeline.shouldSeekPreview(to: 2.0, lastSeeked: 2.0, force: true))
+    }
 }

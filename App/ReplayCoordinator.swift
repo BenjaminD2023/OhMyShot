@@ -1,6 +1,7 @@
 import AppKit
 import AVFoundation
 import Foundation
+import Observation
 import OMSCapture
 import OMSCore
 import OMSDesign
@@ -13,9 +14,9 @@ import ScreenCaptureKit
 /// the menu bar until they turn it off or quit, and saved, when asked, as recordings are kept (history,
 /// clipboard, card). macOS 27.
 ///
-/// Each display has a buffer of its own; saving keeps one clip per display. The system's sound and the
-/// microphone are both buffered (the microphone when access is on), and each clip keeps what Settings'
-/// replay sound says. Nothing of it outlives the app: the next launch starts with it off.
+/// Each display has a buffer of its own; saving keeps one clip per display. The microphone is requested and
+/// buffered only when Settings' replay sound keeps it; switching to or from a microphone-including mode
+/// restarts active buffers cleanly. Nothing of it outlives the app: the next launch starts with it off.
 @available(macOS 27, *)
 @MainActor
 final class ReplayCoordinator {
@@ -24,16 +25,23 @@ final class ReplayCoordinator {
     private let capturer: ScreenCapturer
     private let permissions: PermissionCenter
     private let recordings: RecordingCoordinator
+    /// Called whenever Replay transitions between active (`true`) and idle (`false`).
+    var onStateChange: ((Bool) -> Void)?
     /// The buffers running, by display.
     private var buffers: [CGDirectDisplayID: ReplayBuffer] = [:]
     /// Displays whose buffer is starting, so a second click meanwhile starts nothing twice.
     private var starting: Set<CGDirectDisplayID> = []
-    /// Displays unchecked while they were starting: stopped as soon as they have started.
+    /// Displays whose buffer is restarting to reflect a microphone sound-setting change.
+    private var restarting: Set<CGDirectDisplayID> = []
+    /// Displays unchecked while they were starting or restarting: stopped as soon as ready.
     private var cancelled: Set<CGDirectDisplayID> = []
+    /// Observes `settings.replaySound` only while Replay is active (zero idle wakeups when off).
+    private var soundObservation: Task<Void, Never>?
+    private var lastReportedActive = false
     /// Saves under way; the app waits for them before quitting.
     private var saving = 0
     private var savingDone: [() -> Void] = []
-    /// Says by the pointer that a clip went to the export folder, as it has no card to show it.
+    /// Says by the pointer why Replay could not start or save, or that a clip went to the export folder.
     private lazy var notice = CopiedHUD()
 
     init(settings: SettingsStore, displays: DisplayTopology, capturer: ScreenCapturer, permissions: PermissionCenter, recordings: RecordingCoordinator) {
@@ -44,19 +52,23 @@ final class ReplayCoordinator {
         self.recordings = recordings
     }
 
+    isolated deinit {
+        soundObservation?.cancel()
+    }
+
     /// Whether any display's last seconds are kept.
     var isOn: Bool {
-        !buffers.isEmpty
+        !buffers.isEmpty || !restarting.isEmpty
     }
 
     /// Whether `display`'s last seconds are kept, or about to be.
     func isKeeping(_ display: CGDirectDisplayID) -> Bool {
-        buffers[display] != nil || (starting.contains(display) && !cancelled.contains(display))
+        buffers[display] != nil || restarting.contains(display) || (starting.contains(display) && !cancelled.contains(display))
     }
 
     /// Whether Save can run now: something is kept, and no save is under way.
     var canSave: Bool {
-        isOn && saving == 0
+        !buffers.isEmpty && saving == 0
     }
 
     /// Starts keeping `display`'s last seconds, or stops.
@@ -68,11 +80,12 @@ final class ReplayCoordinator {
             } else {
                 Task { await buffer.stop() }
             }
+            notifyStateChange()
             VoiceOver.announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
             return
         }
-        if starting.contains(display.id) {
-            // Still starting (perhaps asking for the microphone): stopped as soon as it has, or kept after all.
+        if starting.contains(display.id) || restarting.contains(display.id) {
+            // Still starting or restarting: stopped as soon as it has, or kept after all.
             if cancelled.remove(display.id) == nil { cancelled.insert(display.id) }
             return
         }
@@ -80,10 +93,11 @@ final class ReplayCoordinator {
         Task {
             await start(display)
             starting.remove(display.id)
+            notifyStateChange()
         }
     }
 
-    private func start(_ display: DisplayInfo) async {
+    private func start(_ display: DisplayInfo, announce: Bool = true) async {
         do {
             let microphone = await microphone()
             let source = try await capturer.recordingSource(for: .display, on: display)
@@ -96,32 +110,100 @@ final class ReplayCoordinator {
             try await buffer.start()
             if cancelled.remove(display.id) != nil {
                 await buffer.stop()
-                VoiceOver.announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
+                if announce { VoiceOver.announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name).")) }
                 return
             }
             buffers[display.id] = buffer
-            VoiceOver.announce(String(localized: "Keeping the last 15 seconds of \(display.name)."))
+            notifyStateChange()
+            if announce { VoiceOver.announce(String(localized: "Keeping the last 15 seconds of \(display.name).")) }
         } catch {
             cancelled.remove(display.id)
-            Log.recording.error("The replay couldn't start on a display: \(String(describing: error), privacy: .public)")
+            Log.recording.error("The replay couldn't start on a display: \(Log.kind(of: error), privacy: .public), \(String(describing: error), privacy: .private)")
             NSSound.beep()
-            VoiceOver.announce(String(localized: "Couldn’t keep the last 15 seconds of \(display.name)."))
+            notice.show(String(localized: "Couldn’t keep the last 15 seconds of \(display.name)."), near: NSEvent.mouseLocation)
         }
     }
 
-    /// The microphone buffered with the system's sound, asked for the first time; nil when access is off.
-    /// Asked before buffering begins, so the question is never part of what is kept.
+    /// The microphone buffered with the system's sound, requested only when Settings' replay sound keeps it;
+    /// nil when the sound mode does not use the microphone or access is off.
     private func microphone() async -> RecordingAudio.Microphone? {
+        guard settings.replaySound.keepsMicrophone else { return nil }
         guard await permissions.requestIfNeeded(.microphone) else { return nil }
         return .chosen(settings.recordingMicrophoneID)
     }
 
+    private func notifyStateChange() {
+        let active = isOn
+        if active {
+            startObservingSoundIfNeeded()
+        } else if starting.isEmpty {
+            soundObservation?.cancel()
+            soundObservation = nil
+        }
+        guard active != lastReportedActive else { return }
+        lastReportedActive = active
+        onStateChange?(active)
+    }
+
+    private func startObservingSoundIfNeeded() {
+        guard soundObservation == nil else { return }
+        let settings = settings
+        soundObservation = Task { [weak self] in
+            var lastKeepsMic = settings.replaySound.keepsMicrophone
+            for await keepsMic in Observations({ settings.replaySound.keepsMicrophone }) {
+                guard !Task.isCancelled, let self else { return }
+                guard keepsMic != lastKeepsMic else { continue }
+                lastKeepsMic = keepsMic
+                await self.restartBuffersForSoundChange()
+            }
+        }
+    }
+
+    /// Cleanly restarts active replay buffers when switching between microphone-enabled and non-microphone sound modes.
+    func restartBuffersForSoundChange() async {
+        guard !buffers.isEmpty else { return }
+        if saving > 0 {
+            savingDone.append { [weak self] in
+                Task { await self?.restartBuffersForSoundChange() }
+            }
+            return
+        }
+        let targetKeepsMic = settings.replaySound.keepsMicrophone
+        let ids = buffers.keys.sorted()
+        for id in ids {
+            guard let existing = buffers[id] else { continue }
+            let hasMic = existing.request.microphone != nil
+            guard hasMic != targetKeepsMic else { continue }
+            buffers.removeValue(forKey: id)
+            restarting.insert(id)
+            await existing.stop()
+            restarting.remove(id)
+            if cancelled.remove(id) != nil {
+                notifyStateChange()
+                continue
+            }
+            guard let display = displays.layout.displays.first(where: { $0.id == id }) else {
+                notifyStateChange()
+                continue
+            }
+            starting.insert(id)
+            await start(display, announce: false)
+            starting.remove(id)
+            notifyStateChange()
+        }
+    }
+
     /// A display's buffer stopped on its own: the display went away or Screen Recording was turned off
-    /// (quietly), or the buffer failed (with a beep).
+    /// (quietly), or the buffer failed (with a beep and visible notice).
     private func stopped(_ display: DisplayInfo, _ ending: ReplayBuffer.Ending) {
         guard buffers.removeValue(forKey: display.id) != nil else { return }
-        if ending == .bufferFailed { NSSound.beep() }
-        VoiceOver.announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
+        notifyStateChange()
+        if ending == .bufferFailed {
+            NSSound.beep()
+            notice.show(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."), near: NSEvent.mouseLocation)
+        } else {
+            VoiceOver.announce(String(localized: "Stopped keeping the last 15 seconds of \(display.name)."))
+        }
     }
 
     /// How saving one display's clip went.
@@ -140,6 +222,7 @@ final class ReplayCoordinator {
         guard saving == 0 else { return NSSound.beep() }
         guard !buffers.isEmpty else {
             NSSound.beep()
+            notice.show(String(localized: "Replay is off"), near: NSEvent.mouseLocation)
             VoiceOver.announce(String(localized: "Nothing is being kept. Choose a display in Keep Last 15 Seconds in the menu bar."))
             return
         }
@@ -162,7 +245,8 @@ final class ReplayCoordinator {
         }
     }
 
-    /// Says how a save went, once for all its displays, with one beep when any had nothing or failed.
+    /// Says how a save went, once for all its displays, with a beep and visible notice when any clip fell back
+    /// outside History, had nothing changed, or failed.
     private func report(_ outcomes: [Saved]) {
         var sentences: [String] = []
         let saved = outcomes.filter { if case .saved = $0 { true } else { false } }.count
@@ -181,19 +265,33 @@ final class ReplayCoordinator {
                 ? String(localized: "The last 15 seconds were saved to \(name) but couldn’t be added to History.")
                 : String(localized: "The last 15 seconds of \(clips) displays were saved to \(name) but couldn’t be added to History."))
         }
+        var hadNothingChanged = false
         for outcome in outcomes {
             guard case .nothingChanged(let name) = outcome else { continue }
+            hadNothingChanged = true
             sentences.append(name.map { String(localized: "Nothing changed on \($0) in the last 15 seconds.") }
                 ?? String(localized: "Nothing changed on the display in the last 15 seconds."))
         }
-        if outcomes.contains(where: { if case .failed = $0 { true } else { false } }) {
+        let hadFailure = outcomes.contains(where: { if case .failed = $0 { true } else { false } })
+        if hadFailure {
             sentences.append(String(localized: "The last 15 seconds couldn’t be saved."))
         }
         if saved < outcomes.count { NSSound.beep() }
         guard !sentences.isEmpty else { return }
-        // A clip outside History has no card to show where it went: the reading by the pointer says it, and says it aloud.
+        // A clip outside History has no card to show where it went, and failures / unchanged clips have no card
+        // either: show a visible notice by the pointer (which also announces to VoiceOver).
         if !folders.isEmpty {
             notice.show(Sentences.joined(sentences), near: NSEvent.mouseLocation)
+        } else if hadFailure {
+            notice.show(String(localized: "The last 15 seconds couldn’t be saved."), near: NSEvent.mouseLocation)
+            if saved > 0 || hadNothingChanged {
+                VoiceOver.announce(Sentences.joined(sentences))
+            }
+        } else if hadNothingChanged {
+            notice.show(String(localized: "Nothing changed in the last 15 seconds"), near: NSEvent.mouseLocation)
+            if saved > 0 {
+                VoiceOver.announce(Sentences.joined(sentences))
+            }
         } else {
             VoiceOver.announce(Sentences.joined(sentences))
         }
@@ -257,6 +355,8 @@ final class ReplayCoordinator {
         let stopAll = { [self] in
             let running = Array(buffers.values)
             buffers.removeAll()
+            restarting.removeAll()
+            notifyStateChange()
             Task {
                 for buffer in running { await buffer.stop() }
             }
@@ -285,11 +385,14 @@ final class ReplayCoordinator {
         ))
         try await buffer.start()
         buffers[id] = buffer
+        notifyStateChange()
     }
 
     func debugStopAll() async {
         let running = Array(buffers.values)
         buffers.removeAll()
+        restarting.removeAll()
+        notifyStateChange()
         for buffer in running { await buffer.stop() }
     }
 

@@ -106,7 +106,7 @@ struct WindowPickerTests {
         #expect(panel.styleMask.contains(.nonactivatingPanel) && panel.collectionBehavior.contains(.fullScreenAuxiliary))
         let capture = try #require(descendants(of: root).compactMap { $0 as? NSButton }.first { $0.title == "Capture" })
         var captured: WindowTarget?
-        picker.onChoose = { target, choices in captured = target; #expect(choices == nil) }
+        picker.onChoose = { target, choices, _ in captured = target; #expect(choices == nil) }
         #expect(!capture.isEnabled)
         await picker.reload().value
         #expect(previews == [game.target.id])
@@ -158,7 +158,7 @@ struct WindowPickerTests {
         let root = try #require(picker.window?.contentView)
         let bar = try #require(descendants(of: root).compactMap { $0 as? RecordingBar }.first)
         var targets: [WindowTarget] = []
-        picker.onChoose = { target, _ in targets.append(target) }
+        picker.onChoose = { target, _, _ in targets.append(target) }
         await picker.reload().value
         #expect(!bar.canRecord)
         bar.onRecord?()
@@ -213,5 +213,55 @@ struct WindowPickerTests {
             try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
             try data.write(to: folder.appending(path: "window-picker-\(recording ? "record" : "capture")-\(dark ? "dark" : "light").png"))
         }
+    }
+
+    @Test func optionReturnForwardsOptionModifierWhenChoosingAWindow() async throws {
+        let image = try frame(), game = game
+        let picker = WindowPickerController(
+            layout: layout, recording: nil, preferredProcessID: game.processID,
+            load: { [game] }, preview: { _ in image }
+        )
+        defer { picker.close() }
+        let root = try #require(picker.window?.contentView)
+        var chosen: (WindowTarget, NSEvent.ModifierFlags)?
+        picker.onChoose = { target, choices, modifiers in
+            #expect(choices == nil)
+            chosen = (target, modifiers)
+        }
+        await picker.reload().value
+        let optionReturn = try #require(NSEvent.keyEvent(
+            with: .keyDown, location: .zero, modifierFlags: .option, timestamp: 0, windowNumber: 0, context: nil,
+            characters: "\r", charactersIgnoringModifiers: "\r", isARepeat: false, keyCode: 36
+        ))
+        root.keyDown(with: optionReturn)
+        #expect(chosen?.0 == game.target)
+        #expect(chosen?.1.contains(.option) == true)
+    }
+
+    @Test(arguments: [false, true], [false, true])
+    func selectOnScreenButtonIsShownWhenCallbackProvidedAndFitsCleanly(recording: Bool, offersBack: Bool) async throws {
+        let image = try frame(), game = game
+        let picker = WindowPickerController(
+            layout: layout, recording: recording ? RecordingChoices() : nil,
+            preferredProcessID: game.processID, offersBack: offersBack,
+            load: { [game] }, preview: { _ in image }
+        )
+        defer { picker.close() }
+        let root = try #require(picker.window?.contentView)
+        let before = descendants(of: root).compactMap { $0 as? NSButton }.first { $0.title == "Select on Screen" }
+        #expect(before == nil || before?.isHidden == true)
+
+        var switched = 0
+        picker.onSelectOnScreen = { switched += 1 }
+        let button = try #require(descendants(of: root).compactMap { $0 as? NSButton }.first { $0.title == "Select on Screen" })
+        #expect(!button.isHidden)
+        await picker.reload().value
+        root.layoutSubtreeIfNeeded()
+        #expect(!root.hasAmbiguousLayout)
+        let rect = button.convert(button.bounds, to: root)
+        #expect(root.bounds.insetBy(dx: -1, dy: -1).contains(rect))
+
+        button.performClick(nil)
+        #expect(switched == 1)
     }
 }

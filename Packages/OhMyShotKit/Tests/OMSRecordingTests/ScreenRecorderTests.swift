@@ -117,4 +117,24 @@ struct ScreenRecorderTests {
         }
         #expect(recorder.state == .finished)
     }
+
+    @Test func mutingMicrophoneLivePropagatesToWriterAndZeroesMeter() throws {
+        let url = TestMedia.temporaryMovie()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let format = RecordingFormat.choose(width: 320, height: 240, framesPerSecond: 30)
+        let recorder = try ScreenRecorder(
+            movieURL: url, format: format, audio: RecordingAudio(system: false, microphone: .systemDefault)
+        )
+        #expect(!recorder.isMicrophoneMuted)
+        #expect(!recorder.writer.isMicrophoneMuted)
+
+        recorder.isMicrophoneMuted = true
+        #expect(recorder.isMicrophoneMuted)
+        #expect(recorder.writer.isMicrophoneMuted)
+        #expect(recorder.takeMicrophoneLevel() == 0)
+
+        recorder.isMicrophoneMuted = false
+        #expect(!recorder.isMicrophoneMuted)
+        #expect(!recorder.writer.isMicrophoneMuted)
+    }
 }

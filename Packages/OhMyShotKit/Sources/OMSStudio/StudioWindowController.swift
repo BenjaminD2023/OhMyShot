@@ -1,11 +1,15 @@
 import AppKit
 import AVFoundation
 import AVKit
+import CoreGraphics
+import CoreMedia
+import Foundation
 import OMSDesign
 import Observation
 import OMSCore
 import OSLog
 import SwiftUI
+import UniformTypeIdentifiers
 #if DEBUG
 import ApplicationServices
 #endif
@@ -78,6 +82,10 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     private var makingGIF: Task<Void, Never>?
     /// Set by Cancel: exporting stops, including the export after it that a change made meanwhile asks for.
     private var cancelled = false
+    /// The project snapshot for which the user explicitly cancelled export, so closing does not immediately
+    /// re-launch a background export without asking.
+    private var cancelledExportProject: StudioProject?
+    private var skipExportOnClose = false
     /// Runs once the window has closed and its movie is kept.
     private var closeCompletions: [(Bool) -> Void] = []
     private var preparingToClose: Task<Void, Never>?
@@ -96,7 +104,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         self.player = player
         playerView = PlayerLayerView(player: player)
         playerView.onPixelSizeChange = { [weak document] size in document?.setPreviewSize(size) }
-        let window = NSWindow(
+        let window = StudioWindow(
             contentRect: CGRect(x: 0, y: 0, width: 1180, height: 780),
             styleMask: [.titled, .closable, .miniaturizable, .resizable, .fullSizeContentView],
             backing: .buffered,
@@ -108,6 +116,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         window.minSize = CGSize(width: 900, height: 600)
         super.init(window: window)
         model.controller = self
+        window.onKeyDown = { [weak self] event in self?.handleKeyDown(event) ?? false }
         let hosting = NSHostingController(rootView: StudioView(document: studio, model: model, player: playerView, swatches: swatches))
         hosting.sceneBridgingOptions = [.toolbars]
         hosting.sizingOptions = []
@@ -135,6 +144,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
                 self?.player.currentItem?.audioMix = studio.composition?.audioMix(for: audio)
             }
         }
+        studio.loadWaveform()
         Task { await studio.makeComposition() }
         studio.save()
     }
@@ -150,6 +160,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             // History can reopen this window while its background export is still running. That export
             // may finish normally, but it must not tear down a window the user has returned to.
             didClose = false
+            skipExportOnClose = false
             completeClose(saved: false)
         }
         if windowLease == nil { windowLease = ActiveResources.shared.acquire(.window) }
@@ -159,35 +170,103 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
 
     // MARK: Playing
 
+    func pausePlayback() {
+        player.pause()
+        studio.isPlaying = false
+        model.shuttleRate = 0
+    }
+
     func togglePlay() {
         guard !studio.compositionFailed, studio.composition != nil else { return }
-        if player.rate > 0 {
-            player.pause()
-            studio.isPlaying = false
+        if player.rate != 0 {
+            pausePlayback()
         } else {
             // From the start again at the end.
-            if let composition = studio.composition, studio.movieTime(studio.time) >= composition.duration - 0.05 {
+            if let composition = studio.composition, loadedMovieTime(studio.time) >= composition.duration - 0.05 {
                 seek(toRecordingTime: 0)
             }
-            player.play()
+            player.rate = 1
             studio.isPlaying = true
+            model.shuttleRate = 1
         }
+    }
+
+    /// `L` shuttle: plays forward at 1×, then steps 2× and 4× on repeated presses.
+    func shuttleForward() {
+        guard !studio.compositionFailed, let composition = studio.composition else { return }
+        let next = StudioShuttle.nextForwardRate(from: player.rate)
+        if player.rate <= 0, loadedMovieTime(studio.time) >= composition.duration - 0.05 {
+            seek(toRecordingTime: 0)
+        }
+        player.rate = next
+        studio.isPlaying = true
+        model.shuttleRate = next
+    }
+
+    /// `J` shuttle: plays backward at −1× / −2× when supported, otherwise steps cleanly backward.
+    func shuttleReverse() {
+        guard !studio.compositionFailed, studio.composition != nil else { return }
+        let item = player.currentItem
+        if let next = StudioShuttle.nextReverseRate(
+            from: player.rate,
+            canPlayReverse: item?.canPlayReverse ?? false,
+            canPlayFastReverse: item?.canPlayFastReverse ?? false
+        ) {
+            if loadedMovieTime(studio.time) <= 0.02 {
+                pausePlayback()
+                return
+            }
+            player.rate = next
+            studio.isPlaying = true
+            model.shuttleRate = next
+        } else {
+            pausePlayback()
+            let step = max(0.25, 1.0 / Double(studio.project.resolvedFramesPerSecond))
+            seek(toRecordingTime: studio.time - step)
+            model.reveal(studio.time)
+        }
+    }
+
+    /// `,` / `.` single-frame step, pausing playback first.
+    func stepFrame(forward: Bool) {
+        guard !studio.compositionFailed, studio.composition != nil else { return }
+        pausePlayback()
+        let delta = 1.0 / Double(studio.project.resolvedFramesPerSecond)
+        seek(toRecordingTime: studio.time + (forward ? delta : -delta))
+        model.reveal(studio.time)
     }
 
     /// Shows the recording at `time` (its seconds; a time inside a cut shows the cut's end).
     func seek(toRecordingTime time: Double) {
         let clamped = min(max(time, 0), studio.duration)
         studio.time = clamped
-        player.seek(to: CMTime(seconds: studio.movieTime(clamped), preferredTimescale: 6_000), toleranceBefore: .zero, toleranceAfter: .zero)
+        player.seek(to: CMTime(seconds: loadedMovieTime(clamped), preferredTimescale: 6_000), toleranceBefore: .zero, toleranceAfter: .zero)
     }
 
     private func playerMoved(to movieTime: Double) {
-        guard player.rate > 0 else { return }
-        studio.time = studio.recordingTime(movieTime)
-        if let composition = studio.composition, movieTime >= composition.duration - 0.02 {
-            player.pause()
-            studio.isPlaying = false
+        guard player.rate != 0 else { return }
+        studio.time = loadedRecordingTime(movieTime)
+        if player.rate > 0, let composition = studio.composition, movieTime >= composition.duration - 0.02 {
+            pausePlayback()
+        } else if player.rate < 0, movieTime <= 0.02 {
+            pausePlayback()
         }
+    }
+
+    /// Maps a recording time onto the `AVPlayerItem` currently loaded in `player` (whose cuts or speeds may
+    /// briefly lag `studio.project` during a debounced rebuild while an edge is dragged).
+    private func loadedMovieTime(_ recordingTime: Double) -> Double {
+        guard let segments = studio.composition?.segments, !segments.isEmpty else {
+            return studio.movieTime(recordingTime)
+        }
+        return StudioComposition.movieTime(forSource: recordingTime, in: segments)
+    }
+
+    private func loadedRecordingTime(_ movieTime: Double) -> Double {
+        guard let segments = studio.composition?.segments, !segments.isEmpty else {
+            return studio.recordingTime(movieTime)
+        }
+        return StudioComposition.sourceTime(movieTime, in: segments)
     }
 
     /// Plays the newest composition from where the preview was.
@@ -204,14 +283,129 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             let message = item.error?.localizedDescription ?? String(localized: "The recording couldn’t be read", bundle: .module)
             Task { @MainActor [weak self] in
                 guard let self, self.studio.compositionGeneration == generation else { return }
-                self.player.pause()
+                self.pausePlayback()
                 self.studio.previewFailed(message)
             }
         }
-        let wasPlaying = player.rate > 0
+        let previousRate = player.rate
         player.replaceCurrentItem(with: item)
-        player.seek(to: CMTime(seconds: studio.movieTime(studio.time), preferredTimescale: 6_000), toleranceBefore: .zero, toleranceAfter: .zero)
-        if wasPlaying { player.play() }
+        player.seek(to: CMTime(seconds: loadedMovieTime(studio.time), preferredTimescale: 6_000), toleranceBefore: .zero, toleranceAfter: .zero)
+        if previousRate > 0 {
+            player.rate = previousRate
+            model.shuttleRate = previousRate
+        } else if previousRate < 0 {
+            pausePlayback()
+        }
+    }
+
+    // MARK: Keyboard
+
+    /// Window-level timeline shortcuts active whenever focus is not in a text field, so clicking transport
+    /// or inspector controls never breaks arrow seeking, Option-arrow edit navigation, J/K/L shuttle,
+    /// comma/period frame stepping, Command zoom, I/O marking, or Delete.
+    private func handleKeyDown(_ event: NSEvent) -> Bool {
+        guard let window, window.attachedSheet == nil, model.progress == nil else { return false }
+        guard !(window.firstResponder is NSText) else { return false }
+        let modifiers = event.modifierFlags.intersection([.command, .control, .option, .shift])
+
+        if modifiers == .command || modifiers == [.command, .shift] {
+            let char = event.charactersIgnoringModifiers
+            if char == "=" || char == "+" || event.keyCode == 24 || event.keyCode == 69 {
+                model.requestTimelineZoom(.zoomIn)
+                return true
+            }
+            if modifiers == .command, char == "-" || event.keyCode == 27 || event.keyCode == 78 {
+                model.requestTimelineZoom(.zoomOut)
+                return true
+            }
+            if modifiers == .command, char == "0" || event.keyCode == 29 || event.keyCode == 82 {
+                model.requestTimelineZoom(.reset)
+                return true
+            }
+        }
+
+        guard !modifiers.contains(.command), !modifiers.contains(.control) else { return false }
+
+        switch event.keyCode {
+        case 123, 124:
+            let forward = event.keyCode == 124
+            if modifiers == .option {
+                chooseAdjacent(forward: forward)
+                return true
+            }
+            if modifiers.isEmpty || modifiers == .shift {
+                // Yield plain/Shift arrow keys to the zoom target overlay while it has keyboard focus.
+                guard !model.isAimingFocused else { return false }
+                let step = modifiers.contains(.shift) ? 1.0 : 0.1
+                seek(toRecordingTime: studio.time + (forward ? step : -step))
+                model.reveal(studio.time)
+                return true
+            }
+            return false
+        case 51, 117:
+            guard modifiers.isEmpty else { return false }
+            if !event.isARepeat { studio.deleteSelection() }
+            return true
+        case 53:
+            guard modifiers.isEmpty, studio.selection != .none else { return false }
+            if !event.isARepeat { studio.selection = .none }
+            return true
+        default:
+            break
+        }
+
+        if modifiers.isEmpty || modifiers == .shift, let key = event.charactersIgnoringModifiers?.lowercased() {
+            if key == "i" || key == "o" {
+                if !event.isARepeat { mark(start: key == "i") }
+                return true
+            }
+            if modifiers.isEmpty {
+                switch key {
+                case "j":
+                    if !event.isARepeat || player.currentItem?.canPlayReverse != true { shuttleReverse() }
+                    return true
+                case "k":
+                    if !event.isARepeat { pausePlayback() }
+                    return true
+                case "l":
+                    if !event.isARepeat { shuttleForward() }
+                    return true
+                case ",":
+                    stepFrame(forward: false)
+                    return true
+                case ".":
+                    stepFrame(forward: true)
+                    return true
+                default:
+                    break
+                }
+            }
+        }
+        return false
+    }
+
+    /// Option-arrows reach every edit, including edits outside the current viewport, without using a mouse.
+    func chooseAdjacent(forward: Bool) {
+        let items = StudioTimelineNavigation.items(
+            zooms: studio.project.zooms, cuts: studio.project.cuts,
+            layouts: studio.canChangeLayoutAlongTheTimeline ? studio.project.cameraSegments : [],
+            speeds: studio.project.speeds
+        )
+        guard let chosen = StudioTimelineNavigation.adjacent(
+            in: items, selection: studio.selection, time: studio.time, forward: forward
+        ) else { return }
+        studio.selection = chosen.selection
+        seek(toRecordingTime: chosen.start)
+        model.reveal(chosen.start)
+    }
+
+    /// I chooses a stretch from the playhead (to the end of the one chosen, or of the recording); O to it.
+    func mark(start: Bool) {
+        let now = studio.time
+        let range = studio.selectedRange
+        let lower = start ? now : (range?.lowerBound ?? 0)
+        let upper = start ? (range?.upperBound ?? studio.duration) : now
+        studio.selection = upper - lower > StudioDocument.shortestCut ? .range(lower...upper) : .none
     }
 
     // MARK: Keeping
@@ -241,9 +435,11 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         Task { () -> URL? in
             // What the movie is made from: a change made while it is made waits for the next export.
             let project = studio.project
+            model.exportLabel = nil
             model.progress = 0
             defer {
                 model.progress = nil
+                model.exportLabel = nil
                 // Cleared here, before anyone waiting hears the result, so none of them finds it still running.
                 exporting = nil
                 actions.progress(nil)
@@ -264,6 +460,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
                 try Task.checkCancellation()
                 let url = try actions.keep(movie, project)
                 if studio.project == project { studio.markExported() }
+                cancelledExportProject = nil
                 exported = url
                 return url
             } catch {
@@ -324,6 +521,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             guard let url = await exportIfNeeded() else { return }
             actions.copy(url)
             model.flashCopied()
+            VoiceOver.announce(String(localized: "Copied", bundle: .module), from: window)
         }
     }
 
@@ -333,6 +531,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
             guard let url = await exportIfNeeded() else { return }
             guard saveCopy(url) != nil else { return NSSound.beep() }
             model.flashSaved()
+            VoiceOver.announce(String(localized: "Saved", bundle: .module), from: window)
         }
     }
 
@@ -356,11 +555,48 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
                 switch result {
                 case .saved(_):
                     model.flashSaved()
+                    VoiceOver.announce(String(localized: "Saved", bundle: .module), from: window)
                 case .failed(let failure):
                     fail(failure)
                 case .cancelled:
                     break
                 }
+            }
+        }
+    }
+
+    /// Exports a self-contained `.omsstudio` project package containing the recorded movie, telemetry, project
+    /// settings, and any sidecar assets so the project can be archived, shared, or reopened later.
+    func exportProjectPackage() {
+        guard makingGIF == nil, exporting == nil else { return NSSound.beep() }
+        guard let window else { return }
+        Task {
+            do {
+                try await studio.flushSave()
+            } catch {
+                fail(error, title: String(localized: "The project package couldn’t be exported", bundle: .module))
+                return
+            }
+            let panel = NSSavePanel()
+            panel.nameFieldStringValue = "\(window.title).\(StudioPackage.fileExtension)"
+            panel.allowedContentTypes = [StudioPackage.contentType]
+            guard await panel.beginSheetModal(for: window) == .OK, let destination = panel.url else { return }
+            let sourceMovie = studio.source
+            let studioFolder = studio.folder
+            let project = studio.project
+            do {
+                try await Task.detached(priority: .userInitiated) {
+                    try StudioPackage.export(
+                        sourceMovie: sourceMovie,
+                        studioFolder: studioFolder,
+                        project: project,
+                        to: destination
+                    )
+                }.value
+                model.flashSaved()
+                VoiceOver.announce(String(localized: "Saved", bundle: .module), from: window)
+            } catch {
+                fail(error, title: String(localized: "The project package couldn’t be exported", bundle: .module))
             }
         }
     }
@@ -441,6 +677,7 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     /// changes wait for the next export.
     public func cancelExport() {
         cancelled = true
+        cancelledExportProject = studio.project
         exporting?.cancel()
     }
 
@@ -453,11 +690,39 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     /// open with its unsaved state and Retry action; exported movies never stand in for the editable project.
     public func closeIfSaved(then done: @escaping (Bool) -> Void) {
         guard !finishedClosing else { return done(true) }
+        if cancelledExportProject == studio.project { skipExportOnClose = true }
         closeCompletions.append(done)
         if !didClose { prepareClose() }
     }
 
     public func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard preparingToClose == nil, !didClose else { return false }
+        if studio.hasUnexportedChanges, cancelledExportProject == studio.project, !skipExportOnClose {
+            let alert = NSAlert()
+            alert.alertStyle = .informational
+            alert.messageText = String(localized: "Close without exporting?", bundle: .module)
+            alert.informativeText = String(localized: "Your project edits are saved and can be exported whenever you reopen this recording from Capture History.", bundle: .module)
+            alert.addButton(withTitle: String(localized: "Close Without Exporting", bundle: .module))
+            alert.addButton(withTitle: String(localized: "Export and Close", bundle: .module))
+            alert.addButton(withTitle: String(localized: "Cancel", bundle: .module))
+            alert.beginSheetModal(for: sender) { [weak self] response in
+                MainActor.assumeIsolated {
+                    guard let self else { return }
+                    switch response {
+                    case .alertFirstButtonReturn:
+                        self.skipExportOnClose = true
+                        self.prepareClose()
+                    case .alertSecondButtonReturn:
+                        self.cancelledExportProject = nil
+                        self.skipExportOnClose = false
+                        self.prepareClose()
+                    default:
+                        break
+                    }
+                }
+            }
+            return false
+        }
         prepareClose()
         return false
     }
@@ -481,15 +746,15 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
         didClose = true
         let gif = makingGIF
         gif?.cancel()
-        player.pause()
-        studio.isPlaying = false
-        guard gif != nil || studio.hasUnexportedChanges else { return finishClosing() }
+        pausePlayback()
+        let shouldExport = studio.hasUnexportedChanges && !skipExportOnClose
+        guard gif != nil || shouldExport else { return finishClosing() }
         // A GIF being made stops and removes its files first, so closing (and quitting, which waits for it) leaves nothing
         // of it behind and its end doesn't touch the export's progress. The movie is exported after the window has gone, as
         // the editor keeps marks; the menu bar shows how far along.
         Task {
             await gif?.value
-            if studio.hasUnexportedChanges { _ = await exportIfNeeded() }
+            if studio.hasUnexportedChanges, !skipExportOnClose { _ = await exportIfNeeded() }
             finishClosing()
         }
     }
@@ -758,18 +1023,70 @@ public final class StudioWindowController: NSWindowController, NSWindowDelegate 
     #endif
 }
 
+/// Window subclass forwarding key-down events to the controller for window-level timeline shortcuts.
+private final class StudioWindow: NSWindow {
+    var onKeyDown: ((NSEvent) -> Bool)?
+
+    override func sendEvent(_ event: NSEvent) {
+        if event.type == .keyDown, onKeyDown?(event) == true { return }
+        super.sendEvent(event)
+    }
+}
+
+/// Pure `J`/`K`/`L` shuttle playback rate transitions, testable without an active `AVPlayer`.
+nonisolated enum StudioShuttle {
+    /// Steps forward shuttle speed: paused or reverse -> `1×`, `1×` -> `2×`, `2×` -> `4×`, clamped at `4×`.
+    static func nextForwardRate(from current: Float) -> Float {
+        if current < 0.5 { return 1 }
+        if current < 1.5 { return 2 }
+        return 4
+    }
+
+    /// Steps reverse shuttle speed when supported: paused or forward -> `−1×`, `−1×` -> `−2×` (when fast reverse is supported).
+    /// Returns `nil` when reverse playback isn't supported so callers fall back to stepping backward.
+    static func nextReverseRate(from current: Float, canPlayReverse: Bool, canPlayFastReverse: Bool) -> Float? {
+        guard canPlayReverse else { return nil }
+        if current > -0.5 { return -1 }
+        return canPlayFastReverse ? -2 : -1
+    }
+}
+
 /// What the window's toolbar and overlay show.
 @Observable
 final class StudioWindowModel {
+    enum TimelineZoomAction: Equatable {
+        case zoomIn
+        case zoomOut
+        case reset
+    }
+
     weak var controller: StudioWindowController?
     /// How far along an export or a GIF is, from 0 to 1; nil while none runs.
     var progress: Double?
+    /// Optional label override shown under the progress bar; nil falls back to "Exporting…" or "Making the GIF…".
+    var exportLabel: String?
     /// What runs is a GIF being made, rather than an export.
     var makesGIF = false
+    /// Signals the timeline viewport to reveal `time` after a window-level keyboard seek or navigation.
+    var revealRequest: (id: Int, time: Double)?
+    /// Signals the timeline viewport to zoom in, zoom out, or reset from keyboard shortcuts (`⌘=`, `⌘-`, `⌘0`).
+    var timelineZoomRequest: (id: Int, action: TimelineZoomAction)?
+    /// Current playback shuttle rate (`0` when paused, `1`/`2`/`4` forward, `-1`/`-2` reverse).
+    var shuttleRate: Float = 0
+    /// Whether `StudioZoomAim` currently holds keyboard focus so arrow keys nudge the target instead of seeking.
+    var isAimingFocused = false
     var copied = false
     var saved = false
     @ObservationIgnored private var copiedReset: Task<Void, Never>?
     @ObservationIgnored private var savedReset: Task<Void, Never>?
+
+    func reveal(_ time: Double) {
+        revealRequest = ((revealRequest?.id ?? 0) + 1, time)
+    }
+
+    func requestTimelineZoom(_ action: TimelineZoomAction) {
+        timelineZoomRequest = ((timelineZoomRequest?.id ?? 0) + 1, action)
+    }
 
     func flashCopied() {
         copied = true

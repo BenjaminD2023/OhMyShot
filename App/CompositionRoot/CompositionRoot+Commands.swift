@@ -37,17 +37,29 @@ extension CompositionRoot {
         case .openFromClipboard:
             annotateClipboard()
             return
-        case .controlQuickAccess:
-            quickAccess.focusLatest()
-            return
         case .pinFromClipboard:
             pinClipboard()
             return
+        case .recognizeClipboard:
+            textCapture.openClipboardImage()
+            return
         case .togglePins:
-            pins.setHidden(!pins.areHidden)
+            if pins.isEmpty { NSSound.beep() } else { pins.setHidden(!pins.areHidden) }
             return
         case .restoreRecentlyClosed:
-            quickAccess.restoreRecentlyClosed()
+            if quickAccess.canRestoreRecentlyClosed { quickAccess.restoreRecentlyClosed() } else { NSSound.beep() }
+            return
+        case .toggleDesktopIcons:
+            setDesktopIconsHidden(!settings.hidesDesktopIcons)
+            return
+        case .pauseRecording:
+            recordings.togglePause()
+            return
+        case .toggleRecordingMicrophone:
+            recordings.toggleMicrophoneMute()
+            return
+        case .controlQuickAccess:
+            quickAccess.focusLatest()
             return
         case .drawOnScreen:
             // Drawn over the screen, not taken from it: no Screen Recording needed.
@@ -64,6 +76,18 @@ extension CompositionRoot {
             showOnboarding()
             return
         }
+        // Pressing the active capture mode's shortcut again toggles the overlay off; pressing a different capture
+        // shortcut switches straight to the new mode without requiring Escape first.
+        let trackerKey = ObjectIdentifier(self)
+        if overlay.isActive {
+            let previous = OverlayShortcutTracker.active[trackerKey]
+            overlay.cancel()
+            OverlayShortcutTracker.active[trackerKey] = nil
+            if previous == shortcut {
+                return
+            }
+        }
+        OverlayShortcutTracker.active[trackerKey] = Self.opensOverlay(shortcut) ? shortcut : nil
         switch shortcut {
         case .captureArea:
             captures.captureArea(includingLauncherWindowID: launcherWindowID)
@@ -212,6 +236,33 @@ extension CompositionRoot {
             } else {
                 textCapture.captureFormula()
             }
+        case .annotateArea(let region):
+            guard let area = area(of: region) else { return }
+            captures.cancelSelfTimer()
+            if let area {
+                guard let followUp = followUp(doing: .annotate) else { return }
+                captures.captureArea(at: area, followUp: followUp)
+            } else {
+                captures.annotateArea()
+            }
+        case .translateArea(let region):
+            guard let area = area(of: region) else { return }
+            captures.cancelSelfTimer()
+            if let area {
+                Task { await textCapture.translate(region: area, frozen: nil, inPanel: false) }
+            } else {
+                textCapture.translateArea()
+            }
+        case .pickColor:
+            captures.cancelSelfTimer()
+            colorPicker.pickColor()
+        case .measure:
+            captures.cancelSelfTimer()
+            measurer.measure()
+        case .drawOnScreen:
+            sketch.toggle()
+        case .saveReplay:
+            if #available(macOS 27, *) { replay?.save() }
         case .openAnnotate(let file):
             if let file { open([file]) } else { chooseFilesToAnnotate() }
         case .openFromClipboard:
@@ -311,6 +362,25 @@ extension CompositionRoot {
             NSSound.beep()
         }
     }
+
+    private static func opensOverlay(_ shortcut: CaptureShortcut) -> Bool {
+        switch shortcut {
+        case .captureArea, .allInOne, .annotateArea, .pinArea, .captureAreaAndCopy, .captureAreaAndSave,
+             .captureAreaAndAnnotate, .captureAreaAndUpload, .captureWindow, .selfTimer,
+             .captureText, .captureTextJoined, .captureFormula, .translateArea,
+             .pickColor, .measure, .recordScreen, .scrollingCapture:
+            true
+        default:
+            false
+        }
+    }
+}
+
+/// Tracks which capture shortcut opened the currently active selection overlay so pressing the same shortcut
+/// toggles it off while pressing another capture shortcut switches directly to the new mode.
+@MainActor
+private enum OverlayShortcutTracker {
+    static var active: [ObjectIdentifier: CaptureShortcut] = [:]
 }
 
 extension AutomationCommand {
@@ -345,6 +415,12 @@ extension AutomationCommand {
         case .openHistory: "openHistory"
         case .restoreRecentlyClosed: "restoreRecentlyClosed"
         case .openSettings: "openSettings"
+        case .annotateArea: "annotateArea"
+        case .translateArea: "translateArea"
+        case .pickColor: "pickColor"
+        case .measure: "measure"
+        case .drawOnScreen: "drawOnScreen"
+        case .saveReplay: "saveReplay"
         }
     }
 }

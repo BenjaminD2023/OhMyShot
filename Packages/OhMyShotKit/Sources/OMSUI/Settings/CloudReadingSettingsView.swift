@@ -3,7 +3,8 @@ import OMSCore
 import SwiftUI
 
 /// Settings › Text › Cloud reading: the service whose model reads pictures this Mac reads poorly, set up in place
-/// (model, address, key), where it reads by itself, and a Test. Off by default; Off again removes the model and its key.
+/// (model, address, key), where it reads by itself, and a Test. Switching services or turning Off preserves each
+/// service's Keychain key; Clear removes the active service's saved key explicitly.
 struct CloudReadingRow: View {
     let store: CloudModelStore
     /// Its group's help, when it heads the group (without model packs to show before it).
@@ -13,14 +14,8 @@ struct CloudReadingRow: View {
     @State private var problem: String?
     @State private var test = SettingsTestState.idle
     @State private var testTask: Task<Void, Never>?
-    /// A service chosen in place of one whose key is saved, until the person says to delete the key.
-    @State private var pending: Pending?
+    @State private var confirmingClearKey = false
     @FocusState private var keyFocused: Bool
-
-    struct Pending: Identifiable {
-        let id = UUID()
-        let preset: CloudModel.Preset?
-    }
 
     /// Its part of its group's help: what cloud reading is, and, with a model set up, what its switches and Test do.
     static func help(store: CloudModelStore) -> [HelpTopic] {
@@ -59,13 +54,15 @@ struct CloudReadingRow: View {
         .onAppear { draft = store.model }
         #if DEBUG
         .onReceive(NotificationCenter.default.publisher(for: .debugOpenCloudSwitch)) { _ in
-            if store.model != nil { pending = Pending(preset: nil) }
+            if store.hasKey { confirmingClearKey = true }
         }
         #endif
         .onChange(of: store.model?.id) {
             draft = store.model
             key = ""
             problem = nil
+            testTask?.cancel()
+            testTask = nil
             test = .idle
         }
         .onChange(of: draft) {
@@ -74,20 +71,19 @@ struct CloudReadingRow: View {
         }
         .onChange(of: keyFocused) { if !keyFocused { saveKey() } }
         .confirmationDialog(
-            pending.map { pending in
-                pending.preset.map { Text("Switch to \($0.title)?", bundle: .module) } ?? Text("Turn off cloud reading?", bundle: .module)
-            } ?? Text(verbatim: ""),
-            isPresented: Binding(get: { pending != nil }, set: { if !$0 { pending = nil } }),
-            titleVisibility: .visible,
-            presenting: pending
-        ) { pending in
+            Text("Remove saved API key?", bundle: .module),
+            isPresented: $confirmingClearKey,
+            titleVisibility: .visible
+        ) {
             Button(role: .destructive) {
-                store.choose(pending.preset)
+                store.clearKey()
+                key = ""
+                test = .idle
             } label: {
-                pending.preset == nil ? Text("Turn Off", bundle: .module) : Text("Switch", bundle: .module)
+                Text("Remove Key", bundle: .module)
             }
-        } message: { _ in
-            Text("The API key saved for \(store.model?.displayName ?? "") is deleted from the Keychain.", bundle: .module)
+        } message: {
+            Text("The API key saved for \(store.model?.displayName ?? "") will be deleted from the Keychain.", bundle: .module)
         }
         .onDisappear {
             saveKey()
@@ -95,14 +91,13 @@ struct CloudReadingRow: View {
         }
     }
 
-    /// Another service, or Off, deletes the saved key: the person is asked first.
+    /// Switches services or turns cloud reading Off while keeping each service's Keychain key intact.
     private func choose(_ preset: CloudModel.Preset?) {
         guard preset != store.model?.preset || (preset == nil) != (store.model == nil) else { return }
-        if store.hasKey {
-            pending = Pending(preset: preset)
-        } else {
-            store.choose(preset)
-        }
+        saveKey()
+        testTask?.cancel()
+        testTask = nil
+        store.choose(preset)
     }
 
     @ViewBuilder private func fields(_ model: CloudModel) -> some View {
@@ -138,6 +133,13 @@ struct CloudReadingRow: View {
                             .foregroundStyle(.secondary)
                             .help(Text("Saved in the Keychain. Type a new key to replace it.", bundle: .module))
                             .accessibilityHidden(true)
+                        Button {
+                            confirmingClearKey = true
+                        } label: {
+                            Text("Clear", bundle: .module)
+                        }
+                        .controlSize(.small)
+                        .help(Text("Remove saved API key from the Keychain", bundle: .module))
                     }
                 }
             }
@@ -195,7 +197,13 @@ struct CloudReadingRow: View {
     }
 
     private func testRow(_ model: CloudModel) -> some View {
-        SettingsTestRow(state: test, title: Text("Test", bundle: .module)) { runTest(model) }
+        SettingsTestRow(state: test, title: Text("Test", bundle: .module), cancel: cancelTest) { runTest(model) }
+    }
+
+    private func cancelTest() {
+        testTask?.cancel()
+        testTask = nil
+        test = .idle
     }
 
     private func runTest(_ model: CloudModel) {
@@ -205,7 +213,10 @@ struct CloudReadingRow: View {
         }
         guard let picture = CloudReader.testPicture() else { return }
         test = .running
-        let reader = CloudReader(secrets: store.secrets(typing: key, for: model))
+        let reader = CloudReader(
+            secrets: store.secrets(typing: key, for: model),
+            sessionConfiguration: CloudReader.testConfiguration
+        )
         testTask?.cancel()
         testTask = Task {
             let started = ContinuousClock.now

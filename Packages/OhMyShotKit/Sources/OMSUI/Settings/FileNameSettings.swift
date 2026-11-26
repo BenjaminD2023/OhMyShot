@@ -47,6 +47,29 @@ struct FileNameSettings: View {
                 tray
             }
             box
+            HStack(spacing: 8) {
+                Button {
+                    editsAsText.toggle()
+                } label: {
+                    editsAsText ? Text("Edit as Bricks", bundle: .module) : Text("Edit as Text", bundle: .module)
+                }
+                Button {
+                    change { $0 = FilenameTemplate.standard.pieces }
+                } label: {
+                    Text("Restore Default", bundle: .module)
+                }
+                .disabled(settings.fileNamePattern == FilenameTemplate.standard.pattern)
+                if settings.fileNameTemplate.usesCounter {
+                    Button {
+                        settings.resetFileCounter()
+                    } label: {
+                        Text("Reset Counter", bundle: .module)
+                    }
+                    .disabled(settings.nextFileNumber <= 1)
+                    .help(Text("Reset the file counter back to 1.", bundle: .module))
+                }
+            }
+            .controlSize(.small)
             // The time moves on, so the preview is read again every second while the pane is open. It always takes
             // three lines' room, so the rows under it stay put as the name grows and shrinks.
             TimelineView(.periodic(from: .now, by: 1)) { context in

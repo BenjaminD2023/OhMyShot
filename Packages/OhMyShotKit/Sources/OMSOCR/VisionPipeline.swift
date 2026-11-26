@@ -60,6 +60,12 @@ public struct VisionPipeline: OCREngine {
 
     private static let english = [Locale.Language(identifier: "en-US")]
 
+    /// Whether the primary pass uses Apple's CJK model (Chinese or Japanese), which benefits from a
+    /// whole-page Latin companion pass for pure-English pages, code blocks, and English lines.
+    var primaryIsCJK: Bool {
+        options.primaryLanguages.first.map { $0.languageCode == .chinese || $0.languageCode == .japanese } ?? false
+    }
+
     /// The characters that show a page holds Chinese or Japanese. Not those of a stroke or two, which the Chinese
     /// model makes of ASCII dashes, bars and letters ("-rw-r--r--" read as "ーIW-KーーKーー"): counted, they kept a
     /// terminal's listing from the Latin model.
@@ -87,6 +93,19 @@ public struct VisionPipeline: OCREngine {
     @concurrent
     public func recognize(fileAt url: URL) async throws -> OCRResult {
         try await withTimeout(options.overallTimeout) { try await recognizeFile(at: url) }
+    }
+
+    /// Builds a `TextAnalysis` reusing already-recognized `lines` (skipping redundant Vision text OCR),
+    /// while still detecting QR codes and barcodes in `image` for the Recognized Text panel.
+    @concurrent
+    public func analysis(reusing lines: [OCRLine], in image: CGImage) async throws -> TextAnalysis {
+        try Task.checkCancellation()
+        let ordered = ReadingOrder.sorted(lines)
+        let text = TextAssembler.assemble(ordered, options: options.assembly)
+        let result = OCRResult(lines: ordered, text: text, duration: .zero)
+        let codes = (try? await Self.selectionCodes(in: image, timeout: options.timeout)) ?? []
+        try Task.checkCancellation()
+        return TextAnalysis(result: result, tables: [], codes: codes)
     }
 
     private func recognizeFile(at url: URL) async throws -> OCRResult {
@@ -156,7 +175,7 @@ public struct VisionPipeline: OCREngine {
             of: lines + wholes.map { OCRLine(text: "", box: $0, confidence: 1) },
             in: CGSize(width: image.width, height: image.height)
         )
-        let latin = groups.allSatisfy { group in group.allSatisfy { !Script.containsCJK(lines[$0].text) } }
+        let latin = primaryIsCJK && groups.allSatisfy { group in group.allSatisfy { !Script.containsCJK(lines[$0].text) } }
         let found = try await readStrips(of: crops, in: image, languages: latin ? Self.english : options.primaryLanguages)
         var replaced = Set<Int>()
         var whole: [OCRLine] = []
@@ -187,7 +206,7 @@ public struct VisionPipeline: OCREngine {
             of: lines + cuts.map { OCRLine(text: "", box: $0.stretch, confidence: 1) },
             in: CGSize(width: image.width, height: image.height)
         )
-        let latin = cuts.allSatisfy { !Script.containsCJK(lines[$0.line].text) }
+        let latin = primaryIsCJK && cuts.allSatisfy { !Script.containsCJK(lines[$0.line].text) }
         let found = try await readStrips(of: crops, in: image, languages: latin ? Self.english : options.primaryLanguages)
         var lines = lines
         var completed = 0
@@ -231,41 +250,59 @@ public struct VisionPipeline: OCREngine {
             mark = now
         }
         // Finish the primary model before starting other requests: simultaneous model initialization
-        // can stall Vision. The Latin reading still serves both English pages and English lines in CJK.
+        // can stall Vision. When the primary model is CJK, a whole-page Latin pass also serves pure
+        // English pages and English lines inside CJK pages. When the user chose another script
+        // (Korean, Russian, Arabic, European Latin, or English alone), keep that primary reading
+        // intact instead of overwriting it with English.
         options.trace?("primary pass started")
         var lines = try await readLines(in: image, languages: options.primaryLanguages)
-        async let latinPage = readLines(in: image, languages: Self.english)
-        async let detected = textRectangles(in: image)
-        let latin = (try? await latinPage) ?? []
-        let rectangles = try await detected
+        var fallbacks = options.fallbackLanguages
+        let latin: [OCRLine]
+        let rectangles: [CGRect]
+        if primaryIsCJK {
+            async let latinPage = readLines(in: image, languages: Self.english)
+            async let detected = textRectangles(in: image)
+            latin = (try? await latinPage) ?? []
+            rectangles = try await detected
+        } else {
+            latin = []
+            rectangles = fallbacks.isEmpty ? [] : try await textRectangles(in: image)
+        }
         lap("first pass")
 
-        // Text that is all but free of CJK (a stray misread glyph aside) reads better with the Latin
-        // model: English UI, code. It cannot be the first pass: next to CJK its text detection misses
-        // whole lines.
-        let all = lines.flatMap(\.text).filter { !$0.isWhitespace }
-        let cjk = Self.cjkCount(all)
-        var fallbacks = options.fallbackLanguages
         var readByLatinModel = false
-        options.trace?("  decision: \(cjk) CJK of \(all.count) characters; Latin page read \(characterCount(latin)) against \(characterCount(lines))")
-        if !all.isEmpty, cjk <= 2, Double(cjk) < Double(all.count) * 0.05,
-           characterCount(latin) >= characterCount(lines) * 4 / 5 {
-            lines = latin
-            readByLatinModel = true
-            // The Latin model drops the odd Chinese word (a name, a file name); let the primary model have
-            // the regions it leaves empty first.
-            fallbacks.insert(options.primaryLanguages, at: 0)
+        if primaryIsCJK {
+            // Text that is all but free of CJK (a stray misread glyph aside) reads better with the Latin
+            // model: English UI, code. It cannot be the first pass: next to CJK its text detection misses
+            // whole lines.
+            let all = lines.flatMap(\.text).filter { !$0.isWhitespace }
+            let cjk = Self.cjkCount(all)
+            options.trace?("  decision: \(cjk) CJK of \(all.count) characters; Latin page read \(characterCount(latin)) against \(characterCount(lines))")
+            if !all.isEmpty, cjk <= 2, Double(cjk) < Double(all.count) * 0.05,
+               characterCount(latin) >= characterCount(lines) * 4 / 5 {
+                lines = latin
+                readByLatinModel = true
+                // The Latin model drops the odd Chinese word (a name, a file name); let the primary model have
+                // the regions it leaves empty first.
+                fallbacks.insert(options.primaryLanguages, at: 0)
+            }
         }
 
-        lines = try await fillGaps(in: image, lines: lines, rectangles: rectangles, fallbacks: fallbacks, page: latin)
+        lines = try await fillGaps(
+            in: image, lines: lines, rectangles: rectangles, fallbacks: fallbacks,
+            page: latin, hasLatinPage: primaryIsCJK
+        )
         lap("gaps")
         let gutter = LineNumbers.removed(from: lines) { InkProfile(image: image, box: $0) }
-        lines = try await rereadCodeWithLatinModel(in: image, lines: gutter.lines, rightOf: gutter.end)
-        lap("code")
-        if !readByLatinModel {
-            lines = try await readLatinLines(lines, page: latin, in: image)
+        lines = gutter.lines
+        if primaryIsCJK {
+            lines = try await rereadCodeWithLatinModel(in: image, lines: lines, rightOf: gutter.end)
+            lap("code")
+            if !readByLatinModel {
+                lines = try await readLatinLines(lines, page: latin, in: image)
+            }
+            lap("latin lines")
         }
-        lap("latin lines")
         lines = inferLoneBrackets(in: lines, image: image)
         lap("lone brackets")
         return lines
@@ -367,14 +404,15 @@ public struct VisionPipeline: OCREngine {
     /// instead of asking again: on the benchmark and the real screenshots, no region it read again was
     /// ever kept, and each such request cost 20–120 ms.
     private func fillGaps(
-        in image: CGImage, lines: [OCRLine], rectangles: [CGRect], fallbacks: [[Locale.Language]], page: [OCRLine]
+        in image: CGImage, lines: [OCRLine], rectangles: [CGRect], fallbacks: [[Locale.Language]],
+        page: [OCRLine], hasLatinPage: Bool
     ) async throws -> [OCRLine] {
         var lines = lines
         let size = CGSize(width: image.width, height: image.height)
         var gaps = padded(merged(rectangles.filter { isMissing($0, given: lines) }), in: size)
         for languages in fallbacks where !gaps.isEmpty {
             var remaining: [CGRect] = []
-            let reads = languages == Self.english
+            let reads = (hasLatinPage && languages == Self.english)
                 ? gaps.map { region in page.filter { overlapFraction(of: $0.box, in: region) > 0.5 } }
                 : try await readLines(in: image, languages: languages, regions: gaps)
             for (region, found) in zip(gaps, reads) {
@@ -966,17 +1004,46 @@ extension VisionPipeline.Options {
         fallbacks.append([english])
         return Self(primaryLanguages: [primary, english], fallbackLanguages: fallbacks)
     }
+
+    /// Options built from explicit user-configured BCP-47 language identifiers (for example `["ko-KR", "en-US"]`
+    /// or `["ru-RU", "en-US"]`). When `identifiers` is empty, falls back to automatic `.preferred(preferred)`.
+    public static func configured(_ identifiers: [String], fallback preferred: [String] = Locale.preferredLanguages) -> Self {
+        let english = Locale.Language(identifier: "en-US")
+        var seen = Set<String>()
+        var explicit: [Locale.Language] = []
+        for raw in identifiers {
+            let trimmed = raw.trimmingCharacters(in: .whitespacesAndNewlines)
+            guard !trimmed.isEmpty else { continue }
+            let language = Locale.Language(identifier: trimmed)
+            let key = language.minimalIdentifier.lowercased()
+            if seen.insert(key).inserted {
+                explicit.append(language)
+            }
+        }
+        guard let first = explicit.first else {
+            return .preferred(preferred)
+        }
+        var fallbacks: [[Locale.Language]] = []
+        for secondary in explicit.dropFirst() where secondary.languageCode != .english && secondary.minimalIdentifier != first.minimalIdentifier {
+            fallbacks.append([secondary, english])
+        }
+        if first.languageCode != .english {
+            fallbacks.append([english])
+        }
+        return Self(primaryLanguages: explicit, fallbackLanguages: fallbacks)
+    }
 }
 
 extension VisionPipeline {
-    /// Loads both models a recognition uses, the primary and the Latin, before the first real request by
-    /// reading a few rendered characters (a blank image might never reach the recognizer). Run it while
-    /// the person is still selecting. Warmups never queue behind recognition or repeat successful work.
-    /// - Returns: whether both models are warm, now or from before; false when a warmup couldn't run or finish.
+    /// Loads the recognition models a pass uses before the first real request by reading a few rendered
+    /// characters (a blank image might never reach the recognizer). Run it while the person is still
+    /// selecting. Warmups never queue behind recognition or repeat successful work.
+    /// - Returns: whether the models are warm, now or from before; false when a warmup couldn't run or finish.
     @concurrent @discardableResult
     public func prewarm() async -> Bool {
         guard let image = Self.warmupImage() else { return false }
-        for languages in [options.primaryLanguages, Self.english] {
+        let sets = primaryIsCJK ? [options.primaryLanguages, Self.english] : [options.primaryLanguages]
+        for languages in sets {
             do {
                 let warmed = try await RecognitionWarmup.shared.run(for: languages.map(\.minimalIdentifier)) {
                     var request = RecognizeTextRequest()
@@ -1059,7 +1126,7 @@ extension VisionPipeline {
         var found = [Int: [OCRLine]]()
         for batch in LineStrip.batches(of: crops) {
             guard let strip = LineStrip(source: image, crops: Array(crops[batch])) else { continue }
-            for read in try await readLines(in: strip.image, languages: latin ? Self.english : options.primaryLanguages) {
+            for read in try await readLines(in: strip.image, languages: (primaryIsCJK && latin) ? Self.english : options.primaryLanguages) {
                 if let row = strip.row(of: read.box) { found[batch.lowerBound + row, default: []].append(read) }
             }
         }

@@ -243,6 +243,18 @@ final class MeasureOverlay {
         redraw()
     }
 
+    /// Cancels an active box drag without closing the ruler, returning to live pointer lines.
+    func cancelBox() {
+        cancelAreaSnap()
+        boxStart = nil
+        box = nil
+        originalBox = nil
+        boxPixels = nil
+        capturePress = nil
+        queuedCapture = nil
+        redraw()
+    }
+
     /// Ends the drag: the box shrinks to what it holds, or stays as drawn around nothing but background.
     /// A plain click inside the finished box returns its local area to capture; it never reads the screen.
     /// A press outside without a drag clears the selection.
@@ -258,6 +270,7 @@ final class MeasureOverlay {
             }
             return box
         }
+
         defer {
             boxStart = nil
             redraw()
@@ -490,7 +503,7 @@ final class MeasureOverlay {
             toleranceReading.layer.isHidden = true
             return
         }
-        toleranceReading.text = String(localized: "Tolerance: \(tolerance.title) · T / + / −", bundle: .module)
+        toleranceReading.text = String(localized: "Tab Unit · ⌘C Copy · T Tolerance: \(tolerance.title)", bundle: .module)
         let readingSize = toleranceReading.layer.bounds.size
         toleranceReading.layer.frame.origin = clamped(CGPoint(x: (size.width - readingSize.width) / 2, y: 18), size: readingSize)
         toleranceReading.layer.isHidden = false
@@ -530,8 +543,8 @@ final class MeasureOverlay {
 
     private func clamped(_ origin: CGPoint, size readingSize: CGSize) -> CGPoint {
         CGPoint(
-            x: min(max(origin.x, 6), size.width - readingSize.width - 6),
-            y: min(max(origin.y, 6), size.height - readingSize.height - 6)
+            x: min(max(origin.x, 6), max(6, size.width - readingSize.width - 6)),
+            y: min(max(origin.y, 6), max(6, size.height - readingSize.height - 6))
         )
     }
 

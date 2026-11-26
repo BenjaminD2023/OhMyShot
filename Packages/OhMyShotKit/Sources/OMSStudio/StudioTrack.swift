@@ -120,7 +120,7 @@ nonisolated public struct StudioTrack: Sendable {
         var typingIndex = 0
         var lastTyped = -Double.infinity
         let events = AutoZoom.events(in: telemetry)
-        let handovers = Self.samePlaceHandovers(for: zooms, events: events, samples: samples, width: width, height: height)
+        let handovers = Self.samePlaceHandovers(for: zooms, events: events, samples: samples, width: width, height: height, crop: project.crop)
 
         for frameIndex in 0..<count {
             if frameIndex.isMultiple(of: 512) { try checkCancellation() }
@@ -196,7 +196,7 @@ nonisolated public struct StudioTrack: Sendable {
             ))
         }
         try StudioFraming.place(
-            &frames, steady: steady, zooms: zooms, events: events, width: width, height: height, rate: rate,
+            &frames, steady: steady, zooms: zooms, events: events, width: width, height: height, crop: project.crop, rate: rate,
             checkCancellation: checkCancellation
         )
         try checkCancellation()
@@ -274,9 +274,12 @@ nonisolated public struct StudioTrack: Sendable {
     /// the camera pulls back instead of whipping across the recording.
     static func samePlaceHandovers(
         for zooms: [StudioProject.Zoom], events: [AutoZoom.Event], samples: [StudioTelemetry.Sample],
-        width: Double, height: Double
+        width: Double, height: Double, crop: CGRect? = nil
     ) -> [UUID: (before: Double, after: Double)] {
         guard zooms.count > 1, width > 0, height > 0 else { return [:] }
+        let activeCrop = StudioProject.normalizedCrop(crop) ?? CGRect(x: 0, y: 0, width: 1, height: 1)
+        let visibleWidth = width * Double(activeCrop.width)
+        let visibleHeight = height * Double(activeCrop.height)
         var edges: [UUID: (before: Double, after: Double)] = [:]
         func focusBounds(of zoom: StudioProject.Zoom, atEnd: Bool) -> (minX: Double, maxX: Double, minY: Double, maxY: Double) {
             // A zoom held on a spot frames that spot from start to end.
@@ -304,8 +307,8 @@ nonisolated public struct StudioTrack: Sendable {
                 let b = focusBounds(of: second, atEnd: false)
                 let spanX = max(a.maxX, b.maxX) - min(a.minX, b.minX)
                 let spanY = max(a.maxY, b.maxY) - min(a.minY, b.minY)
-                guard spanX + AutoZoom.margin * 2 <= width / shared + 1e-9,
-                      spanY + AutoZoom.margin * 2 <= height / shared + 1e-9 else { continue }
+                guard spanX + AutoZoom.margin * 2 <= visibleWidth / shared + 1e-9,
+                      spanY + AutoZoom.margin * 2 <= visibleHeight / shared + 1e-9 else { continue }
                 var firstEdge = edges[first.id] ?? (before: 1, after: 1)
                 firstEdge.after = max(firstEdge.after, shared)
                 edges[first.id] = firstEdge

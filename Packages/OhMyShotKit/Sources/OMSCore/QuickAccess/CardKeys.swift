@@ -36,6 +36,8 @@ public enum CardCommand: Equatable, Sendable {
     case moveToTrash
     /// Brings back the card moved to the Trash last, while it waits to go (`QuickAccessController`).
     case undoTrash
+    /// Gives the keyboard back to the app in front without closing the card.
+    case releaseKeyboard
     case close
     /// Every card of the stack.
     case saveAll
@@ -97,7 +99,7 @@ public enum CardKeys {
         // would throw a capture away.
         Binding(key: .delete, modifiers: .command, command: .moveToTrash),
         Binding(key: .character("z"), modifiers: .command, command: .undoTrash),
-        Binding(key: .escape, modifiers: [], command: .close),
+        Binding(key: .escape, modifiers: [], command: .releaseKeyboard),
         Binding(key: .character("w"), modifiers: .command, command: .close),
         Binding(key: .character("w"), modifiers: [.command, .option], command: .closeAll),
         Binding(key: .up, modifiers: [], command: .selectOlder),

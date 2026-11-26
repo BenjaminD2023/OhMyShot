@@ -206,13 +206,37 @@ struct TranslationUnitTests {
     }
 
     @Test func aTablesRowsAreLeftAsTheyAreOnTheImage() {
-        // A paragraph, then a table's rows (TableMerge): each row alone, left as on the image, which one run of text
-        // drawn across the table would cover.
+        // A paragraph, then a table's rows (TableMerge): each row alone, skipped as `.table` rather than `.code`,
+        // because one run of text drawn across the table would cover its cells.
         var rows = [line("Region\tQ1\tQ2", y: 60), line("North\tStrong growth\tSteady", y: 84)]
         for index in rows.indices { rows[index].isTableRow = true; rows[index].isExact = true }
         let units = TranslationUnits.group([line("The regions grew as follows.", y: 0, width: 300)] + rows)
         #expect(units.map(\.lines) == [[0], [1], [2]])
-        #expect(units.map(\.skip) == [nil, .code, .code])
+        #expect(units.map(\.skip) == [nil, .table, .table])
+    }
+
+    @Test func displayFormulasSkipAsFormulaNotCode() {
+        let display = OCRLine(text: #"$$E = mc^{2}$$"#, box: CGRect(x: 40, y: 60, width: 200, height: 40), confidence: 1, math: .display)
+        let prose = line("Einstein derived the relation.", y: 0, width: 300)
+        let units = TranslationUnits.group([prose, display])
+        #expect(units.map(\.skip) == [nil, .formula])
+    }
+
+    @Test func tableRowsAndDisplayFormulasKeepDistinctSkipReasonsBesideCode() {
+        var row = line("Key\tValue", y: 96)
+        row.isTableRow = true
+        row.isExact = true
+        let display = OCRLine(text: #"$$x = y + 1$$"#, box: CGRect(x: 20, y: 120, width: 200, height: 40), confidence: 1, math: .display)
+        let lines = [
+            line("let image = try await read(url)", y: 0),
+            line("let text = try await recognize(image)", y: 24),
+            line("return text", y: 48),
+            row,
+            display,
+        ]
+        #expect(TextAssembler.isCodeListing(lines))
+        let units = TranslationUnits.group(lines)
+        #expect(units.map(\.skip) == [.code, .code, .code, .table, .formula])
     }
 
     @Test func aUnitWithAFormulaSaysSo() {

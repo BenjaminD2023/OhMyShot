@@ -48,7 +48,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         // opening events a turn to arrive before deciding whether this was an ordinary launch.
         DispatchQueue.main.async { [weak self, weak root] in
             guard let self, let root, self.root === root, !receivedLaunchInput else { return }
-            root.presentOnboardingIfNeeded()
+            root.presentLaunchWindows()
         }
     }
 

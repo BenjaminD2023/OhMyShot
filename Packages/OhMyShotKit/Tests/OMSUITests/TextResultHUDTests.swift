@@ -1,4 +1,6 @@
 import AppKit
+import CoreGraphics
+import Foundation
 import OMSCore
 import Testing
 @testable import OMSUI
@@ -273,11 +275,48 @@ struct TextResultHUDTests {
         card.openInPanelButton.sendAction(card.openInPanelButton.action, to: card.openInPanelButton.target)
         #expect(opened == 1)
 
-        card.show(.empty)
+        card.show(.empty, canOpenInPanel: true)
+        #expect(!card.openInPanelButton.isHidden)
+        card.show(.noFormula, canOpenInPanel: true)
+        #expect(!card.openInPanelButton.isHidden)
+        card.show(.empty, canOpenInPanel: false)
         #expect(card.openInPanelButton.isHidden)
-        card.show(.noFormula)
+        card.show(.noFormula, canOpenInPanel: false)
         #expect(card.openInPanelButton.isHidden)
         card.show(.copiedFormula(latex: "x^2"))
         #expect(!card.openInPanelButton.isHidden)
+    }
+
+    @Test func translationLensLayoutHasFourButtonsAndBadgesMatchState() {
+        #expect(LensLayout.buttonCount == 4)
+        #expect(TranslationLens.badgeText(shortened: false, needsDownload: false) == nil)
+        #expect(TranslationLens.badgeText(shortened: true, needsDownload: false) != nil)
+        #expect(TranslationLens.badgeText(shortened: false, needsDownload: true) != nil)
+        #expect(TranslationLens.badgeText(shortened: true, needsDownload: true) == TranslationLens.badgeText(shortened: false, needsDownload: true))
+    }
+
+    @Test func translationLensLanguageSwitcherMatchingAndLayoutExpansion() {
+        let languages: [(id: String, name: String)] = [
+            (id: "en-US", name: "English"),
+            (id: "zh-Hans", name: "Chinese, Simplified"),
+            (id: "ja-JP", name: "Japanese"),
+        ]
+        #expect(TranslationLens.matchesTarget(nil, identifier: ""))
+        #expect(!TranslationLens.matchesTarget(nil, identifier: "en-US"))
+        #expect(TranslationLens.matchesTarget(Locale.Language(identifier: "zh-Hans"), identifier: "zh-Hans"))
+        #expect(TranslationLens.matchesTarget(Locale.Language(identifier: "ja"), identifier: "ja-JP"))
+        #expect(!TranslationLens.matchesTarget(Locale.Language(identifier: "ja"), identifier: "en-US"))
+        #expect(TranslationLens.languageChipTitle(targetLanguage: Locale.Language(identifier: "ja"), availableTargetLanguages: languages) == "Japanese")
+        #expect(TranslationLens.languageChipTitle(targetLanguage: nil, availableTargetLanguages: languages) == String(localized: "Automatic", bundle: .module))
+
+        let screen = CGRect(x: 0, y: 0, width: 1440, height: 900)
+        let lens = CGRect(x: 400, y: 400, width: 200, height: 100)
+        let base = LensLayout(lens: lens, screen: screen)
+        let withChip = LensLayout(lens: lens, screen: screen, extraControlWidth: 84)
+        #expect(withChip.buttons.width == base.buttons.width + LensLayout.spacing + 84)
+        // Near left display edge, the control row stays inside the display bounds.
+        let nearLeft = LensLayout(lens: CGRect(x: 4, y: 400, width: 40, height: 60), screen: screen, extraControlWidth: 100)
+        #expect(nearLeft.window.minX >= screen.minX)
+        #expect(nearLeft.buttons.width == base.buttons.width + LensLayout.spacing + 100)
     }
 }

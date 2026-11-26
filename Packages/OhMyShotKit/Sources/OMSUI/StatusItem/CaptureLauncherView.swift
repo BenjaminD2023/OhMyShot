@@ -33,15 +33,15 @@ struct CaptureLauncherModel {
     private var commands: [Entry] { visible(captureEntries + toolEntries + pinEntries + historyEntries) }
 
     var captureTiles: [Entry] {
-        Self.captureShortcuts.compactMap { shortcut in commands.first { $0.shortcut == shortcut } }
+        Self.captureShortcuts.compactMap { shortcut in commands.first { $0.shortcut == shortcut && !Self.isStatus($0) } }
     }
 
     var toolTiles: [Entry] {
-        commands.filter { entry in entry.shortcut.map { !Self.captureShortcuts.contains($0) } ?? false }
+        commands.filter { entry in !Self.isStatus(entry) && (entry.shortcut.map { !Self.captureShortcuts.contains($0) } ?? false) }
     }
 
-    /// Commands that exist only while something runs (a waiting update, cancelling a scrolling capture or a
-    /// Studio export): they lead the launcher, so they are one click away.
+    /// Commands that exist only while something runs (a waiting update, cancelling a scrolling capture,
+    /// self-timer, drawing on screen, or a Studio export): they lead the launcher, so they are one click away.
     var activeEntries: [Entry] {
         visible(priorityEntries) + commands.filter(Self.isStatus)
     }
@@ -136,7 +136,10 @@ struct CaptureLauncherModel {
     }
 
     private static func isStatus(_ entry: Entry) -> Bool {
-        entry.shortcut == nil && entry.children == nil && entry.isHidden != nil
+        if let isActiveStatus = entry.isActiveStatus {
+            return isActiveStatus()
+        }
+        return entry.shortcut == nil && entry.children == nil && entry.isHidden != nil
     }
 
     private func visible(_ entries: [Entry]) -> [Entry] {

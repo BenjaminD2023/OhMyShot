@@ -12,15 +12,22 @@ struct PermissionsSettingsView: View {
             PermissionRow(permission: .screenRecording, permissions: permissions)
             if permissions.status(of: .screenRecording) != .granted {
                 SettingsRow {
-                    HStack(spacing: 6) {
-                        Text("macOS applies it after a relaunch.", bundle: .module)
-                            .foregroundStyle(.secondary)
-                        Button(action: relaunch) {
-                            Text("Relaunch Now", bundle: .module)
+                    VStack(alignment: .leading, spacing: 4) {
+                        HStack(spacing: 6) {
+                            Text("macOS applies it after a relaunch.", bundle: .module)
+                                .foregroundStyle(.secondary)
+                            Button(action: relaunch) {
+                                Text("Relaunch Now", bundle: .module)
+                            }
+                            .buttonStyle(.link)
                         }
-                        .buttonStyle(.link)
+                        .font(.callout)
+                        Text("If OhMyShot is already enabled in System Settings after an update, select it there, click − to remove it, then add it again and relaunch.", bundle: .module)
+                            .font(.caption)
+                            .foregroundStyle(.secondary)
+                            .frame(maxWidth: 340, alignment: .leading)
+                            .fixedSize(horizontal: false, vertical: true)
                     }
-                    .font(.callout)
                 }
             }
 
@@ -28,6 +35,19 @@ struct PermissionsSettingsView: View {
 
             ForEach([Permission.microphone, .camera, .accessibility, .inputMonitoring]) { permission in
                 PermissionRow(permission: permission, permissions: permissions)
+                if permission == .inputMonitoring, permissions.status(of: .inputMonitoring) != .granted {
+                    SettingsRow {
+                        HStack(spacing: 6) {
+                            Text("Relaunch required after allowing Input Monitoring.", bundle: .module)
+                                .foregroundStyle(.secondary)
+                            Button(action: relaunch) {
+                                Text("Relaunch Now", bundle: .module)
+                            }
+                            .buttonStyle(.link)
+                        }
+                        .font(.callout)
+                    }
+                }
             }
         }
         .onAppear {
@@ -36,14 +56,19 @@ struct PermissionsSettingsView: View {
         .onReceive(NotificationCenter.default.publisher(for: NSWindow.didBecomeKeyNotification)) { _ in
             permissions.refresh()
         }
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.didBecomeActiveNotification)) { _ in
+            permissions.refresh()
+        }
     }
 }
 
 private struct PermissionRow: View {
     let permission: Permission
     let permissions: PermissionCenter
+    @State private var askRevision = 0
 
     var body: some View {
+        let _ = askRevision
         SettingsRow(permission.title, help: [HelpTopic(permission.title, Text(permission.purpose))]) {
             Group {
                 switch permissions.status(of: permission) {
@@ -55,18 +80,16 @@ private struct PermissionRow: View {
                             .foregroundStyle(.green)
                     }
                     .foregroundStyle(.secondary)
-                case .notGranted:
+                case .notGranted where !permissions.hasAsked(permission):
                     Button {
                         Task {
                             await permissions.request(permission)
-                            if permissions.status(of: permission) != .granted {
-                                permissions.openSystemSettings(for: permission)
-                            }
+                            askRevision += 1
                         }
                     } label: {
                         Text("Allow…", bundle: .module)
                     }
-                case .denied:
+                case .notGranted, .denied:
                     Button {
                         permissions.openSystemSettings(for: permission)
                     } label: {

@@ -13,24 +13,69 @@ extension CompositionRoot {
         let entries = entries.filter { $0.kind == .screenshot }
         guard entries.count >= 2 else { return NSSound.beep() }
         let files = entries.map { (url: history.fileURL(for: $0), pixelsPerPoint: $0.pixelsPerPoint) }
-        Task {
+        Task { [weak self] in
             guard let pictures = await Self.collagePictures(files) else {
                 Log.capture.error("Combine into Collage: a screenshot could not be read")
                 return NSSound.beep()
             }
+            guard let self else { return }
             // As sharp as the sharpest picture in it.
             let scale = max(1, entries.compactMap(\.pixelsPerPoint).max() ?? 1)
-            collageWindow?.close()
-            let window = CollageWindowController(pictures: pictures, scale: CGFloat(scale)) { [weak self] image, scale in
-                guard let self else { return }
-                Log.capture.notice("Combined \(pictures.count, privacy: .public) screenshots into a \(image.width, privacy: .public)x\(image.height, privacy: .public) collage")
-                Task { await self.annotate(image: image, scale: scale, pixelsPerPoint: Double(scale), name: nil) }
-            }
+            self.collageWindow?.close()
+            let actions = CollageWindowController.Actions(
+                copy: { [weak self] image, scale in
+                    guard let self else { return false }
+                    return await self.copyCollage(image, scale: scale, pictureCount: pictures.count)
+                },
+                save: { [weak self] image, scale in
+                    guard let self else { return false }
+                    guard let url = self.savedOrSaidWhy(await self.files.saveScreenshotAs(.init(image), scale: Double(scale))) else { return false }
+                    Log.capture.notice("Saved \(pictures.count, privacy: .public) screenshots as collage \(url.lastPathComponent, privacy: .private)")
+                    NSWorkspace.shared.activateFileViewerSelecting([url])
+                    return true
+                },
+                edit: { [weak self] image, scale in
+                    guard let self else { return }
+                    Log.capture.notice("Combined \(pictures.count, privacy: .public) screenshots into a \(image.width, privacy: .public)x\(image.height, privacy: .public) collage")
+                    Task { await self.annotate(image: image, scale: scale, pixelsPerPoint: Double(scale), name: nil) }
+                }
+            )
+            let window = CollageWindowController(pictures: pictures, scale: CGFloat(scale), actions: actions)
             window.onClose = MemoryRelief.releasingOnNextTurn { [weak self, weak window] in
                 if self?.collageWindow === window { self?.collageWindow = nil }
             }
-            collageWindow = window
+            self.collageWindow = window
             window.show()
+        }
+    }
+
+    /// Encodes a rendered collage with matching Retina DPI, adds it to History, and copies it to the clipboard.
+    private func copyCollage(_ image: CGImage, scale: CGFloat, pictureCount: Int) async -> Bool {
+        let date = Date.now
+        let fileName = settings.nextFileName(date: date, appName: nil, windowTitle: nil)
+        let pixelsPerPoint = Double(scale)
+        do {
+            let png = try await ImageExporter.encode(image, as: .png, pixelsPerPoint: pixelsPerPoint)
+            let entry = try history.add(
+                data: png, name: fileName, fileExtension: ImageExporter.Format.png.fileExtension,
+                kind: .screenshot, pixelWidth: image.width, pixelHeight: image.height, appName: nil,
+                pixelsPerPoint: pixelsPerPoint, isTemplateNamed: true, date: date
+            )
+            historyWindow?.reload()
+            readTextSoon(entry)
+            let copied = await files.copy(
+                .init(image), png: png, name: (entry.fileName as NSString).deletingPathExtension,
+                scale: pixelsPerPoint, historyFile: history.fileURL(for: entry)
+            )
+            retention.releaseIfUnheld(entry.id)
+            if copied {
+                Log.capture.notice("Copied collage of \(pictureCount, privacy: .public) screenshots (\(image.width, privacy: .public)x\(image.height, privacy: .public))")
+            }
+            return copied
+        } catch {
+            Log.capture.error("Copying collage failed: \(Log.kind(of: error), privacy: .public), \(error.localizedDescription, privacy: .private)")
+            NSSound.beep()
+            return false
         }
     }
 

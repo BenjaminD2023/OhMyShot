@@ -72,14 +72,17 @@ struct ToolsSettingsView: View {
                             value: Binding(get: { settings.pinCornerRadius }, set: { settings.pinCornerRadius = $0.rounded() }),
                             in: SettingsStore.pinCornerRadii
                         ) {
-                            Text("Corners", bundle: .module)
+                            Text("Pin corner radius", bundle: .module)
                         }
                         .labelsHidden()
+                        .accessibilityLabel(Text("Pin corner radius", bundle: .module))
+                        .accessibilityValue(Text("\(Int(settings.pinCornerRadius)) pt", bundle: .module))
                         .frame(width: 150)
                         Text("\(Int(settings.pinCornerRadius)) pt", bundle: .module)
                             .monospacedDigit()
                             .foregroundStyle(.secondary)
                             .frame(width: 40, alignment: .leading)
+                            .accessibilityHidden(true)
                     }
                     HStack(spacing: 14) {
                         Toggle(isOn: $settings.pinShadow) {

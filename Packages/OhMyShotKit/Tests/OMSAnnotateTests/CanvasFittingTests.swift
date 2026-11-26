@@ -49,16 +49,29 @@ struct CanvasFittingTests {
 
     // MARK: Fitting
 
-    @Test func aMarkPastTheEdgeGrowsTheCanvasWithRoomAllAround() {
+    @Test func aMarkPastTheEdgeGrowsOnlyTheExceededSide() {
         var document = AnnotationDocument(pixelSize: CGSize(width: 100, height: 80), scale: 2)
         let mark = box(CGRect(x: 90, y: 10, width: 30, height: 20))
         document.items = [mark]
         let fitted = document.fittingCanvas(holding: [mark.id])
         let reach = mark.bounds(scale: 2)
-        // 20 points, 40 pixels, past the mark on its side, and as much on every other.
-        #expect(fitted.canvas == CGRect(x: -40, y: -40, width: reach.maxX + 40 + 40, height: 80 + 80).integral)
+        // 20 points (40 pixels) past the mark on the exceeded right edge only; left, top, and bottom stay untouched.
+        #expect(fitted.canvas == CGRect(x: 0, y: 0, width: reach.maxX + 40, height: 80).integral)
         #expect(fitted.canvasBeforeGrowing == document.imageBounds)
         #expect(fitted.canvasReachesPastCapture)
+    }
+
+    @Test func aMarkPastACornerGrowsOnlyThoseTwoSides() {
+        var document = AnnotationDocument(pixelSize: CGSize(width: 100, height: 80), scale: 1)
+        let mark = box(CGRect(x: -15, y: 70, width: 30, height: 25))
+        document.items = [mark]
+        let fitted = document.fittingCanvas(holding: [mark.id])
+        let reach = mark.bounds(scale: 1)
+        // Exceeds left and bottom: top (0) and right (100) stay flush with the capture.
+        #expect(fitted.canvas.minX == floor(reach.minX - 20))
+        #expect(fitted.canvas.minY == 0)
+        #expect(fitted.canvas.maxX == 100)
+        #expect(fitted.canvas.maxY == ceil(reach.maxY + 20))
     }
 
     @Test func marksWithinTheCanvasLeaveItAlone() {
@@ -228,8 +241,8 @@ struct CanvasFittingTests {
         document = document.fittingCanvas(holding: [mark.id])
         let output = try #require(AnnotationRenderer.flatten(document, base: base))
         #expect(output.width == Int(document.canvas.width))
-        // Above the capture, in the room added on every side.
-        let room = pixel(output, Int(-document.canvas.minX) + 50, 5)
+        // Beside the capture on the expanded left side, filled with the edge matte.
+        let room = pixel(output, 5, 50)
         #expect(room.alpha == 255 && room.blue > room.red && room.red < 40)
         // The mark, past the capture's edge, is kept.
         let kept = pixel(output, Int(-document.canvas.minX) - 40, Int(-document.canvas.minY) + 20)

@@ -147,6 +147,26 @@ public final class SettingsStore {
         didSet { defaults.set(watermarkText, forKey: Key.watermarkText) }
     }
 
+    /// Dark or light text for the exported watermark.
+    public var watermarkTone: Watermark.Tone {
+        didSet { defaults.set(watermarkTone.rawValue, forKey: Key.watermarkTone) }
+    }
+
+    /// Opacity for the exported watermark, clamped to `Watermark.opacityRange`.
+    public var watermarkOpacity: Double {
+        didSet { defaults.set(watermarkOpacity, forKey: Key.watermarkOpacity) }
+    }
+
+    /// Relative font size for the exported watermark, clamped to `Watermark.sizeRange`.
+    public var watermarkSize: Double {
+        didSet { defaults.set(watermarkSize, forKey: Key.watermarkSize) }
+    }
+
+    /// Resets `{counter}` back to 1.
+    public func resetFileCounter() {
+        nextFileNumber = Default.nextFileNumber
+    }
+
     /// The pattern saved files are named from: `{date}`, `{time}`, `{app}`, `{window}`, and `{counter}`.
     public var fileNamePattern: String {
         didSet { defaults.set(fileNamePattern, forKey: Key.fileNamePattern) }
@@ -213,6 +233,53 @@ public final class SettingsStore {
     /// preferred language the text is not already in.
     public var translationTarget: String {
         didSet { defaults.set(translationTarget, forKey: Key.translationTarget) }
+    }
+
+    /// Explicit BCP-47 languages for Vision text recognition; empty uses the automatic preferred set.
+    public var ocrLanguages: [String] {
+        didSet { defaults.set(ocrLanguages, forKey: Key.ocrLanguages) }
+    }
+
+    /// Installed model pack IDs that are temporarily disabled without deleting their files on disk.
+    public var disabledModelPacks: [String] {
+        didSet { defaults.set(disabledModelPacks, forKey: Key.disabledModelPacks) }
+    }
+
+    /// Whether the installed Chinese & Japanese second-reading pack is also used in Capture Text.
+    public var usesSecondReadingInCaptureText: Bool {
+        didSet { defaults.set(usesSecondReadingInCaptureText, forKey: Key.usesSecondReadingInCaptureText) }
+    }
+
+    /// Remembered Auto-scroll speed multiplier for Scrolling Capture (0.25 to 3.0).
+    public var scrollingAutoSpeed: Double {
+        didSet { defaults.set(scrollingAutoSpeed, forKey: Key.scrollingAutoSpeed) }
+    }
+
+    /// How copied LaTeX formulas are delimited (`raw`, `$…$`, `$$…$$`, or `\(…\)`).
+    public var formulaDelimiter: FormulaDelimiter {
+        didSet { defaults.set(formulaDelimiter.rawValue, forKey: Key.formulaDelimiter) }
+    }
+
+    /// Optional custom Hugging Face mirror base URL (e.g. `https://hf-mirror.com`) tried before huggingface.co.
+    public var modelPackMirrorURL: String {
+        didSet { defaults.set(modelPackMirrorURL, forKey: Key.modelPackMirrorURL) }
+    }
+
+    /// Temporarily hides desktop icons while capturing or recording without keeping a persistent cover when idle.
+    public var hidesDesktopIconsWhileCapturing: Bool {
+        didSet { defaults.set(hidesDesktopIconsWhileCapturing, forKey: Key.hidesDesktopIconsWhileCapturing) }
+    }
+
+    public func isModelPackEnabled(_ packID: String) -> Bool {
+        !disabledModelPacks.contains(packID)
+    }
+
+    public func setModelPackEnabled(_ enabled: Bool, for packID: String) {
+        if enabled {
+            disabledModelPacks.removeAll { $0 == packID }
+        } else if !disabledModelPacks.contains(packID) {
+            disabledModelPacks.append(packID)
+        }
     }
 
     /// Hold the screen still while selecting, so hover states and open menus can be captured.
@@ -460,7 +527,7 @@ public final class SettingsStore {
         didSet { defaults.set(windowShadow, forKey: Key.windowShadow) }
     }
 
-    /// What window screenshots are put on; Shift held as the window is clicked takes it the other way round.
+    /// What window screenshots are put on; Option held as the window is clicked takes it the other way round.
     public var windowBackground: WindowBackground {
         didSet { defaults.set(windowBackground.rawValue, forKey: Key.windowBackground) }
     }
@@ -511,11 +578,17 @@ public final class SettingsStore {
         didSet { defaults.set(quickAccessCloseAction.rawValue, forKey: Key.quickAccessCloseAction) }
     }
 
+    /// Whether copying, saving, pinning, printing, or dragging a Quick Access card closes it automatically.
+    public var quickAccessClosesAfterAction: Bool {
+        didSet { defaults.set(quickAccessClosesAfterAction, forKey: Key.quickAccessClosesAfterAction) }
+    }
+
     /// The Quick Access settings together, as the cards read them.
     public var quickAccessPreferences: QuickAccessPreferences {
         QuickAccessPreferences(
             corner: quickAccessCorner, size: quickAccessSize, onPointerDisplay: quickAccessOnPointerDisplay,
-            closeAfter: quickAccessCloseAfter, closeAction: quickAccessCloseAction
+            closeAfter: quickAccessCloseAfter, closeAction: quickAccessCloseAction,
+            closesAfterAction: quickAccessClosesAfterAction
         )
     }
 
@@ -539,6 +612,9 @@ public final class SettingsStore {
             .addsBorder: false,
             .addsWatermark: false,
             .watermarkText: "",
+            .watermarkTone: Default.watermarkTone.rawValue,
+            .watermarkOpacity: Default.watermarkOpacity,
+            .watermarkSize: Default.watermarkSize,
             .fileNamePattern: Default.fileNamePattern,
             .nextFileNumber: Default.nextFileNumber,
             .asksForFileName: false,
@@ -552,6 +628,11 @@ public final class SettingsStore {
             .textRecognitionWrapsText: true,
             .readsAppText: false,
             .translationTarget: Default.translationTarget,
+            .usesSecondReadingInCaptureText: true,
+            .scrollingAutoSpeed: Default.scrollingAutoSpeed,
+            .formulaDelimiter: Default.formulaDelimiter.rawValue,
+            .modelPackMirrorURL: "",
+            .hidesDesktopIconsWhileCapturing: false,
             // Frozen by default: a hover card or menu that closes as the pointer leaves it can still be
             // captured, since the screen is taken the moment the shortcut is pressed.
             .freezeScreen: true,
@@ -601,6 +682,7 @@ public final class SettingsStore {
             .quickAccessOnPointerDisplay: false,
             .quickAccessCloseAfter: Default.quickAccessCloseAfter,
             .quickAccessCloseAction: Default.quickAccessCloseAction.rawValue,
+            .quickAccessClosesAfterAction: true,
         ]
         defaults.register(defaults: Dictionary(uniqueKeysWithValues: registered.map { ($0.key.rawValue, $0.value) }))
         showMenuBarIcon = defaults.bool(forKey: Key.showMenuBarIcon)
@@ -676,6 +758,7 @@ public final class SettingsStore {
         let closeAfter = defaults.object(forKey: Key.quickAccessCloseAfter) as? Int ?? Default.quickAccessCloseAfter
         quickAccessCloseAfter = Self.quickAccessCloseDelays.contains(closeAfter) ? closeAfter : Default.quickAccessCloseAfter
         quickAccessCloseAction = defaults.string(forKey: Key.quickAccessCloseAction).flatMap(QuickAccessCloseAction.init(rawValue:)) ?? Default.quickAccessCloseAction
+        quickAccessClosesAfterAction = defaults.bool(forKey: Key.quickAccessClosesAfterAction)
         copyAfterCapture = defaults.bool(forKey: Key.copyAfterCapture)
         uploadAfterCapture = defaults.bool(forKey: Key.uploadAfterCapture)
         copyLinkAfterUpload = defaults.bool(forKey: Key.copyLinkAfterUpload)
@@ -688,6 +771,11 @@ public final class SettingsStore {
         addsBorder = defaults.bool(forKey: Key.addsBorder)
         addsWatermark = defaults.bool(forKey: Key.addsWatermark)
         watermarkText = defaults.string(forKey: Key.watermarkText) ?? ""
+        watermarkTone = defaults.string(forKey: Key.watermarkTone).flatMap(Watermark.Tone.init(rawValue:)) ?? Default.watermarkTone
+        let wmOpacity = defaults.double(forKey: Key.watermarkOpacity)
+        watermarkOpacity = min(max(wmOpacity, Watermark.opacityRange.lowerBound), Watermark.opacityRange.upperBound)
+        let wmSize = defaults.double(forKey: Key.watermarkSize)
+        watermarkSize = min(max(wmSize, Watermark.sizeRange.lowerBound), Watermark.sizeRange.upperBound)
         fileNamePattern = defaults.string(forKey: Key.fileNamePattern) ?? Default.fileNamePattern
         nextFileNumber = max(defaults.integer(forKey: Key.nextFileNumber), Default.nextFileNumber)
         asksForFileName = defaults.bool(forKey: Key.asksForFileName)
@@ -708,6 +796,14 @@ public final class SettingsStore {
         textRecognitionWrapsText = defaults.bool(forKey: Key.textRecognitionWrapsText)
         readsAppText = defaults.bool(forKey: Key.readsAppText)
         translationTarget = defaults.string(forKey: Key.translationTarget) ?? Default.translationTarget
+        ocrLanguages = defaults.stringArray(forKey: Key.ocrLanguages) ?? []
+        disabledModelPacks = defaults.stringArray(forKey: Key.disabledModelPacks) ?? []
+        usesSecondReadingInCaptureText = defaults.bool(forKey: Key.usesSecondReadingInCaptureText)
+        let scrollSpeed = defaults.double(forKey: Key.scrollingAutoSpeed)
+        scrollingAutoSpeed = min(max(scrollSpeed, 0.25), 3.0)
+        formulaDelimiter = defaults.string(forKey: Key.formulaDelimiter).flatMap(FormulaDelimiter.init(rawValue:)) ?? Default.formulaDelimiter
+        modelPackMirrorURL = defaults.string(forKey: Key.modelPackMirrorURL) ?? ""
+        hidesDesktopIconsWhileCapturing = defaults.bool(forKey: Key.hidesDesktopIconsWhileCapturing)
     }
 
     /// Puts every choice back as a new install has it, as Settings › General › Reset does. What the app keeps rather
@@ -744,6 +840,9 @@ public final class SettingsStore {
         addsBorder = fresh.addsBorder
         addsWatermark = fresh.addsWatermark
         watermarkText = fresh.watermarkText
+        watermarkTone = fresh.watermarkTone
+        watermarkOpacity = fresh.watermarkOpacity
+        watermarkSize = fresh.watermarkSize
         fileNamePattern = fresh.fileNamePattern
         asksForFileName = fresh.asksForFileName
         clipboardFormat = fresh.clipboardFormat
@@ -754,6 +853,13 @@ public final class SettingsStore {
         textRecognitionWrapsText = fresh.textRecognitionWrapsText
         readsAppText = fresh.readsAppText
         translationTarget = fresh.translationTarget
+        ocrLanguages = fresh.ocrLanguages
+        disabledModelPacks = fresh.disabledModelPacks
+        usesSecondReadingInCaptureText = fresh.usesSecondReadingInCaptureText
+        scrollingAutoSpeed = fresh.scrollingAutoSpeed
+        formulaDelimiter = fresh.formulaDelimiter
+        modelPackMirrorURL = fresh.modelPackMirrorURL
+        hidesDesktopIconsWhileCapturing = fresh.hidesDesktopIconsWhileCapturing
         freezeScreen = fresh.freezeScreen
         screenshotShowsCursor = fresh.screenshotShowsCursor
         captureLoupeMagnification = fresh.captureLoupeMagnification
@@ -800,6 +906,7 @@ public final class SettingsStore {
         quickAccessOnPointerDisplay = fresh.quickAccessOnPointerDisplay
         quickAccessCloseAfter = fresh.quickAccessCloseAfter
         quickAccessCloseAction = fresh.quickAccessCloseAction
+        quickAccessClosesAfterAction = fresh.quickAccessClosesAfterAction
     }
 
     /// A recording's choice: its own once it has one, else the choice for screenshots as it stands now, kept from then
@@ -847,6 +954,11 @@ public final class SettingsStore {
         static let quickAccessSize = QuickAccessSize.medium
         static let quickAccessCloseAfter = 3
         static let quickAccessCloseAction = QuickAccessCloseAction.close
+        static let watermarkTone = Watermark.Tone.dark
+        static let watermarkOpacity = 0.15
+        static let watermarkSize = 0.035
+        static let scrollingAutoSpeed = 1.0
+        static let formulaDelimiter = FormulaDelimiter.raw
     }
 
     /// Every key the store keeps, each spelled as the setting it holds; `resetToDefaults` goes through them all.
@@ -908,6 +1020,7 @@ public final class SettingsStore {
         case quickAccessOnPointerDisplay
         case quickAccessCloseAfter
         case quickAccessCloseAction
+        case quickAccessClosesAfterAction
         case uploadAfterCapture
         case copyLinkAfterUpload
         case saveAfterCapture
@@ -918,6 +1031,9 @@ public final class SettingsStore {
         case addsBorder
         case addsWatermark
         case watermarkText
+        case watermarkTone
+        case watermarkOpacity
+        case watermarkSize
         case fileNamePattern
         case nextFileNumber
         case asksForFileName
@@ -935,6 +1051,13 @@ public final class SettingsStore {
         case textRecognitionWrapsText
         case readsAppText
         case translationTarget
+        case ocrLanguages
+        case disabledModelPacks
+        case usesSecondReadingInCaptureText
+        case scrollingAutoSpeed
+        case formulaDelimiter
+        case modelPackMirrorURL
+        case hidesDesktopIconsWhileCapturing
     }
 }
 

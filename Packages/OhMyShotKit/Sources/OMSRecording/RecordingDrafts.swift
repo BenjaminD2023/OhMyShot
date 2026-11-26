@@ -239,7 +239,7 @@ public struct RecordingDrafts: Sendable {
             let info = FileManager.default.contents(atPath: infoURL(for: id).path(percentEncoded: false))
                 .flatMap { try? JSONDecoder.records.decode(Info.self, from: $0) }
             guard FileManager.default.fileExists(atPath: movie.path(percentEncoded: false)) || info?.keptHistoryID != nil else {
-                try? FileManager.default.removeItem(at: infoURL(for: id))
+                remove(Draft(id: id, movieURL: movie, info: info))
                 continue
             }
             drafts.append(Draft(id: id, movieURL: movie, info: info))
@@ -248,6 +248,19 @@ public struct RecordingDrafts: Sendable {
             // A movie without its record still holds a recording.
             guard let id = UUID(uuidString: String(name.dropLast(4))), !excluding.contains(id), !drafts.contains(where: { $0.id == id }) else { continue }
             drafts.append(Draft(id: id, movieURL: directory.appending(path: name), info: nil))
+        }
+        let keptIDs = Set(drafts.map(\.id))
+        for name in names {
+            let idString: String
+            if name.hasSuffix(".telemetry.json") {
+                idString = String(name.dropLast(".telemetry.json".count))
+            } else if name.hasSuffix(".camera.mov") {
+                idString = String(name.dropLast(".camera.mov".count))
+            } else {
+                continue
+            }
+            guard let id = UUID(uuidString: idString), !excluding.contains(id), !keptIDs.contains(id) else { continue }
+            try? FileManager.default.removeItem(at: directory.appending(path: name))
         }
         return drafts.sorted { ($0.info?.startedAt ?? .distantPast) < ($1.info?.startedAt ?? .distantPast) }
     }

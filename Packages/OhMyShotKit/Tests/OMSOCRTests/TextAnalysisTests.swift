@@ -46,6 +46,16 @@ struct TableFormatTests {
         #expect(table.tsv == "Name\tNote\nA|B\tsays \"hi\", twice\nC\t")
         #expect(table.html == "<table><tr><th>Name</th><th>Note</th></tr><tr><td>A|B</td><td>says &quot;hi&quot;, twice</td></tr><tr><td>C</td><td></td></tr></table>")
     }
+
+    @Test func csvAndTSVEscapeNewlinesQuotesCommasTabsAndRaggedRows() {
+        let edge = OCRTable(rows: [
+            ["Col,1", "Line\nBreak", "Tab\tCell"],
+            ["He said \"ok\""],
+            ["CR\r\nLF", "Plain", ""],
+        ])
+        #expect(edge.csv == "\"Col,1\",\"Line\nBreak\",Tab\tCell\r\n\"He said \"\"ok\"\"\",,\r\n\"CR\r\nLF\",Plain,")
+        #expect(edge.tsv == "Col,1\tLine Break\tTab Cell\nHe said \"ok\"\t\t\nCR LF\tPlain\t")
+    }
 }
 
 struct TextDetectorTests {
@@ -151,5 +161,21 @@ struct SelectionCodeTests {
         #expect(try await VisionPipeline.selectionCodes(in: tight).map(\.payload) == ["ticket 4821"])
         let empty = try page(CGSize(width: 800, height: 600), code: nil, at: .zero)
         #expect(try await VisionPipeline.selectionCodes(in: empty).isEmpty)
+    }
+
+    @Test func reusedLinesSkipTextOCRAndStillDetectCodes() async throws {
+        let message = "https://example.com/cached"
+        let picture = try page(CGSize(width: 800, height: 600), code: try qr(message, side: 200), at: CGPoint(x: 500, y: 100))
+        // Deliberately unsorted lines that do not exist in the picture, proving Vision text OCR is skipped.
+        let second = OCRLine(text: "second line.", box: CGRect(x: 20, y: 46, width: 200, height: 20), confidence: 1)
+        let first = OCRLine(text: "First wrapped", box: CGRect(x: 20, y: 20, width: 400, height: 20), confidence: 1, wrapsToNextLine: true)
+        var options = VisionPipeline.Options()
+        options.assembly = TextAssembler.Options(joinsWrappedLines: true)
+        let analysis = try await VisionPipeline(options: options).analysis(reusing: [second, first], in: picture)
+        #expect(analysis.result.lines.map(\.text) == ["First wrapped", "second line."])
+        #expect(analysis.result.text == "First wrapped second line.")
+        #expect(analysis.result.duration == .zero)
+        #expect(analysis.tables.isEmpty)
+        #expect(analysis.codes.map(\.payload) == [message])
     }
 }

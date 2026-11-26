@@ -36,6 +36,20 @@
 		</dict>
 		<dict>
 			<key>CFBundleTypeName</key>
+			<string>OhMyShot Studio Project</string>
+			<key>CFBundleTypeRole</key>
+			<string>Editor</string>
+			<key>LSHandlerRank</key>
+			<string>Owner</string>
+			<key>LSTypeIsPackage</key>
+			<true/>
+			<key>LSItemContentTypes</key>
+			<array>
+				<string>$(OMS_BUNDLE_ID_PREFIX).ohmyshot.studio</string>
+			</array>
+		</dict>
+		<dict>
+			<key>CFBundleTypeName</key>
 			<string>Image</string>
 			<key>CFBundleTypeRole</key>
 			<string>Editor</string>
@@ -127,6 +141,24 @@
 				<key>public.filename-extension</key>
 				<array>
 					<string>ohmyshot</string>
+				</array>
+			</dict>
+		</dict>
+		<dict>
+			<key>UTTypeIdentifier</key>
+			<string>$(OMS_BUNDLE_ID_PREFIX).ohmyshot.studio</string>
+			<key>UTTypeDescription</key>
+			<string>OhMyShot Studio Project</string>
+			<key>UTTypeConformsTo</key>
+			<array>
+				<string>com.apple.package</string>
+				<string>public.content</string>
+			</array>
+			<key>UTTypeTagSpecification</key>
+			<dict>
+				<key>public.filename-extension</key>
+				<array>
+					<string>omsstudio</string>
 				</array>
 			</dict>
 		</dict>

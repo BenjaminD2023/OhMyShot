@@ -17,8 +17,7 @@ extension CompositionRoot {
     /// The updater against `feed` (`debug/updates-start`), in place of any the build has; a found version always waits
     /// in the menu. Nothing is looked for until a hook asks.
     func startDebugUpdates(feed: URL) -> UpdateController? {
-        updates?.setChecksAutomatically(false)
-        updates = nil
+        updates.setChecksAutomatically(false)
         let controller = UpdateController(feedOverride: feed, alwaysGentle: true)
         guard controller.start() else { return nil }
         updates = controller
@@ -27,8 +26,7 @@ extension CompositionRoot {
     }
 
     func stopDebugUpdates() {
-        updates?.setChecksAutomatically(false)
-        updates = nil
+        updates.setChecksAutomatically(false)
     }
 
     var debugUpdates: UpdateController? { updates }

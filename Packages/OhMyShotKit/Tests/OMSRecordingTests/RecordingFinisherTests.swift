@@ -2,9 +2,11 @@ import AVFoundation
 import CoreMedia
 import Foundation
 import OMSCore
+import Synchronization
 import Testing
 @testable import OMSRecording
 
+@Suite(.serialized)
 struct RecordingFinisherTests {
     /// Two seconds of frames that stop changing after half a second, with the audio asked for.
     private func record(audio: RecordingAudio) async throws -> URL {
@@ -98,5 +100,58 @@ struct RecordingFinisherTests {
         let thumbnail = try #require(await HistoryStore.thumbnail(of: source, maxPixels: 160))
         #expect(thumbnail.width == 160)
         #expect(thumbnail.height == 120)
+    }
+
+    @Test func finishAndExportReportMonotonicProgressAndRespectCancellation() async throws {
+        let source = try await record(audio: RecordingAudio(system: true, microphone: nil))
+        let finished = source.deletingPathExtension().appendingPathExtension("mp4")
+        let exported = source.deletingLastPathComponent().appending(path: "\(UUID().uuidString)-edited.mp4")
+        let cancelledFinish = source.deletingLastPathComponent().appending(path: "\(UUID().uuidString)-cancelled-finish.mp4")
+        let cancelledExport = source.deletingLastPathComponent().appending(path: "\(UUID().uuidString)-cancelled-export.mp4")
+        defer {
+            [source, finished, exported, cancelledFinish, cancelledExport].forEach {
+                try? FileManager.default.removeItem(at: $0)
+            }
+        }
+
+        let finishReports = Mutex<[Double]>([])
+        _ = try await RecordingFinisher.finish(source, to: finished) { value in
+            finishReports.withLock { $0.append(value) }
+        }
+        let finishValues = finishReports.withLock { $0 }
+        #expect(!finishValues.isEmpty)
+        #expect(finishValues.last == 1.0)
+        for pair in zip(finishValues, finishValues.dropFirst()) {
+            #expect(pair.0 <= pair.1)
+        }
+
+        let exportReports = Mutex<[Double]>([])
+        let trim = CMTimeRange(start: CMTime(seconds: 0.25, preferredTimescale: 600), end: CMTime(seconds: 1.5, preferredTimescale: 600))
+        _ = try await RecordingFinisher.export(finished, to: exported, edits: .init(timeRange: trim, scale: 0.5)) { value in
+            exportReports.withLock { $0.append(value) }
+        }
+        let exportValues = exportReports.withLock { $0 }
+        #expect(!exportValues.isEmpty)
+        #expect(exportValues.last == 1.0)
+        for pair in zip(exportValues, exportValues.dropFirst()) {
+            #expect(pair.0 <= pair.1)
+        }
+
+        // Pre-cancelled tasks throw CancellationError without writing output.
+        let finishTask = Task {
+            try await RecordingFinisher.finish(source, to: cancelledFinish)
+        }
+        finishTask.cancel()
+        await #expect(throws: CancellationError.self) {
+            _ = try await finishTask.value
+        }
+
+        let exportTask = Task {
+            try await RecordingFinisher.export(finished, to: cancelledExport, edits: .init(timeRange: trim, scale: 0.5))
+        }
+        exportTask.cancel()
+        await #expect(throws: CancellationError.self) {
+            _ = try await exportTask.value
+        }
     }
 }

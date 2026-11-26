@@ -49,7 +49,13 @@ extension RecordingFinisher {
     /// frame is written again just before the end, as the recorder does, so the video lasts as long as the
     /// part kept.
     @concurrent
-    public static func export(_ source: URL, to destination: URL, edits: Edits) async throws -> Movie {
+    public static func export(
+        _ source: URL,
+        to destination: URL,
+        edits: Edits,
+        progress: (@Sendable (Double) -> Void)? = nil
+    ) async throws -> Movie {
+        try Task.checkCancellation()
         let asset = AVURLAsset(url: source)
         guard let videoTrack = try await asset.loadTracks(withMediaType: .video).first else { throw FinishError.noVideo }
         let audioTracks = edits.keepsAudio ? try await asset.loadTracks(withMediaType: .audio) : []
@@ -59,8 +65,11 @@ extension RecordingFinisher {
         let scale = edits.clampedScale
         let natural = try await videoTrack.load(.naturalSize)
         guard edits.encodesVideo(keeping: range, of: whole) else {
-            return try await finish(source, to: destination, audio: edits.keepsAudio ? .all : .none, volume: edits.volume)
+            return try await finish(
+                source, to: destination, audio: edits.keepsAudio ? .all : .none, volume: edits.volume, progress: progress
+            )
         }
+        try Task.checkCancellation()
 
         let description = try await videoTrack.load(.formatDescriptions).first
         let isHEVC = description.map { CMFormatDescriptionGetMediaSubType($0) == kCMVideoCodecType_HEVC } ?? false
@@ -95,6 +104,7 @@ extension RecordingFinisher {
         let audioInput = audioOutput.map { _ in AVAssetWriterInput(mediaType: .audio, outputSettings: RecordingAudio.settings(channels: 2)) }
         if let audioInput { try add(audioInput, to: writer) }
 
+        try Task.checkCancellation()
         guard reader.startReading() else { throw FinishError.readingFailed(String(describing: reader.error)) }
         guard writer.startWriting() else { throw FinishError.writingFailed(String(describing: writer.error)) }
         writer.startSession(atSourceTime: .zero)
@@ -117,7 +127,8 @@ extension RecordingFinisher {
                 let time = length - interval
                 guard time > last.presentationTimeStamp else { return nil }
                 return RecordingWriter.retimed(last, to: time, duration: interval)
-            }
+            },
+            onSample: sampleProgress(totalSeconds: length.seconds, report: progress)
         )
         let audioPump = audioOutput.flatMap { output in
             audioInput.map { input in
@@ -130,7 +141,7 @@ extension RecordingFinisher {
         }
         return try await write(
             video: videoPump, audio: audioPump, from: reader, with: writer, endingAt: length, to: destination,
-            pixelWidth: format.width, pixelHeight: format.height
+            pixelWidth: format.width, pixelHeight: format.height, progress: progress
         )
     }
 }

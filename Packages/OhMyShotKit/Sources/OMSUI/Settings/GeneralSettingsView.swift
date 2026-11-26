@@ -10,6 +10,8 @@ struct GeneralSettingsView: View {
     var showOnboarding: () -> Void = {}
     let retention: RetentionSelection
     var updates: SettingsDependencies.Updates? = nil
+    /// Additional cleanup after resetting preferences.
+    var onReset: (() -> Void)? = nil
     @State private var launchAtLogin = false
     @State private var loadedLaunchAtLogin = false
     @State private var loginItemError: String?
@@ -170,6 +172,7 @@ struct GeneralSettingsView: View {
         ) {
             Button(role: .destructive) {
                 settings.resetToDefaults()
+                onReset?()
             } label: {
                 Text("Reset", bundle: .module)
             }

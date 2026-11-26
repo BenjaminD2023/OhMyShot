@@ -132,11 +132,14 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     ///     export. Its clicks are the ones whose effects are drawn.
     public convenience init(
         telemetry: StudioTelemetry, project: StudioProject, duration: Double, recordingSize: CGSize, background: CGImage?,
-        largestSide: Double = StudioRenderer.largestSide, ringColor: RingColor = .systemBlue, preparedTrack: StudioTrack? = nil
+        largestSide: Double? = nil, ringColor: RingColor = .systemBlue, preparedTrack: StudioTrack? = nil
     ) {
         self.init(
             telemetry: telemetry, project: project, duration: duration, recordingSize: recordingSize, background: background,
-            layout: StudioRenderer.layout(recordingSize: recordingSize, project: project, hasCamera: telemetry.camera != nil, largestSide: largestSide),
+            layout: StudioRenderer.layout(
+                recordingSize: recordingSize, project: project, hasCamera: telemetry.camera != nil,
+                largestSide: largestSide ?? project.resolvedOutputMaxSide
+            ),
             ringColor: ringColor, preparedTrack: preparedTrack
         )
     }
@@ -194,7 +197,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
             Self.clickPicture(project.cursor.clickEffect, color: effectColor, strokeAlpha: 0.55)
         )
         let unit = pixelsPerPoint * layout.scale
-        let recording = CGSize(width: telemetry.width, height: telemetry.height)
+        let crop = project.effectiveCrop
+        let recording = CGSize(width: telemetry.width * Double(crop.width), height: telemetry.height * Double(crop.height))
         let plan = StudioCameraPlan(camera: project.camera, segments: project.cameraSegments, recordedFills: telemetry.camera?.fills ?? [])
         camera = plan.usesCamera ? telemetry.camera.map { take in
             Self.cameraLook(
@@ -204,12 +208,14 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         } : nil
     }
 
-    /// Where everything goes for a recording `recordingSize` pixels with `project`'s padding and shape. With
+    /// Where everything goes for a recording `recordingSize` pixels with `project`'s crop, padding, and shape. With
     /// the camera beside the recording (`hasCamera`, which is whether there is a camera's movie to show, and the
     /// side-by-side layout), the movie is wider by the camera's picture and the gap before it, so the recording
     /// keeps its own pixels.
-    public static func layout(recordingSize: CGSize, project: StudioProject, hasCamera: Bool, largestSide: Double = largestSide) -> Layout {
-        let width = Double(recordingSize.width), height = Double(recordingSize.height)
+    public static func layout(recordingSize: CGSize, project: StudioProject, hasCamera: Bool, largestSide: Double? = nil) -> Layout {
+        let crop = project.effectiveCrop
+        let width = max(2.0, Double(recordingSize.width) * Double(crop.width))
+        let height = max(2.0, Double(recordingSize.height) * Double(crop.height))
         let padding = max(0, project.padding) * min(width, height)
         let beside = hasCamera && project.camera.layout == .sideBySide
         let gap = beside ? (height * cameraPaneGap).rounded() : 0
@@ -223,7 +229,8 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
                 canvas.height = canvas.width / ratio
             }
         }
-        let scale = min(1, largestSide / max(canvas.width, canvas.height))
+        let maxSide = largestSide ?? project.resolvedOutputMaxSide
+        let scale = min(1, maxSide / max(canvas.width, canvas.height))
         // Even, rounded up with the camera beside the recording: its picture is cut to the width of the room.
         let wide = Int((canvas.width * scale).rounded()) + (beside ? 1 : 0)
         let evenWidth = max(2, wide) & ~1
@@ -379,9 +386,10 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
         let scale: Double
     }
 
-    /// How long each frame is exposed while the camera moves: half a frame of the movie's 60, as a film
+    /// How long each frame is exposed while the camera moves: half a frame of the movie's frame rate, as a film
     /// camera's half-open shutter.
     static let shutter = 0.5 / 60
+    private var frameShutter: Double { 0.5 / Double(project.resolvedFramesPerSecond) }
     /// The longest blur, as a fraction of the movie's longer side; and the farthest one exposure lies from
     /// the next at the frame's edges, in the movie's pixels, so the copies read as one smear.
     static let longestBlur = 0.01
@@ -389,10 +397,13 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     static let mostExposures = 32
 
     func view(_ state: StudioTrack.Frame) -> View {
-        let width = Double(recordingSize.width), height = Double(recordingSize.height)
-        let visibleWidth = width / state.zoom, visibleHeight = height / state.zoom
+        let fullWidth = Double(recordingSize.width), fullHeight = Double(recordingSize.height)
+        let crop = project.effectiveCrop
+        let croppedWidth = max(2.0, fullWidth * Double(crop.width))
+        let croppedHeight = max(2.0, fullHeight * Double(crop.height))
+        let visibleWidth = croppedWidth / state.zoom, visibleHeight = croppedHeight / state.zoom
         return View(
-            x: state.centerX * pixelsPerPoint - visibleWidth / 2, y: height - state.centerY * pixelsPerPoint - visibleHeight / 2,
+            x: state.centerX * pixelsPerPoint - visibleWidth / 2, y: fullHeight - state.centerY * pixelsPerPoint - visibleHeight / 2,
             scale: layout.frame.width / visibleWidth
         )
     }
@@ -431,17 +442,31 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     }
 
     /// The part of the recording a zoom at `scale` held on `spot` shows once it is fully in, kept inside the
-    /// recording as the framing keeps it, as spots: its top-left and bottom-right corners.
+    /// cropped recording as the framing keeps it, as spots: its top-left and bottom-right corners.
     func shown(around spot: StudioProject.Zoom.Spot, scale: Double) -> (topLeft: StudioProject.Zoom.Spot, bottomRight: StudioProject.Zoom.Spot) {
-        let half = 0.5 / max(scale, 1)
-        let x = min(max(spot.x, half), 1 - half), y = min(max(spot.y, half), 1 - half)
-        return (.init(x: x - half, y: y - half), .init(x: x + half, y: y + half))
+        let crop = project.effectiveCrop
+        let halfW = Double(crop.width) * 0.5 / max(scale, 1)
+        let halfH = Double(crop.height) * 0.5 / max(scale, 1)
+        let x = min(max(spot.x, Double(crop.minX) + halfW), Double(crop.maxX) - halfW)
+        let y = min(max(spot.y, Double(crop.minY) + halfH), Double(crop.maxY) - halfH)
+        return (.init(x: x - halfW, y: y - halfH), .init(x: x + halfW, y: y + halfH))
+    }
+
+    private func cropPixelRect(in extent: CGRect) -> CGRect {
+        let crop = project.effectiveCrop
+        return CGRect(
+            x: extent.minX + extent.width * crop.minX,
+            y: extent.minY + extent.height * (1 - crop.maxY),
+            width: max(2, extent.width * crop.width),
+            height: max(2, extent.height * crop.height)
+        )
     }
 
     /// The recording drawn as the camera shows it in `view`, cut to `rect` (the frame unless given), its edge
     /// pixels reaching past it so the frame's edge stays solid.
     private func screen(_ source: CIImage, _ view: View, cutTo rect: CGRect? = nil) -> CIImage {
-        source
+        let input = project.crop == nil ? source : source.cropped(to: cropPixelRect(in: source.extent))
+        return input
             .clampedToExtent()
             .transformed(by: CGAffineTransform(translationX: -view.x, y: -view.y))
             .transformed(by: CGAffineTransform(scaleX: view.scale, y: view.scale))
@@ -478,10 +503,11 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     /// shutter shortened so no blur is longer than `longestBlur`.
     func exposures(at time: Double) -> [View] {
         let center = view(track.frame(at: time))
-        let travel = Self.travel(from: view(track.frame(at: time - Self.shutter / 2)), to: view(track.frame(at: time + Self.shutter / 2)), across: layout.frame.size)
+        let baseShutter = frameShutter
+        let travel = Self.travel(from: view(track.frame(at: time - baseShutter / 2)), to: view(track.frame(at: time + baseShutter / 2)), across: layout.frame.size)
         guard travel > Self.exposureSpacing else { return [center] }
         let longest = Self.longestBlur * max(layout.canvas.width, layout.canvas.height)
-        let shutter = Self.shutter * min(1, longest / travel)
+        let shutter = baseShutter * min(1, longest / travel)
         let count = min(Self.mostExposures, Int((min(travel, longest) / Self.exposureSpacing).rounded(.up)) + 1)
         return (0..<count).map { index in
             view(track.frame(at: time + shutter * (Double(index) / Double(count - 1) - 0.5)))
@@ -505,10 +531,17 @@ nonisolated public final class StudioRenderer: @unchecked Sendable {
     /// `blurSide` pixels on its longer side and blurred by `blurStrength` of that until only its colors are left (as
     /// the editor's Blurred Capture is), covering the movie. Made that small first, it costs little at any size.
     private func blurredBackground(_ source: CIImage) -> CIImage {
-        let extent = source.extent
+        let input: CIImage
+        if project.crop != nil {
+            let rect = cropPixelRect(in: source.extent)
+            input = source.cropped(to: rect).transformed(by: CGAffineTransform(translationX: -rect.minX, y: -rect.minY))
+        } else {
+            input = source
+        }
+        let extent = input.extent
         guard extent.width > 0, extent.height > 0 else { return background }
         let scale = min(1, Self.blurSide / max(extent.width, extent.height))
-        let small = source.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
+        let small = input.applyingFilter("CILanczosScaleTransform", parameters: [kCIInputScaleKey: scale, kCIInputAspectRatioKey: 1])
         let blurred = small.clampedToExtent().applyingGaussianBlur(sigma: Self.blurSide * Self.blurStrength).cropped(to: small.extent)
         return Self.filling(blurred, into: CGRect(origin: .zero, size: layout.canvas))
     }

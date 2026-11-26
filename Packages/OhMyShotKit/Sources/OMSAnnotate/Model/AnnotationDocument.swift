@@ -151,6 +151,9 @@ nonisolated public struct Line: Codable, Sendable, Equatable {
 
 /// A rectangle, an ellipse, or a highlight box. The stroke is centered on the edge of `rect`.
 nonisolated public struct Box: Codable, Sendable, Equatable {
+    /// Preset corner radii offered in the style capsule, in points.
+    public static let cornerRadiusPresets: [CGFloat] = [0, 4, 10, 18]
+
     public var rect: CGRect
     /// Filled with the color instead of outlined.
     public var filled: Bool
@@ -285,12 +288,32 @@ nonisolated public struct Redaction: Codable, Sendable, Equatable {
         case erase
     }
 
+    public enum Strength: Double, CaseIterable, Sendable {
+        case low = 0.5
+        case medium = 1.0
+        case high = 1.6
+    }
+
     public var rect: CGRect
     public var method: Method
+    /// Scales blur radius and pixelation block size: Low (0.5), Medium (1.0), High (1.6).
+    public var strength: Double
 
-    public init(rect: CGRect, method: Method = .solid) {
+    public init(rect: CGRect, method: Method = .solid, strength: Double = Strength.medium.rawValue) {
         self.rect = rect
         self.method = method
+        self.strength = strength
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rect = try container.decode(CGRect.self, forKey: .rect)
+        method = try container.decode(Method.self, forKey: .method)
+        strength = try container.decodeIfPresent(Double.self, forKey: .strength) ?? Strength.medium.rawValue
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rect, method, strength
     }
 }
 
@@ -360,12 +383,32 @@ nonisolated public struct Magnifier: Codable, Sendable, Equatable {
 }
 
 nonisolated public struct Spot: Codable, Sendable, Equatable {
+    public enum Dimming: Double, CaseIterable, Sendable {
+        case light = 0.35
+        case medium = 0.50
+        case dark = 0.78
+    }
+
     public var rect: CGRect
     public var oval: Bool
+    /// How dark the rest of the picture is dimmed: Light (0.35), Medium (0.50), Dark (0.78).
+    public var dimming: Double
 
-    public init(rect: CGRect, oval: Bool = false) {
+    public init(rect: CGRect, oval: Bool = false, dimming: Double = Dimming.medium.rawValue) {
         self.rect = rect
         self.oval = oval
+        self.dimming = dimming
+    }
+
+    public init(from decoder: any Decoder) throws {
+        let container = try decoder.container(keyedBy: CodingKeys.self)
+        rect = try container.decode(CGRect.self, forKey: .rect)
+        oval = try container.decodeIfPresent(Bool.self, forKey: .oval) ?? false
+        dimming = try container.decodeIfPresent(Double.self, forKey: .dimming) ?? Dimming.medium.rawValue
+    }
+
+    private enum CodingKeys: String, CodingKey {
+        case rect, oval, dimming
     }
 }
 

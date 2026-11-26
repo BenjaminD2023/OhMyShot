@@ -190,4 +190,55 @@ struct AreaFrameTests {
         #expect(atEdge.minX == 0 && atEdge.minY == 0)
         #expect(atEdge.contains(content) && abs(atEdge.width / atEdge.height - 16.0 / 9) < 0.001)
     }
+
+    @Test func aspectLockedCornerResizeClampsSmoothlyAtDisplayBounds() {
+        // Square drag toward bottom-right: height hits bounds.maxY (800) before width hits bounds.maxX (1000).
+        let clampedSquare = AreaFrame.adjusted(.resizing(.bottomRight, original: rect), to: CGPoint(x: 950, y: 750), in: bounds, keeping: 1)
+        #expect(clampedSquare.origin == rect.origin)
+        #expect(abs(clampedSquare.width - 700) < 0.001 && abs(clampedSquare.height - 700) < 0.001)
+        #expect(bounds.contains(clampedSquare))
+
+        // 16:9 drag toward bottom-right: width hits bounds.maxX (1000) first; height clamps proportionally to 506.25.
+        let clampedWide = AreaFrame.adjusted(.resizing(.bottomRight, original: rect), to: CGPoint(x: 1200, y: 900), in: bounds, keeping: 16.0 / 9)
+        #expect(clampedWide.origin == rect.origin)
+        #expect(abs(clampedWide.width - 900) < 0.001)
+        #expect(abs(clampedWide.width / clampedWide.height - 16.0 / 9) < 0.001)
+        #expect(bounds.contains(clampedWide))
+
+        // Top-left drag past the top edge keeps bottom-right anchored and preserves 1:1 inside bounds.
+        let topLeftOrigin = CGRect(x: 400, y: 200, width: 300, height: 300)
+        let clampedTopLeft = AreaFrame.adjusted(.resizing(.topLeft, original: topLeftOrigin), to: CGPoint(x: 50, y: -100), in: bounds, keeping: 1)
+        #expect(abs(clampedTopLeft.maxX - topLeftOrigin.maxX) < 0.001)
+        #expect(abs(clampedTopLeft.maxY - topLeftOrigin.maxY) < 0.001)
+        #expect(abs(clampedTopLeft.width - 500) < 0.001 && abs(clampedTopLeft.height - 500) < 0.001)
+        #expect(bounds.contains(clampedTopLeft))
+
+        // Selecting a new aspect-locked area near an edge stays inside bounds with ratio preserved.
+        let selected = AreaFrame.adjusted(.selecting(start: CGPoint(x: 800, y: 600)), to: CGPoint(x: 1100, y: 900), in: bounds, keeping: 16.0 / 9)
+        #expect(abs(selected.width - 200) < 0.001)
+        #expect(abs(selected.width / selected.height - 16.0 / 9) < 0.001)
+        #expect(bounds.contains(selected))
+    }
+
+    @Test func aspectLockedEdgeResizeGlidesAlongBoundsInsteadOfFreezing() {
+        // Flush against the top edge: dragging right should grow cleanly downward along top edge up to full height.
+        let topEdgeRect = CGRect(x: 100, y: 0, width: 200, height: 200)
+        let grown = AreaFrame.adjusted(.resizing(.right, original: topEdgeRect), to: CGPoint(x: 600, y: 100), in: bounds, keeping: 1)
+        #expect(abs(grown.minX - 100) < 0.001 && abs(grown.minY) < 0.001)
+        #expect(abs(grown.width - 500) < 0.001 && abs(grown.height - 500) < 0.001)
+        #expect(bounds.contains(grown))
+
+        // Dragging past bounds.maxX clamps to max square fitting bounds height (800x800).
+        let maxed = AreaFrame.adjusted(.resizing(.right, original: topEdgeRect), to: CGPoint(x: 1200, y: 100), in: bounds, keeping: 1)
+        #expect(abs(maxed.width - 800) < 0.001 && abs(maxed.height - 800) < 0.001)
+        #expect(bounds.contains(maxed))
+
+        // Flush against the left edge: dragging bottom grows cleanly rightward along left edge while keeping 16:9.
+        let leftEdgeRect = CGRect(x: 0, y: 100, width: 160, height: 90)
+        let tallMax = AreaFrame.adjusted(.resizing(.bottom, original: leftEdgeRect), to: CGPoint(x: 80, y: 900), in: bounds, keeping: 16.0 / 9)
+        #expect(abs(tallMax.minX) < 0.001 && abs(tallMax.minY - 100) < 0.001)
+        #expect(abs(tallMax.width - 1000) < 0.001)
+        #expect(abs(tallMax.width / tallMax.height - 16.0 / 9) < 0.001)
+        #expect(bounds.contains(tallMax))
+    }
 }
